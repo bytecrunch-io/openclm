@@ -6,10 +6,18 @@ export interface TextSelection { text: string; start: number; end: number }
 export const SIGNATURE_BLOCKS_PLACEHOLDER = '{{signature_blocks}}';
 export function visibleDocumentContent(content: string): string { return content.replace(/\n*\{\{signature_blocks\}\}\s*$/, '').trimEnd(); }
 
-export function draftContent(agreement: Agreement, authorId: string): string {
-  const changes = agreement.suggestions.filter((item) => item.status === 'open' && item.reviewRound === agreement.reviewRound && item.authorSubjectId === authorId && item.anchor?.revision === agreement.revision).sort((a, b) => b.anchor!.start - a.anchor!.start);
-  return changes.reduce((content, item) => content.slice(0, item.anchor!.start) + item.replacementText + content.slice(item.anchor!.end), agreement.content);
+function draftProjection(agreement: Agreement) {
+  const suggestions = agreement.suggestions.filter((item) => item.status === 'open' && item.anchor?.revision === agreement.revision).sort((a, b) => a.anchor!.start - b.anchor!.start);
+  const ranges: Array<{ id: string; start: number; end: number; incoming: boolean }> = []; let cursor = 0; let content = '';
+  for (const suggestion of suggestions) {
+    const anchor = suggestion.anchor!;
+    if (anchor.start < cursor || agreement.content.slice(anchor.start, anchor.end) !== suggestion.originalText) continue;
+    content += agreement.content.slice(cursor, anchor.start); const start = content.length; content += suggestion.replacementText;
+    ranges.push({ id: suggestion.id, start, end: content.length, incoming: suggestion.reviewRound < agreement.reviewRound }); cursor = anchor.end;
+  }
+  return { content: content + agreement.content.slice(cursor), ranges };
 }
+export function draftContent(agreement: Agreement, _authorId: string): string { return draftProjection(agreement).content; }
 
 function liveChangeRanges(before: string, after: string): Array<{ start: number; end: number; deletion: boolean }> {
   const a = before.match(/\s+|[^\s]+/g) ?? []; const b = after.match(/\s+|[^\s]+/g) ?? [];
@@ -35,7 +43,12 @@ function singleLiveRange(before: string, after: string) {
   return { start, end, deletion: oldEnd > start };
 }
 
-function DraftHighlightText({ original, draft }: { original: string; draft: string }) {
+function DraftHighlightText({ original, draft, projection, activeRedlineId }: { original: string; draft: string; projection: ReturnType<typeof draftProjection>; activeRedlineId?: string | undefined }) {
+  if (draft === visibleDocumentContent(projection.content)) {
+    const visibleLength = draft.length; const parts: ReactNode[] = []; let cursor = 0;
+    for (const range of projection.ranges) { const start = Math.min(range.start, visibleLength); const end = Math.min(range.end, visibleLength); if (start < cursor || start > visibleLength) continue; parts.push(draft.slice(cursor, start)); parts.push(<mark key={range.id} className={`live-change ${range.incoming ? 'incoming-change' : ''} ${activeRedlineId === range.id ? 'active' : ''}`}>{draft.slice(start, end) || '\u200b'}</mark>); cursor = end; }
+    parts.push(draft.slice(cursor)); return <div className="document-editor-highlights" aria-hidden="true">{parts}</div>;
+  }
   const ranges = liveChangeRanges(original, draft); const parts: ReactNode[] = []; let cursor = 0;
   for (const [index, range] of ranges.entries()) { parts.push(draft.slice(cursor, range.start)); parts.push(<mark key={index} className={`live-change ${range.deletion ? 'has-deletion' : ''}`}>{draft.slice(range.start, range.end) || '\u200b'}</mark>); cursor = range.end; }
   parts.push(draft.slice(cursor)); return <div className="document-editor-highlights" aria-hidden="true">{parts}</div>;
@@ -43,9 +56,10 @@ function DraftHighlightText({ original, draft }: { original: string; draft: stri
 
 export type DraftSaveState = 'saved' | 'pending' | 'saving' | 'error';
 
-export function DirectContractEditor({ agreement, authorId, busy, onSave, onStateChange }: { agreement: Agreement; authorId: string; busy: boolean; onSave: (content: string) => Promise<boolean>; onStateChange?: (state: DraftSaveState) => void }) {
-  const hasSignatureBlocks = agreement.content.includes(SIGNATURE_BLOCKS_PLACEHOLDER); const projected = visibleDocumentContent(draftContent(agreement, authorId)); const original = visibleDocumentContent(agreement.content); const [content, setContent] = useState(projected); const [saveState, setSaveState] = useState<DraftSaveState>('saved'); const [retry, setRetry] = useState(0);
+export function DirectContractEditor({ agreement, busy, activeRedlineId, onOpenRedline, onSave, onStateChange }: { agreement: Agreement; busy: boolean; activeRedlineId?: string | undefined; onOpenRedline?: ((id: string) => void) | undefined; onSave: (content: string) => Promise<boolean>; onStateChange?: ((state: DraftSaveState) => void) | undefined }) {
+  const projection = draftProjection(agreement); const hasSignatureBlocks = agreement.content.includes(SIGNATURE_BLOCKS_PLACEHOLDER); const projected = visibleDocumentContent(projection.content); const original = visibleDocumentContent(agreement.content); const [content, setContent] = useState(projected); const [saveState, setSaveState] = useState<DraftSaveState>('saved'); const [retry, setRetry] = useState(0);
   const contentRef = useRef(projected); const projectedRef = useRef(projected); const submittedRef = useRef(projected); const onSaveRef = useRef(onSave); const retryTimer = useRef<number | undefined>(undefined);
+  const editorRef = useRef<HTMLTextAreaElement>(null);
   useEffect(() => { onSaveRef.current = onSave; }, [onSave]);
   useEffect(() => { onStateChange?.(saveState); }, [onStateChange, saveState]);
   useEffect(() => {
@@ -55,6 +69,7 @@ export function DirectContractEditor({ agreement, authorId, busy, onSave, onStat
       contentRef.current = projected; submittedRef.current = projected; setContent(projected); setSaveState('saved');
     }
   }, [projected, agreement.revision]);
+  useEffect(() => { const range = projection.ranges.find((item) => item.id === activeRedlineId); if (!range || !editorRef.current) return; editorRef.current.focus(); editorRef.current.setSelectionRange(range.start, range.end); }, [activeRedlineId, projected]);
   useEffect(() => {
     window.clearTimeout(retryTimer.current);
     if (busy) return;
@@ -73,7 +88,7 @@ export function DirectContractEditor({ agreement, authorId, busy, onSave, onStat
   }, [busy, content, projected, retry]);
   useEffect(() => () => window.clearTimeout(retryTimer.current), []);
   const status = saveState === 'saving' ? <><BusyMark /> Saving tracked changes…</> : saveState === 'pending' ? <><i className="draft-status-dot" /> Tracking your edits…</> : saveState === 'error' ? <><i className="draft-status-dot error" /> Couldn’t save · retrying…</> : <><Check /> Saved automatically</>;
-  return <div className="direct-editor-wrap"><div className="direct-editor-toolbar"><div><span className="bc-eyebrow bc-text-blue">// TRACK CHANGES</span><small>Type directly in the agreement. Every highlighted edit becomes a private redline.</small></div><span className={`draft-save-status ${saveState}`} role="status" aria-live="polite">{status}</span></div><div className="document-editor-surface"><DraftHighlightText original={original} draft={content} /><textarea aria-label="Edit agreement text with tracked changes" className="document-editor" value={content} onChange={(event) => { contentRef.current = event.target.value; setContent(event.target.value); setSaveState('pending'); }} spellCheck /></div></div>;
+  return <div className="direct-editor-wrap"><div className="direct-editor-toolbar"><div><span className="bc-eyebrow bc-text-blue">// TRACK CHANGES</span><small>Returned wording is highlighted. Accept or keep it explicitly, or edit it directly to counter.</small></div><span className={`draft-save-status ${saveState}`} role="status" aria-live="polite">{status}</span></div><div className="document-editor-surface"><DraftHighlightText original={original} draft={content} projection={projection} activeRedlineId={activeRedlineId} /><textarea ref={editorRef} aria-label="Edit agreement text with tracked changes" className="document-editor" value={content} onClick={(event) => { const position = event.currentTarget.selectionStart; const range = projection.ranges.find((item) => position >= item.start && position <= item.end); if (range) onOpenRedline?.(range.id); }} onChange={(event) => { contentRef.current = event.target.value; setContent(event.target.value); setSaveState('pending'); }} spellCheck /></div></div>;
 }
 
 function offsetWithin(root: HTMLElement, target: Node, offset: number): number {
@@ -121,7 +136,8 @@ export function InlineDiff({ before, after }: { before: string; after: string })
 
 export function RedlineCard({ suggestion, active, busy, canReply, canEdit, canResolve, onEdit, onRemove, onResolve, onReply, onSelect }: { suggestion: Suggestion; active?: boolean; busy: boolean; canReply: boolean; canEdit: boolean; canResolve: boolean; onEdit?: (replacementText: string, comment: string) => void; onRemove?: () => void; onResolve?: (resolution: 'accepted' | 'rejected') => void; onReply: (body: string) => void; onSelect?: () => void }) {
   const [editing, setEditing] = useState(false); const [replacementText, setReplacementText] = useState(suggestion.replacementText); const [comment, setComment] = useState(suggestion.comment);
-  return <article className={`redline-card ${suggestion.status} ${active ? 'active' : ''}`} onClick={onSelect}><header><span className="bc-eyebrow">// REDLINE</span><b>{canEdit ? 'draft' : suggestion.status}</b></header>{editing ? <form className="redline-edit" onSubmit={(event) => { event.preventDefault(); onEdit?.(replacementText, comment); setEditing(false); }}><label>Replace with<textarea required autoFocus value={replacementText} onChange={(event) => setReplacementText(event.target.value)} /></label><label>Reason or context<textarea value={comment} onChange={(event) => setComment(event.target.value)} /></label><div><button type="button" className="text-button" onClick={() => { setReplacementText(suggestion.replacementText); setComment(suggestion.comment); setEditing(false); }}>Cancel</button><button disabled={busy} className="button button-secondary button-small">Save changes</button></div></form> : <><InlineDiff before={suggestion.originalText} after={suggestion.replacementText} />{suggestion.comment && <p>{suggestion.comment}</p>}</>}<div className="thread">{suggestion.messages.map((message) => <div key={message.id}><strong>{message.authorName}</strong><p>{message.body}</p></div>)}</div>{suggestion.status === 'open' && canReply && !editing && <ReplyBox busy={busy} onReply={onReply} />}{suggestion.status === 'open' && !editing && (canEdit || canResolve) && <footer>{canEdit && <><button disabled={busy} onClick={(event) => { event.stopPropagation(); setEditing(true); }}><Pencil /> Edit</button><button disabled={busy} onClick={(event) => { event.stopPropagation(); onRemove?.(); }}><Trash2 /> Remove</button></>}{canResolve && <><button disabled={busy} onClick={(event) => { event.stopPropagation(); onResolve?.('rejected'); }}><X /> Keep original</button><button disabled={busy} onClick={(event) => { event.stopPropagation(); onResolve?.('accepted'); }}><Check /> Accept change</button></>}</footer>}</article>;
+  const cardRef = useRef<HTMLElement>(null); useEffect(() => { if (active) cardRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, [active]);
+  return <article ref={cardRef} className={`redline-card ${suggestion.status} ${active ? 'active' : ''}`} onClick={onSelect}><header><span className="bc-eyebrow">// REDLINE</span><b>{canEdit ? 'draft' : suggestion.status}</b></header>{editing ? <form className="redline-edit" onSubmit={(event) => { event.preventDefault(); onEdit?.(replacementText, comment); setEditing(false); }}><label>Replace with<textarea required autoFocus value={replacementText} onChange={(event) => setReplacementText(event.target.value)} /></label><label>Reason or context<textarea value={comment} onChange={(event) => setComment(event.target.value)} /></label><div><button type="button" className="text-button" onClick={() => { setReplacementText(suggestion.replacementText); setComment(suggestion.comment); setEditing(false); }}>Cancel</button><button disabled={busy} className="button button-secondary button-small">Save changes</button></div></form> : <><InlineDiff before={suggestion.originalText} after={suggestion.replacementText} />{suggestion.comment && <p>{suggestion.comment}</p>}</>}<div className="thread">{suggestion.messages.map((message) => <div key={message.id}><strong>{message.authorName}</strong><p>{message.body}</p></div>)}</div>{suggestion.status === 'open' && canReply && !editing && <ReplyBox busy={busy} onReply={onReply} />}{suggestion.status === 'open' && !editing && (canEdit || canResolve) && <footer>{canEdit && <><button disabled={busy} onClick={(event) => { event.stopPropagation(); setEditing(true); }}><Pencil /> Edit</button><button disabled={busy} onClick={(event) => { event.stopPropagation(); onRemove?.(); }}><Trash2 /> Remove</button></>}{canResolve && <><button disabled={busy} onClick={(event) => { event.stopPropagation(); onResolve?.('rejected'); }}><X /> Keep original</button><button disabled={busy} onClick={(event) => { event.stopPropagation(); onResolve?.('accepted'); }}><Check /> Accept change</button></>}</footer>}</article>;
 }
 
 function ReplyBox({ busy, onReply }: { busy: boolean; onReply: (body: string) => void }) {

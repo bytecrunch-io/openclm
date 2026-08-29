@@ -204,6 +204,9 @@ describe('contracts API vertical slice', () => {
     const prematureHandback = await app.request(`/v1/agreements/${created.id}/send-review`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ message: '' }) });
     expect(prematureHandback.status).toBe(409); expect(await prematureHandback.json()).toMatchObject({ message: expect.stringContaining('Accept, keep original, or counter') });
 
+    const projectedReturnedDraft = await app.request(`/v1/agreements/${created.id}/review-draft`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ content: created.content.replace('two years', 'one year') }) });
+    expect(await projectedReturnedDraft.json()).toMatchObject({ suggestions: [expect.objectContaining({ id: partyBRedlineId, status: 'open', replacementText: 'one year' })] });
+
     const counterDraft = await app.request(`/v1/agreements/${created.id}/review-draft`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ content: created.content.replace('two years', 'eighteen months') }) });
     expect(counterDraft.status).toBe(200); const countered = await counterDraft.json() as { suggestions: Array<{ id: string; status: string; replacementText: string; inResponseToSuggestionIds: string[]; counteredBySuggestionId: string | null }> };
     const partyBRedline = countered.suggestions.find((item) => item.id === partyBRedlineId)!; let partyACounter = countered.suggestions.find((item) => item.inResponseToSuggestionIds.includes(partyBRedlineId))!;

@@ -76,6 +76,38 @@ function restoreCounteredParents(agreement: Agreement, suggestion: Suggestion): 
   }
 }
 
+type TrackedChange = { originalText: string; replacementText: string; anchor: { start: number; end: number } };
+function projectedIncomingReview(agreement: Agreement) {
+  const candidates = agreement.suggestions.filter((item) => item.status === 'open' && item.reviewRound < agreement.reviewRound && item.anchor?.revision === agreement.revision).sort((a, b) => a.anchor!.start - b.anchor!.start);
+  const ranges: Array<{ suggestion: Suggestion; start: number; end: number }> = []; let cursor = 0; let content = '';
+  for (const suggestion of candidates) {
+    const anchor = suggestion.anchor!;
+    if (anchor.start < cursor || agreement.content.slice(anchor.start, anchor.end) !== suggestion.originalText) continue;
+    content += agreement.content.slice(cursor, anchor.start); const start = content.length; content += suggestion.replacementText;
+    ranges.push({ suggestion, start, end: content.length }); cursor = anchor.end;
+  }
+  return { content: content + agreement.content.slice(cursor), ranges };
+}
+function mapPositionThroughChanges(position: number, changes: TrackedChange[], endAffinity: boolean): number {
+  let delta = 0;
+  for (const change of changes) {
+    if (change.anchor.end <= position) { delta += change.replacementText.length - change.originalText.length; continue; }
+    if (change.anchor.start >= position) break;
+    return change.anchor.start + delta + (endAffinity ? change.replacementText.length : 0);
+  }
+  return position + delta;
+}
+function projectionPositionToCanonical(position: number, ranges: Array<{ suggestion: Suggestion; start: number; end: number }>, endAffinity: boolean): number {
+  let delta = 0;
+  for (const range of ranges) {
+    const anchor = range.suggestion.anchor!;
+    if (position < range.start) break;
+    if (position >= range.end) { delta += (range.end - range.start) - (anchor.end - anchor.start); continue; }
+    return endAffinity ? anchor.end : anchor.start;
+  }
+  return position - delta;
+}
+
 function anchoredSuggestion(agreement: Agreement, input: { originalText: string; replacementText: string; comment: string; anchor?: { start: number; end: number } | undefined }, authorSubjectId: string, ignoredOpenSuggestionIds = new Set<string>()): Suggestion {
   const start = input.anchor?.start ?? agreement.content.indexOf(input.originalText); const end = input.anchor?.end ?? start + input.originalText.length;
   if (start < 0 || end < start || agreement.content.slice(start, end) !== input.originalText) throw new Error('The selected text no longer matches this revision. Select it again.');
@@ -88,27 +120,37 @@ function replaceTurnDraft(agreement: Agreement, content: string, authorId: strin
   const previous = agreement.suggestions.filter((item) => item.status === 'open' && item.reviewRound === agreement.reviewRound && item.authorSubjectId === authorId && item.anchor?.revision === agreement.revision);
   for (const item of previous) restoreCounteredParents(agreement, item);
   agreement.suggestions = agreement.suggestions.filter((item) => !previous.includes(item));
-  if (content === agreement.content) { agreement.updatedAt = isoNow(); return; }
-  const used = new Set<string>();
-  for (const change of trackedChanges(agreement.content, content)) {
-    const match = previous.filter((item) => !used.has(item.id)).map((item) => ({ item, distance: Math.max(0, change.anchor.start - item.anchor!.end, item.anchor!.start - change.anchor.end) })).sort((a, b) => a.distance - b.distance)[0];
-    const incoming = agreement.suggestions.filter((item) => item.status === 'open' && item.reviewRound < agreement.reviewRound && item.anchor?.revision === agreement.revision && rangesOverlap(change.anchor, item.anchor));
-    const ignoredIncomingIds = new Set(incoming.map((item) => item.id));
-    const suggestion = anchoredSuggestion(agreement, { ...change, comment: match && match.distance <= 24 ? match.item.comment : '' }, authorId, ignoredIncomingIds);
-    if (match && match.distance <= 24) { used.add(match.item.id); suggestion.id = match.item.id; suggestion.messages = match.item.messages; suggestion.mentions = match.item.mentions; suggestion.createdAt = match.item.createdAt; }
-    suggestion.inResponseToSuggestionIds = [...ignoredIncomingIds];
-    for (const item of incoming) { item.status = 'countered'; item.resolvedAt = isoNow(); item.counteredBySuggestionId = suggestion.id; }
-    agreement.suggestions.push(suggestion);
+  const projection = projectedIncomingReview(agreement);
+  if (content === projection.content) { agreement.updatedAt = isoNow(); return; }
+  const changes = trackedChanges(projection.content, content); const used = new Set<string>();
+  const retainIdentity = (suggestion: Suggestion, preferred?: Suggestion) => {
+    const nearest = previous.filter((item) => !used.has(item.id)).map((item) => ({ item, distance: Math.max(0, suggestion.anchor!.start - item.anchor!.end, item.anchor!.start - suggestion.anchor!.end) })).sort((a, b) => a.distance - b.distance)[0];
+    const match = preferred ?? (nearest && nearest.distance <= 24 ? nearest.item : undefined);
+    if (match) { used.add(match.id); suggestion.id = match.id; suggestion.messages = match.messages; suggestion.mentions = match.mentions; suggestion.createdAt = match.createdAt; }
+  };
+  for (const range of projection.ranges) {
+    const touching = changes.filter((change) => rangesOverlap(change.anchor, range)); if (touching.length === 0) continue;
+    const start = mapPositionThroughChanges(range.start, changes, false); const end = mapPositionThroughChanges(range.end, changes, true); const replacementText = content.slice(start, end);
+    if (replacementText === range.suggestion.replacementText || replacementText === range.suggestion.originalText) continue;
+    const parent = range.suggestion; const suggestion = anchoredSuggestion(agreement, { originalText: parent.originalText, replacementText, comment: '', anchor: { start: parent.anchor!.start, end: parent.anchor!.end } }, authorId, new Set([parent.id]));
+    const priorCounter = previous.find((item) => item.inResponseToSuggestionIds.includes(parent.id)); retainIdentity(suggestion, priorCounter); suggestion.inResponseToSuggestionIds = [parent.id];
+    parent.status = 'countered'; parent.resolvedAt = isoNow(); parent.counteredBySuggestionId = suggestion.id; agreement.suggestions.push(suggestion);
+  }
+  for (const change of changes) {
+    if (projection.ranges.some((range) => rangesOverlap(change.anchor, range))) continue;
+    const start = projectionPositionToCanonical(change.anchor.start, projection.ranges, false); const end = projectionPositionToCanonical(change.anchor.end, projection.ranges, true);
+    const canonicalChange = { originalText: agreement.content.slice(start, end), replacementText: change.replacementText, anchor: { start, end } };
+    const suggestion = anchoredSuggestion(agreement, { ...canonicalChange, comment: '' }, authorId); retainIdentity(suggestion); agreement.suggestions.push(suggestion);
   }
   agreement.updatedAt = isoNow();
 }
 
-function trackedChanges(before: string, after: string): Array<{ originalText: string; replacementText: string; anchor: { start: number; end: number } }> {
+function trackedChanges(before: string, after: string): TrackedChange[] {
   const beforeTokens = before.match(/\s+|[^\s]+/g) ?? []; const afterTokens = after.match(/\s+|[^\s]+/g) ?? [];
   if (beforeTokens.length * afterTokens.length > 2_000_000) return [singleTrackedChange(before, after)];
   const table = Array.from({ length: beforeTokens.length + 1 }, () => new Uint32Array(afterTokens.length + 1));
   for (let i = beforeTokens.length - 1; i >= 0; i--) for (let j = afterTokens.length - 1; j >= 0; j--) table[i]![j] = beforeTokens[i] === afterTokens[j] ? 1 + table[i + 1]![j + 1]! : Math.max(table[i + 1]![j]!, table[i]![j + 1]!);
-  const changes: Array<{ originalText: string; replacementText: string; anchor: { start: number; end: number } }> = []; let i = 0; let j = 0; let offset = 0; let active: (typeof changes)[number] | undefined;
+  const changes: TrackedChange[] = []; let i = 0; let j = 0; let offset = 0; let active: (typeof changes)[number] | undefined;
   const flush = () => { if (active) { while (active.originalText && active.replacementText && /\s/.test(active.originalText.at(-1)!) && active.originalText.at(-1) === active.replacementText.at(-1)) { active.originalText = active.originalText.slice(0, -1); active.replacementText = active.replacementText.slice(0, -1); active.anchor.end--; } if (active.originalText || active.replacementText) changes.push(active); } active = undefined; };
   while (i < beforeTokens.length || j < afterTokens.length) {
     if (i < beforeTokens.length && j < afterTokens.length && beforeTokens[i] === afterTokens[j]) { const token = beforeTokens[i]!; if (active && /^\s+$/.test(token)) { active.originalText += token; active.replacementText += token; offset += token.length; active.anchor.end = offset; } else { flush(); offset += token.length; } i++; j++; }
