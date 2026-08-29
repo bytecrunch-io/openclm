@@ -7,7 +7,7 @@ Browser / host application
        |
        | OIDC session or OAuth2 bearer token
        v
-TypeSpec public contract -> Hono API -> Zod runtime validation -> domain invariants
+global account -> customer-entity membership -> TypeSpec API -> Zod validation -> domain invariants
                                               |
                      +------------------------+----------------------+
                      |                        |                      |
@@ -22,7 +22,11 @@ TypeSpec public contract -> Hono API -> Zod runtime validation -> domain invaria
 - `packages/domain` owns runtime schemas and lifecycle invariants.
 - API handlers parse every request before invoking domain operations.
 - The UI parses API responses instead of trusting TypeScript casts.
-- External identities are stored as tenant-scoped opaque subject IDs.
+- ByteCrunch is the platform operator. Each customer legal entity is its own tenant and contracting context; there is no ByteCrunch parent workspace in the customer model.
+- Human accounts are global and may have memberships in several customer entities. Entity membership and server-side permission checks provide tenant access; the client-side entity selector is not a security boundary.
+- OIDC identities use provider, issuer, and subject as their stable key. Verified email is a contact/recovery attribute and is not used as an OIDC subject.
+- External integration identities remain tenant- and integration-scoped opaque subject IDs.
+- Agreement participants and agreement access are separate: the participant records the role in the transaction, while durable agreement access links that participant to a global account.
 - Agreement content is hashed whenever an accepted suggestion changes it.
 - Executed state requires every party's minimum signature requirement and every unassigned required signature to be satisfied. Normal agreements do not impose a signing order.
 - Review edits and comments are stored as private turn-scoped work until the reviewer explicitly sends the review. Agreement responses omit the active side's current-round work from the waiting party in both directions; sending the review advances the round and publishes it.
@@ -34,7 +38,11 @@ TypeSpec public contract -> Hono API -> Zod runtime validation -> domain invaria
 
 ## Authentication
 
-Humans authenticate through generic OIDC Authorization Code + PKCE. Server integrations use OAuth2 bearer tokens issued for the API audience. The bundled Keycloak realm is local infrastructure, not an application dependency; any conforming provider can replace it.
+Members authenticate through generic OIDC Authorization Code + PKCE. The authenticated account selects one of its active customer-entity memberships through the `X-Bytecrunch-Entity-Id` request context. Every entity-scoped request resolves and authorizes that membership on the server.
+
+An external invitation is a bootstrap credential, not permanent access. Its first explicit exchange creates or resolves a global account, grants an agreement-specific access record, links the participant to that account, and consumes the invitation. Opening an accepted invitation requests a fresh 15-minute, single-use email challenge. This means a closed or cleared browser can recover without turning the original URL into a permanent bearer credential. Invitation URLs are never consumed by a GET, which avoids corporate link scanners accepting an invitation on the recipient's behalf.
+
+Server integrations use OAuth2 bearer tokens issued for the API audience. The bundled Keycloak realm is local infrastructure, not an application dependency; any conforming provider can replace it.
 
 ## Signing boundary
 

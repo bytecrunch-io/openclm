@@ -24,6 +24,7 @@ This pass adds an explicit next-action layer, touch-friendly typed/drawn signing
 | Production signing assurance | Not production-ready | No signing provider, sealed PDF/PAdES, immutable evidence ledger, identity assurance policy, or downloadable completion certificate. |
 | Mobile | Good baseline | Review and touch signing reflow to one column; long-document navigation still needs a mobile progress pattern. |
 | Accessibility | Fair | Typed signing provides a keyboard alternative, but focus trapping, modal announcements, document semantics, and a full screen-reader pass remain. |
+| Multi-entity identity | Good foundation | Global accounts, explicit customer-entity context, isolated data, and durable recipient access are implemented; member administration and a cross-entity personal inbox remain. |
 
 ## Changes completed in this pass
 
@@ -41,6 +42,9 @@ This pass adds an explicit next-action layer, touch-friendly typed/drawn signing
 - Added a document-native closing signature section with entity, signature, name, title/capacity, and date fields.
 - Added responsive signing layouts for desktop and phone.
 - Kept an explicit local-development witness disclaimer.
+- Added a persistent **Acting for** selector so sender identity, templates, and agreements follow the selected customer entity.
+- Separated global accounts, customer-entity memberships, agreement participants, and durable agreement access.
+- Replaced the accepted-invite dead end with a fresh, single-use 15-minute return link delivered to the invited email.
 
 ## Prioritized findings
 
@@ -54,13 +58,15 @@ This pass adds an explicit next-action layer, touch-friendly typed/drawn signing
 
 ### P1 — highest UX value next
 
-1. Add a secure “continue on phone” handoff using a short-lived, one-time QR token. Do not encode the reusable invitation/session credential directly in the QR code.
-2. Add explicit signature-field placement to templates for agreements that need placement other than the standard closing signature section.
-3. Add a lifecycle timeline showing sent, opened, reviewed, returned, signature requested, viewed, signed, and executed events.
-4. Add “remind next signer,” resend, and delivery-status controls beside the currently responsible participant.
-5. Add decline-to-sign, delegate/reassign, and report-a-problem paths so signing is not a forced dead end.
-6. Add a final review step that scrolls the signer through required fields and clearly distinguishes review completion from signature adoption.
-7. Add downloadable original, final revision, executed artifact, and audit certificate actions.
+1. Add entity member invitation/administration, role editing, and resource-level authorization tests beyond the current route-family permission checks.
+2. Add a cross-entity personal action inbox and non-enumerating recipient sign-in with email code, passkey, and optional organisation SSO.
+3. Add a secure “continue on phone” handoff using a short-lived, one-time QR token. Do not encode the reusable invitation/session credential directly in the QR code.
+4. Add explicit signature-field placement to templates for agreements that need placement other than the standard closing signature section.
+5. Add a lifecycle timeline showing sent, opened, reviewed, returned, signature requested, viewed, signed, and executed events.
+6. Add “remind next signer,” resend, and delivery-status controls beside the currently responsible participant.
+7. Add decline-to-sign, delegate/reassign, and report-a-problem paths so signing is not a forced dead end.
+8. Add a final review step that scrolls the signer through required fields and clearly distinguishes review completion from signature adoption.
+9. Add downloadable original, final revision, executed artifact, and audit certificate actions.
 
 ### P2 — refinement
 

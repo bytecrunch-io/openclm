@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import {
   ArrowRight, Bell, Check, ChevronRight, CircleUserRound, FileCheck2, FileClock, FilePenLine,
-  FilePlus2, Files, LayoutDashboard, Moon, Plus, Settings, ShieldCheck, Sun, Webhook, X,
+  Building2, FilePlus2, Files, LayoutDashboard, Moon, Plus, Settings, ShieldCheck, Sun, Webhook, X,
 } from 'lucide-react';
 import type { Agreement, CreateAgreement, Notification, Template } from '@bytecrunch/contracts-domain';
 import logo from './assets/logomark.svg';
@@ -30,6 +30,7 @@ function AdminApp() {
   const [notifications, setNotifications] = useState<Notification[]>([]); const [showNotifications, setShowNotifications] = useState(false);
   const [selected, setSelected] = useState<Agreement>();
   const [creating, setCreating] = useState(false);
+  const [creatingEntity, setCreatingEntity] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
 
@@ -47,7 +48,8 @@ function AdminApp() {
   async function refresh() {
     try {
       setLoading(true); setError(undefined);
-      const [nextUser, nextAgreements, nextTemplates, nextNotifications] = await Promise.all([api.me(), api.agreements(), api.templates(), api.notifications()]);
+      const nextUser = await api.me(); api.selectEntity(nextUser.activeEntityId);
+      const [nextAgreements, nextTemplates, nextNotifications] = await Promise.all([api.agreements(), api.templates(), api.notifications()]);
       setUser(nextUser); setAgreements(nextAgreements); setTemplates(nextTemplates); setNotifications(nextNotifications);
       if (selected) setSelected(nextAgreements.find((item) => item.id === selected.id));
       else { const linkedAgreement = new URLSearchParams(window.location.search).get('agreement'); if (linkedAgreement) { const match = nextAgreements.find((item) => item.id === linkedAgreement); if (match) { setSelected(match); setView('agreements'); } } }
@@ -90,7 +92,7 @@ function AdminApp() {
 
       <main className="main-panel">
         <header className="topbar">
-          <div><span className="bc-eyebrow">// CONTRACT WORKSPACE</span></div>
+          <div className="entity-context"><span className="bc-eyebrow">// ACTING FOR</span>{user && <label><Building2 /><select aria-label="Active customer entity" value={user.activeEntityId} onChange={(event) => { api.selectEntity(event.target.value); setSelected(undefined); void refresh(); }}>{user.entities.map((membership) => <option key={membership.entityId} value={membership.entityId}>{membership.entity.legalName}</option>)}</select></label>}<button className="text-button" onClick={() => setCreatingEntity(true)}>Add entity</button></div>
           <div className="top-actions">
             <button className="icon-button notification-trigger" aria-label="Notifications" onClick={() => setShowNotifications((value) => !value)}><Bell />{notifications.some((item) => !item.readAt) && <i>{notifications.filter((item) => !item.readAt).length}</i>}</button>
             <button className="icon-button" aria-label={`Use ${theme === 'dark' ? 'light' : 'dark'} theme`} onClick={() => { const next = theme === 'dark' ? 'light' : 'dark'; localStorage.setItem('bc-contracts-theme-choice', next); setTheme(next); }}>{theme === 'dark' ? <Sun /> : <Moon />}</button>
@@ -108,6 +110,7 @@ function AdminApp() {
         {view === 'settings' && <IntegrationSettings />}
       </main>
       {creating && <CreateAgreementModal templates={templates} onClose={() => setCreating(false)} onCreated={(agreement) => { setAgreements((items) => [agreement, ...items]); setCreating(false); openAgreement(agreement); }} onError={setError} />}
+      {creatingEntity && <CreateEntityModal onClose={() => setCreatingEntity(false)} onCreated={(entityId) => { api.selectEntity(entityId); setCreatingEntity(false); setSelected(undefined); void refresh(); }} onError={setError} />}
     </div>
   );
 }
@@ -208,6 +211,13 @@ function CreateAgreementModal({ templates, onClose, onCreated, onError }: { temp
       </form>
     </section>
   </div>;
+}
+
+function CreateEntityModal({ onClose, onCreated, onError }: { onClose: () => void; onCreated: (entityId: string) => void; onError: (message: string) => void }) {
+  const [legalName, setLegalName] = useState(''); const [slug, setSlug] = useState(''); const [businessAddress, setBusinessAddress] = useState(''); const [registrationNumber, setRegistrationNumber] = useState(''); const [jurisdiction, setJurisdiction] = useState(''); const [busy, setBusy] = useState(false);
+  const suggestedSlug = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  async function submit(event: FormEvent) { event.preventDefault(); try { setBusy(true); const entity = await api.createEntity({ legalName, slug, ...(businessAddress ? { businessAddress } : {}), ...(registrationNumber ? { registrationNumber } : {}), ...(jurisdiction ? { jurisdiction } : {}) }); onCreated(entity.id); } catch (cause) { onError(cause instanceof Error ? cause.message : 'Could not create customer entity.'); } finally { setBusy(false); } }
+  return <div className="modal-backdrop" role="presentation" onMouseDown={onClose}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="create-entity-heading" onMouseDown={(event) => event.stopPropagation()}><header><div><span className="bc-eyebrow bc-text-orange">// CUSTOMER ENTITY</span><h2 id="create-entity-heading">Add an entity you represent</h2></div><button className="icon-button" onClick={onClose}><X /></button></header><form onSubmit={(event) => void submit(event)}><label>Legal name<input required value={legalName} onChange={(event) => { const previousSuggestion = suggestedSlug(legalName); setLegalName(event.target.value); if (!slug || slug === previousSuggestion) setSlug(suggestedSlug(event.target.value)); }} placeholder="Example ApS" /></label><label>Entity identifier<input required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" value={slug} onChange={(event) => setSlug(event.target.value.toLowerCase())} placeholder="example-aps" /><small>Used in URLs and API context. It cannot be changed in this version.</small></label><label>Business address<textarea value={businessAddress} onChange={(event) => setBusinessAddress(event.target.value)} rows={3} /></label><div className="form-split"><label>Registration number<input value={registrationNumber} onChange={(event) => setRegistrationNumber(event.target.value)} /></label><label>Jurisdiction<input value={jurisdiction} onChange={(event) => setJurisdiction(event.target.value)} placeholder="e.g. DK" /></label></div><footer><button type="button" className="button button-secondary" onClick={onClose}>Cancel</button><button disabled={busy} className="button button-accent">{busy ? <><BusyMark /> Adding…</> : <>Add entity <ArrowRight /></>}</button></footer></form></section></div>;
 }
 
 function IntegrationSettings() { return <div className="page"><div className="page-heading"><div><span className="bc-eyebrow bc-text-blue">// INTEGRATIONS</span><h1>Connect without coupling.</h1><p>OAuth2 clients create secure handoffs and query execution state. External subjects stay scoped to their integration.</p></div></div><div className="integration-grid"><article><Webhook /><span className="bc-eyebrow">// CALLBACKS</span><h3>Webhooks</h3><p>Receive signed, idempotent events when agreements move through review and execution.</p><code>agreement.executed</code></article><article><ShieldCheck /><span className="bc-eyebrow">// SECURE HANDOFF</span><h3>Host-mediated sessions</h3><p>Your backend authenticates the visitor, creates a short-lived handoff, and redirects them to Contracts. No external ID is entered in the browser.</p><code>POST /v1/integration-sessions</code></article></div><div className="api-call"><div><span className="method">GET</span><code>/v1/integration-status</code></div><pre>{`?integrationKey=fiftysixty\n&subject=user_01JXYZ\n&templateKey=mutual-nda\n&minimumVersion=1`}</pre></div></div>; }

@@ -9,6 +9,7 @@ export interface ExternalSession {
   agreementId: string;
   participantId: string;
   tenantId: string;
+  accountId?: string;
 }
 
 declare module 'hono' {
@@ -46,6 +47,7 @@ export function externalSessionMiddleware(): MiddlewareHandler {
       context.set('externalSession', {
         invitationId: String(payload.invitationId), agreementId: String(payload.agreementId),
         participantId: String(payload.participantId), tenantId: String(payload.tenantId),
+        ...(payload.accountId ? { accountId: String(payload.accountId) } : {}),
       });
       return next();
     } catch {

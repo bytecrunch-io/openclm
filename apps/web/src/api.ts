@@ -7,6 +7,8 @@ import {
   TemplateSchema,
   ParticipantSchema,
   NotificationSchema,
+  CustomerEntitySchema,
+  EntityMembershipViewSchema,
   type Agreement,
   type CreateAgreement,
   type CreateSuggestion,
@@ -14,7 +16,7 @@ import {
 } from '@bytecrunch/contracts-domain';
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3001';
-const UserSchema = z.object({ id: z.string(), email: z.string().email(), name: z.string(), tenantId: z.string(), scopes: z.array(z.string()) });
+const UserSchema = z.object({ id: z.string(), email: z.string().email(), name: z.string(), activeEntityId: z.string(), entities: z.array(EntityMembershipViewSchema), scopes: z.array(z.string()) });
 const ExternalViewSchema = z.object({ agreement: AgreementSchema, participant: ParticipantSchema, party: AgreementPartySchema.nullable() });
 const InvitationResponseSchema = z.object({
   id: z.string(), tenantId: z.string(), agreementId: z.string(), participantId: z.string(), email: z.string().email(),
@@ -24,10 +26,11 @@ export type User = z.infer<typeof UserSchema>;
 export type ExternalView = z.infer<typeof ExternalViewSchema>;
 
 async function request<T>(path: string, schema: z.ZodType<T>, init?: RequestInit): Promise<T> {
+  const activeEntityId = localStorage.getItem('bc-contracts-active-entity');
   const response = await fetch(`${API_URL}${path}`, {
     credentials: 'include',
     ...init,
-    headers: { 'content-type': 'application/json', ...init?.headers },
+    headers: { 'content-type': 'application/json', ...(activeEntityId ? { 'x-bytecrunch-entity-id': activeEntityId } : {}), ...init?.headers },
   });
   const data: unknown = await response.json();
   if (!response.ok) {
@@ -39,7 +42,9 @@ async function request<T>(path: string, schema: z.ZodType<T>, init?: RequestInit
 
 export const api = {
   loginUrl: `${API_URL}/auth/login`,
-  me: () => request('/auth/me', UserSchema),
+  me: () => request('/v1/me', UserSchema),
+  selectEntity: (entityId: string) => { localStorage.setItem('bc-contracts-active-entity', entityId); },
+  createEntity: (input: { slug: string; legalName: string; businessAddress?: string; registrationNumber?: string; jurisdiction?: string }) => request('/v1/entities', CustomerEntitySchema, { method: 'POST', body: JSON.stringify(input) }),
   templates: () => request('/v1/templates', z.array(TemplateSchema)),
   agreements: () => request('/v1/agreements', z.array(AgreementSchema)),
   agreement: (id: string) => request(`/v1/agreements/${id}`, AgreementSchema),
@@ -61,7 +66,8 @@ export const api = {
   acceptEntity: (agreementId: string, partyId: string) => request(`/v1/agreements/${agreementId}/parties/${partyId}/accept-entity`, AgreementSchema, { method: 'POST' }),
   sign: (agreementId: string, participantId: string, signature: SignatureInput) => request(`/v1/agreements/${agreementId}/sign`, AgreementSchema, { method: 'POST', body: JSON.stringify({ participantId, intentConfirmed: true, signature }) }),
   invite: (agreementId: string, participantId: string) => request(`/v1/agreements/${agreementId}/participants/${participantId}/invite`, InvitationResponseSchema, { method: 'POST' }),
-  exchangeInvitation: (token: string) => request('/public/invitations/exchange', z.object({ accepted: z.literal(true) }), { method: 'POST', body: JSON.stringify({ token }) }),
+  exchangeInvitation: (token: string) => request('/public/invitations/exchange', z.union([z.object({ accepted: z.literal(true) }), z.object({ accepted: z.literal(false), verificationRequired: z.literal(true), message: z.string() })]), { method: 'POST', body: JSON.stringify({ token }) }),
+  exchangeAccess: (token: string) => request('/public/access/exchange', z.object({ accepted: z.literal(true) }), { method: 'POST', body: JSON.stringify({ token }) }),
   exchangeIntegrationSession: (token: string) => request('/public/integration-sessions/exchange', z.object({ accepted: z.literal(true), returnUrl: z.string().url() }), { method: 'POST', body: JSON.stringify({ token }) }),
   externalSession: () => request('/public/session', ExternalViewSchema),
   onboardExternal: (input: { name: string; title: string; capacity: string; authorityConfirmed: boolean; entity: { legalName: string; businessAddress?: string; registrationNumber?: string; jurisdiction?: string } }) => request('/public/session/onboarding', ExternalViewSchema, { method: 'POST', body: JSON.stringify(input) }),

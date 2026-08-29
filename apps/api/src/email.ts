@@ -25,6 +25,16 @@ export async function sendNotificationEmail(input: { email: string; subject: str
   });
 }
 
+export async function sendAccessEmail(input: { email: string; name: string; agreementTitle: string; accessUrl: string }): Promise<void> {
+  if (!config.SMTP_HOST) { console.log(`Return access for ${input.email}: ${input.accessUrl}`); return; }
+  const transport = nodemailer.createTransport({ host: config.SMTP_HOST, port: config.SMTP_PORT, secure: false });
+  await transport.sendMail({
+    from: config.SMTP_FROM, to: input.email, subject: `Return to ${input.agreementTitle}`,
+    text: `${input.name},\n\nUse this fresh secure link to continue “${input.agreementTitle}”.\n\n${input.accessUrl}\n\nThis link expires in 15 minutes and can only be used once.`,
+    html: `<div style="background:#0a0a0a;color:#e3e3e3;font-family:Arial,sans-serif;padding:40px"><div style="border-top:3px solid #ed650f;padding-top:24px;max-width:600px"><p style="font-family:monospace;letter-spacing:.18em;color:#ed650f;font-size:11px">// BYTECRUNCH CONTRACTS</p><h1 style="font-weight:300;color:white">Continue your agreement.</h1><p>${escapeHtml(input.name)}, use this fresh secure link to return to <strong>${escapeHtml(input.agreementTitle)}</strong>.</p><p style="margin:32px 0"><a href="${input.accessUrl}" style="background:#ed650f;color:white;padding:14px 20px;text-decoration:none">Continue agreement →</a></p><p style="color:#9ca3af;font-size:13px">This link expires in 15 minutes and can only be used once.</p></div></div>`,
+  });
+}
+
 function escapeHtml(value: string): string {
   return value.replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[character]!);
 }

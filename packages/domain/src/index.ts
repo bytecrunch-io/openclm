@@ -64,6 +64,59 @@ export const LegalEntitySchema = z.object({
 });
 export type LegalEntity = z.infer<typeof LegalEntitySchema>;
 
+// A customer entity is both the tenant/security boundary and the legal person
+// whose templates and agreements are being managed. ByteCrunch operates the
+// platform; it is not a parent workspace for customer entities.
+export const EntityRoleSchema = z.enum(['administrator', 'template_manager', 'contract_manager', 'signatory', 'viewer']);
+export const EntityPermissionSchema = z.enum([
+  'entity.manage', 'members.manage', 'templates.read', 'templates.write',
+  'agreements.read', 'agreements.write', 'agreements.sign',
+]);
+export const CustomerEntitySchema = z.object({
+  id: z.string().min(1),
+  slug: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+  legalName: z.string().min(1).max(240),
+  businessAddress: z.string().max(500).nullable().default(null),
+  registrationNumber: z.string().max(100).nullable().default(null),
+  jurisdiction: z.string().max(100).nullable().default(null),
+  createdAt: z.string().datetime(),
+});
+export type CustomerEntity = z.infer<typeof CustomerEntitySchema>;
+export const CreateCustomerEntitySchema = CustomerEntitySchema.pick({
+  slug: true, legalName: true, businessAddress: true, registrationNumber: true, jurisdiction: true,
+}).partial({ businessAddress: true, registrationNumber: true, jurisdiction: true });
+
+export const AccountSchema = z.object({
+  id: z.string().min(1), email: z.string().email(), displayName: z.string().min(1).max(160), createdAt: z.string().datetime(),
+});
+export type Account = z.infer<typeof AccountSchema>;
+export const AuthIdentitySchema = z.object({
+  id: z.string().min(1), accountId: z.string().min(1), provider: z.enum(['dev', 'oidc', 'email']),
+  issuer: z.string().min(1), subject: z.string().min(1), emailVerified: z.boolean(), createdAt: z.string().datetime(),
+});
+export type AuthIdentity = z.infer<typeof AuthIdentitySchema>;
+export const EntityMembershipSchema = z.object({
+  id: z.string().min(1), accountId: z.string().min(1), entityId: z.string().min(1),
+  roles: z.array(EntityRoleSchema).min(1), permissions: z.array(EntityPermissionSchema),
+  status: z.enum(['invited', 'active', 'suspended']), createdAt: z.string().datetime(),
+});
+export type EntityMembership = z.infer<typeof EntityMembershipSchema>;
+export const EntityMembershipViewSchema = EntityMembershipSchema.extend({ entity: CustomerEntitySchema });
+export type EntityMembershipView = z.infer<typeof EntityMembershipViewSchema>;
+
+export const AgreementAccessSchema = z.object({
+  id: z.string().min(1), tenantId: z.string().min(1), agreementId: z.string().min(1),
+  participantId: z.string().min(1), accountId: z.string().min(1), status: z.enum(['active', 'revoked']),
+  grantedAt: z.string().datetime(), lastAccessedAt: z.string().datetime().nullable().default(null),
+});
+export type AgreementAccess = z.infer<typeof AgreementAccessSchema>;
+export const AccessChallengeSchema = z.object({
+  id: z.string().min(1), accountId: z.string().min(1), agreementAccessId: z.string().min(1),
+  tokenHash: z.string().length(64), status: z.enum(['pending', 'accepted', 'expired']),
+  expiresAt: z.string().datetime(), createdAt: z.string().datetime(), acceptedAt: z.string().datetime().nullable(),
+});
+export type AccessChallenge = z.infer<typeof AccessChallengeSchema>;
+
 export const AgreementPartySchema = z.object({
   id: z.string().min(1),
   role: PartyRoleSchema,
@@ -333,6 +386,8 @@ export const InvitationSchema = z.object({
   expiresAt: z.string().datetime(),
   createdAt: z.string().datetime(),
   acceptedAt: z.string().datetime().nullable(),
+  acceptedByAccountId: z.string().min(1).nullable().default(null),
+  recoverySentAt: z.string().datetime().nullable().default(null),
 });
 export type Invitation = z.infer<typeof InvitationSchema>;
 

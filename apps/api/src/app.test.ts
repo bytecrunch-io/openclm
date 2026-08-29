@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createApp } from './app.js';
 import { MemoryRepository } from './repository.js';
+import { hashInvitationToken } from './external-auth.js';
 
 async function testApp() {
   const repository = new MemoryRepository();
@@ -20,10 +21,39 @@ describe('contracts API vertical slice', () => {
     expect(response.status).toBe(201);
     const agreement = await response.json() as { participants: Array<{ personId: string; externalSubjectId: null; name: string }>; parties: Array<{ role: string; entity: { legalName: string | null } }> };
     expect(agreement.participants).toHaveLength(3);
-    expect(agreement.participants.every((participant) => participant.personId.startsWith('person_') && participant.externalSubjectId === null)).toBe(true);
+    expect(agreement.participants.filter((participant) => participant.personId.startsWith('person_'))).toHaveLength(2);
+    expect(agreement.participants.some((participant) => participant.personId.startsWith('acct_'))).toBe(true);
+    expect(agreement.participants.every((participant) => participant.externalSubjectId === null)).toBe(true);
     expect(agreement.participants[0]!.name).toBe('reviewer');
     expect(agreement.parties.find((party) => party.role === 'sender')?.entity.legalName).toBe('ByteCrunch ApS');
     expect(agreement.parties.find((party) => party.role === 'counterparty')?.entity.legalName).toBeNull();
+  });
+
+  it('switches between customer entities without making ByteCrunch a parent workspace', async () => {
+    const app = await testApp();
+    const createdEntity = await app.request('/v1/entities', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ slug: 'second-customer', legalName: 'Second Customer ApS', businessAddress: 'Second Street 2' }) });
+    expect(createdEntity.status).toBe(201); const entity = await createdEntity.json() as { id: string };
+    const me = await app.request('/v1/me', { headers: { 'x-bytecrunch-entity-id': entity.id } });
+    expect(await me.json()).toMatchObject({ activeEntityId: entity.id, entities: expect.arrayContaining([expect.objectContaining({ entity: expect.objectContaining({ legalName: 'Second Customer ApS' }) })]) });
+    const agreementResponse = await app.request('/v1/agreements', { method: 'POST', headers: { 'content-type': 'application/json', 'x-bytecrunch-entity-id': entity.id }, body: JSON.stringify({ title: 'Entity-scoped NDA', templateKey: 'mutual-nda', participants: [], metadata: {}, parties: [{ role: 'counterparty', minimumSignatures: 1, entity: {}, participants: [{ email: 'counterparty@example.com', role: 'signatory', required: true }] }] }) });
+    expect(agreementResponse.status).toBe(201); expect(await agreementResponse.json()).toMatchObject({ tenantId: entity.id, parties: expect.arrayContaining([expect.objectContaining({ role: 'sender', entity: expect.objectContaining({ id: entity.id, legalName: 'Second Customer ApS' }) })]) });
+    const originalEntityAgreements = await app.request('/v1/agreements', { headers: { 'x-bytecrunch-entity-id': 'bytecrunch' } }); expect(await originalEntityAgreements.json()).toHaveLength(0);
+    expect((await app.request('/v1/agreements', { headers: { 'x-bytecrunch-entity-id': 'not-a-membership' } })).status).toBe(403);
+  });
+
+  it('binds an accepted invite to durable account access and permits a fresh return challenge', async () => {
+    const repository = new MemoryRepository(); await repository.init(); const app = createApp(repository);
+    const createdResponse = await app.request('/v1/agreements', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: 'Returnable NDA', templateKey: 'mutual-nda', participants: [], metadata: {}, parties: [{ role: 'counterparty', minimumSignatures: 1, entity: {}, participants: [{ email: 'return@example.com', name: 'Return Recipient', role: 'signatory', required: true }] }] }) });
+    const created = await createdResponse.json() as { id: string; createdByParticipantId: string; participants: Array<{ id: string }> }; const participant = created.participants.find((item) => item.id !== created.createdByParticipantId)!;
+    const invitationResponse = await app.request(`/v1/agreements/${created.id}/participants/${participant.id}/invite`, { method: 'POST' }); const invitationBody = await invitationResponse.json() as { invitationUrl: string }; const inviteToken = new URL(invitationBody.invitationUrl).searchParams.get('token')!;
+    expect((await app.request('/public/invitations/exchange', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: inviteToken }) })).status).toBe(200);
+    const accepted = await repository.getInvitationByTokenHash(hashInvitationToken(inviteToken)); expect(accepted?.acceptedByAccountId).toMatch(/^acct_/);
+    const access = await repository.findAgreementAccess(accepted!.acceptedByAccountId!, created.id, participant.id); expect(access).toMatchObject({ status: 'active' });
+    const repeated = await app.request('/public/invitations/exchange', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: inviteToken }) }); expect(repeated.status).toBe(202); expect(await repeated.json()).toMatchObject({ accepted: false, verificationRequired: true });
+    const returnToken = 'fresh-return-token-with-enough-entropy'; await repository.createAccessChallenge({ id: 'challenge_test', accountId: access!.accountId, agreementAccessId: access!.id, tokenHash: hashInvitationToken(returnToken), status: 'pending', expiresAt: new Date(Date.now() + 60_000).toISOString(), createdAt: new Date().toISOString(), acceptedAt: null });
+    const returned = await app.request('/public/access/exchange', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: returnToken }) }); expect(returned.status).toBe(200); const cookie = returned.headers.get('set-cookie')!.split(';')[0]!;
+    expect((await app.request('/public/session', { headers: { cookie } })).status).toBe(200);
+    expect((await app.request('/public/access/exchange', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: returnToken }) })).status).toBe(410);
   });
 
   it('uses an integration-scoped identity link for a secure handoff and status lookup', async () => {

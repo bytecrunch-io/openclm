@@ -16,8 +16,12 @@ Open-source agreement infrastructure for review, redlining, execution, and integ
 - Prominent next-action guidance and a sender attention queue
 - Responsive typed/drawn signature ceremony with touch support and document-bound signature blocks
 - Legal entities, agreement parties, and per-party signature requirements
+- Global human accounts with memberships in one or more customer entities
+- A visible “Acting for” entity switcher; templates, agreements, and sender details follow the selected customer entity
+- Entity-scoped role and permission foundations for administrators, template managers, contract managers, signatories, and viewers
 - Optional counterparty details with recipient confirmation and sender approval for material changes
-- One-time participant invitations delivered through local SMTP/Mailpit
+- One-time participant invitations that create durable account-to-agreement access
+- Safe return access: an accepted invitation sends a fresh, single-use 15-minute email link instead of becoming a dead end
 - External onboarding with title, signing capacity, and authority confirmation
 - External reviewer/signatory portal with signatory nomination
 - Agreement-status query and multi-requirement evaluation API
@@ -29,6 +33,8 @@ Open-source agreement infrastructure for review, redlining, execution, and integ
 - PostgreSQL and in-memory repositories
 - Dark/light Bytecrunch interface
 - Fully local Docker stack
+
+ByteCrunch is the platform operator, not a parent workspace or implicit contracting party. In the hosted product each customer legal entity is its own tenant; one account may be a member of several customer entities. See [identity and access](./docs/identity-and-access.md).
 
 The current signing action is a clearly labeled development witness. It is not a certified electronic-signature implementation. See the [architecture](./docs/architecture.md) and [UX audit](./docs/ux-audit.md) before using this with real contracts.
 
@@ -67,6 +73,9 @@ Everything runs locally. There is no required hosted database, identity provider
 9. Return to the external browser, open the signing ceremony, type or draw a signature, confirm intent, and sign.
 10. In the administrator workspace, follow the prominent **Countersign required** action and sign the exact same revision.
 11. Verify that both signature blocks appear, the agreement becomes executed, and the agreement-status API returns `satisfied: true`.
+12. Close the participant browser, reopen the original invitation, then open the fresh return email in Mailpit. The new 15-minute link restores access without reusing the accepted invitation.
+
+To exercise multi-entity membership, select **Add entity** next to **Acting for**. Creating and switching to it gives that customer entity its own template copy, agreements, sender identity, and data boundary.
 
 An automated equivalent runs against the Docker services:
 
@@ -74,7 +83,7 @@ An automated equivalent runs against the Docker services:
 npm run e2e:local
 ```
 
-The automated flow covers OAuth2 client credentials, multiple participants without external IDs, invitation delivery to Mailpit, one-time token exchange, entity onboarding, private draft editing, consolidated in-app and email notifications at review hand-back, owner resolution, document-bound counterparty and owner signatures, plus an integration-scoped handoff and execution-status verification.
+The automated tests cover multi-entity selection and isolation, durable invite claiming, single-use return challenges, multiple participants without external IDs, entity onboarding, private draft editing, consolidated notifications, owner resolution, and document-bound signatures. The Docker flow additionally covers Mailpit delivery, OAuth2 client credentials, and integration-scoped handoff/status verification.
 
 ## Run application code directly
 
@@ -132,13 +141,14 @@ docker compose config
 
 ## Next production milestones
 
-1. Add a signing-provider interface and a self-hosted PAdES-capable provider.
-2. Persist immutable revision and audit-event tables rather than aggregate snapshots alone.
-3. Add party-private review drafts and optional shared-OIDC/account-linking user experiences.
-4. Add webhook outbox persistence, retries, replay, and delivery inspection.
-5. Store original, rendered, and executed artifacts in the configured S3-compatible store.
-6. Add scoped client administration and enforce scopes per route.
-7. Add PDF rendering, malware scanning, retention controls, and backups.
+1. Add entity member invitation/administration UI and expand the current route-level checks into resource-level policy tests.
+2. Add a cross-entity personal agreement inbox plus passkey and email-code sign-in for recipients.
+3. Add recent-authentication checks, signing-capacity evidence, and an append-only signing/audit evidence package.
+4. Add a signing-provider interface and a self-hosted PAdES-capable provider.
+5. Persist immutable revision and audit-event tables rather than aggregate snapshots alone.
+6. Add webhook outbox persistence, retries, replay, and delivery inspection.
+7. Store original, rendered, and executed artifacts in the configured S3-compatible store.
+8. Add scoped client administration, PDF rendering, malware scanning, retention controls, and backups.
 
 ## License
 

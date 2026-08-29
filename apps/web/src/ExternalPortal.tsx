@@ -10,6 +10,7 @@ export default function ExternalPortal() {
   const [loading, setLoading] = useState(true);
   const [busyAction, setBusyAction] = useState<string>();
   const [error, setError] = useState<string>();
+  const [recoveryMessage, setRecoveryMessage] = useState<string>();
   useEffect(() => {
     const stored = localStorage.getItem('bc-contracts-theme-choice');
     const media = window.matchMedia('(prefers-color-scheme: light)');
@@ -21,9 +22,14 @@ export default function ExternalPortal() {
     try {
       setLoading(true); setError(undefined);
       const token = new URLSearchParams(window.location.search).get('token');
+      const accessToken = new URLSearchParams(window.location.search).get('accessToken');
       const integrationToken = new URLSearchParams(window.location.search).get('integrationToken');
-      if (token) {
-        await api.exchangeInvitation(token);
+      if (accessToken) {
+        await api.exchangeAccess(accessToken);
+        window.history.replaceState({}, '', '/invite');
+      } else if (token) {
+        const result = await api.exchangeInvitation(token);
+        if (!result.accepted) { setRecoveryMessage(result.message); return; }
         window.history.replaceState({}, '', '/invite');
       } else if (integrationToken) {
         await api.exchangeIntegrationSession(integrationToken);
@@ -42,6 +48,7 @@ export default function ExternalPortal() {
   }
 
   if (loading && !view) return <PortalFrame><div className="portal-loading"><div className="loading-line" /><span className="bc-eyebrow">// OPENING SECURE INVITATION</span></div></PortalFrame>;
+  if (recoveryMessage && !view) return <PortalFrame><div className="portal-error"><ShieldCheck /><span className="bc-eyebrow bc-text-orange">// CHECK YOUR EMAIL</span><h1>A fresh return link is on its way.</h1><p>{recoveryMessage}</p><small>You can close this tab. The new link expires in 15 minutes.</small></div></PortalFrame>;
   if (!view) return <PortalFrame><div className="portal-error"><ShieldCheck /><span className="bc-eyebrow bc-text-orange">// INVITATION UNAVAILABLE</span><h1>This link can’t be opened.</h1><p>{error ?? 'Ask the sender for a new invitation.'}</p></div></PortalFrame>;
 
   if (!view.participant.onboardingCompletedAt) {

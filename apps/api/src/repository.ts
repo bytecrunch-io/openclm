@@ -10,6 +10,12 @@ import {
   NotificationSchema,
   NotificationOutboxSchema,
   TemplateSchema,
+  AccountSchema,
+  AuthIdentitySchema,
+  CustomerEntitySchema,
+  EntityMembershipSchema,
+  AgreementAccessSchema,
+  AccessChallengeSchema,
   type Agreement,
   type CreateAgreement,
   type CreateTemplate,
@@ -21,6 +27,12 @@ import {
   type IntegrationSession,
   type Notification,
   type NotificationOutbox,
+  type Account,
+  type AuthIdentity,
+  type CustomerEntity,
+  type EntityMembership,
+  type AgreementAccess,
+  type AccessChallenge,
 } from '@bytecrunch/contracts-domain';
 
 export interface WebhookEndpoint {
@@ -62,6 +74,20 @@ export interface Repository {
   createNotification(notification: Notification, outbox: NotificationOutbox): Promise<void>;
   listPendingOutbox(limit: number): Promise<NotificationOutbox[]>;
   saveOutbox(item: NotificationOutbox): Promise<void>;
+  findOrCreateAccountByIdentity(provider: 'dev' | 'oidc', issuer: string, subject: string, email: string, displayName: string): Promise<Account>;
+  findOrCreateAccountByEmail(email: string, displayName: string): Promise<Account>;
+  getAccount(id: string): Promise<Account | undefined>;
+  getCustomerEntity(id: string): Promise<CustomerEntity | undefined>;
+  createCustomerEntity(input: Omit<CustomerEntity, 'id' | 'createdAt'> & { id?: string }): Promise<CustomerEntity>;
+  listEntityMemberships(accountId: string): Promise<EntityMembership[]>;
+  grantEntityMembership(accountId: string, entityId: string, roles: EntityMembership['roles'], permissions: EntityMembership['permissions']): Promise<EntityMembership>;
+  createAgreementAccess(access: AgreementAccess): Promise<void>;
+  getAgreementAccess(id: string): Promise<AgreementAccess | undefined>;
+  findAgreementAccess(accountId: string, agreementId: string, participantId: string): Promise<AgreementAccess | undefined>;
+  saveAgreementAccess(access: AgreementAccess): Promise<void>;
+  createAccessChallenge(challenge: AccessChallenge): Promise<void>;
+  getAccessChallengeByTokenHash(tokenHash: string): Promise<AccessChallenge | undefined>;
+  saveAccessChallenge(challenge: AccessChallenge): Promise<void>;
 }
 
 function now(): string { return new Date().toISOString(); }
@@ -79,8 +105,17 @@ export class MemoryRepository implements Repository {
   protected integrationSessions: IntegrationSession[] = [];
   protected notifications: Notification[] = [];
   protected notificationOutbox: NotificationOutbox[] = [];
+  protected accounts: Account[] = [];
+  protected authIdentities: AuthIdentity[] = [];
+  protected customerEntities: CustomerEntity[] = [];
+  protected entityMemberships: EntityMembership[] = [];
+  protected agreementAccess: AgreementAccess[] = [];
+  protected accessChallenges: AccessChallenge[] = [];
 
   async init(): Promise<void> {
+    if (!this.customerEntities.some((entity) => entity.id === 'bytecrunch')) {
+      await this.createCustomerEntity({ id: 'bytecrunch', slug: 'bytecrunch', legalName: 'ByteCrunch ApS', businessAddress: null, registrationNumber: null, jurisdiction: 'DK' });
+    }
     if (this.templates.length === 0) {
       await this.createTemplate('bytecrunch', {
         key: 'mutual-nda', name: 'Mutual NDA', description: 'A concise mutual confidentiality agreement.',
@@ -190,6 +225,37 @@ export class MemoryRepository implements Repository {
   async createNotification(notification: Notification, outbox: NotificationOutbox) { this.notifications.push(NotificationSchema.parse(notification)); this.notificationOutbox.push(NotificationOutboxSchema.parse(outbox)); }
   async listPendingOutbox(limit: number) { return this.notificationOutbox.filter((item) => ['pending', 'failed'].includes(item.status) && item.nextAttemptAt <= now()).slice(0, limit).map((item) => structuredClone(item)); }
   async saveOutbox(item: NotificationOutbox) { const index = this.notificationOutbox.findIndex((value) => value.id === item.id); if (index < 0) throw new Error('Outbox item not found.'); this.notificationOutbox[index] = NotificationOutboxSchema.parse(item); }
+  async findOrCreateAccountByIdentity(provider: 'dev' | 'oidc', issuer: string, subject: string, email: string, displayName: string) {
+    const identity = this.authIdentities.find((item) => item.provider === provider && item.issuer === issuer && item.subject === subject);
+    if (identity) return structuredClone(this.accounts.find((item) => item.id === identity.accountId)!);
+    const account = await this.findOrCreateAccountByEmail(email, displayName);
+    this.authIdentities.push(AuthIdentitySchema.parse({ id: `auth_${randomUUID()}`, accountId: account.id, provider, issuer, subject, emailVerified: true, createdAt: now() }));
+    return account;
+  }
+  async findOrCreateAccountByEmail(email: string, displayName: string) {
+    const normalized = email.toLowerCase(); const existing = this.accounts.find((item) => item.email === normalized);
+    if (existing) return structuredClone(existing);
+    const account = AccountSchema.parse({ id: `acct_${randomUUID()}`, email: normalized, displayName, createdAt: now() }); this.accounts.push(account); return structuredClone(account);
+  }
+  async getAccount(id: string) { const value = this.accounts.find((item) => item.id === id); return value ? structuredClone(value) : undefined; }
+  async getCustomerEntity(id: string) { const value = this.customerEntities.find((item) => item.id === id); return value ? structuredClone(value) : undefined; }
+  async createCustomerEntity(input: Omit<CustomerEntity, 'id' | 'createdAt'> & { id?: string }) {
+    if (this.customerEntities.some((item) => item.slug === input.slug)) throw new Error('An entity with this slug already exists.');
+    const value = CustomerEntitySchema.parse({ ...input, id: input.id ?? `org_${randomUUID()}`, createdAt: now() }); this.customerEntities.push(value); return structuredClone(value);
+  }
+  async listEntityMemberships(accountId: string) { return this.entityMemberships.filter((item) => item.accountId === accountId).map((item) => structuredClone(item)); }
+  async grantEntityMembership(accountId: string, entityId: string, roles: EntityMembership['roles'], permissions: EntityMembership['permissions']) {
+    const existing = this.entityMemberships.find((item) => item.accountId === accountId && item.entityId === entityId);
+    if (existing) return structuredClone(existing);
+    const value = EntityMembershipSchema.parse({ id: `membership_${randomUUID()}`, accountId, entityId, roles, permissions, status: 'active', createdAt: now() }); this.entityMemberships.push(value); return structuredClone(value);
+  }
+  async createAgreementAccess(access: AgreementAccess) { if (!this.agreementAccess.some((item) => item.accountId === access.accountId && item.agreementId === access.agreementId && item.participantId === access.participantId)) this.agreementAccess.push(AgreementAccessSchema.parse(access)); }
+  async getAgreementAccess(id: string) { const value = this.agreementAccess.find((item) => item.id === id); return value ? structuredClone(value) : undefined; }
+  async findAgreementAccess(accountId: string, agreementId: string, participantId: string) { const value = this.agreementAccess.find((item) => item.accountId === accountId && item.agreementId === agreementId && item.participantId === participantId); return value ? structuredClone(value) : undefined; }
+  async saveAgreementAccess(access: AgreementAccess) { const index = this.agreementAccess.findIndex((item) => item.id === access.id); if (index < 0) throw new Error('Agreement access not found.'); this.agreementAccess[index] = AgreementAccessSchema.parse(access); }
+  async createAccessChallenge(challenge: AccessChallenge) { this.accessChallenges.push(AccessChallengeSchema.parse(challenge)); }
+  async getAccessChallengeByTokenHash(tokenHash: string) { const value = this.accessChallenges.find((item) => item.tokenHash === tokenHash); return value ? structuredClone(value) : undefined; }
+  async saveAccessChallenge(challenge: AccessChallenge) { const index = this.accessChallenges.findIndex((item) => item.id === challenge.id); if (index < 0) throw new Error('Access challenge not found.'); this.accessChallenges[index] = AccessChallengeSchema.parse(challenge); }
 }
 
 export class PostgresRepository extends MemoryRepository {
@@ -228,7 +294,16 @@ export class PostgresRepository extends MemoryRepository {
       CREATE INDEX IF NOT EXISTS notifications_recipient_idx ON notifications (tenant_id, recipient_person_id, created_at DESC);
       CREATE TABLE IF NOT EXISTS notification_outbox (id text PRIMARY KEY, notification_id text NOT NULL, status text NOT NULL, next_attempt_at timestamptz NOT NULL, payload jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
       CREATE INDEX IF NOT EXISTS notification_outbox_pending_idx ON notification_outbox (status, next_attempt_at);
+      CREATE TABLE IF NOT EXISTS accounts (id text PRIMARY KEY, email text UNIQUE NOT NULL, payload jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
+      CREATE TABLE IF NOT EXISTS auth_identities (id text PRIMARY KEY, provider text NOT NULL, issuer text NOT NULL, subject text NOT NULL, account_id text NOT NULL, payload jsonb NOT NULL, UNIQUE (provider, issuer, subject));
+      CREATE TABLE IF NOT EXISTS customer_entities (id text PRIMARY KEY, slug text UNIQUE NOT NULL, payload jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
+      CREATE TABLE IF NOT EXISTS entity_memberships (id text PRIMARY KEY, account_id text NOT NULL, entity_id text NOT NULL, payload jsonb NOT NULL, UNIQUE (account_id, entity_id));
+      CREATE INDEX IF NOT EXISTS entity_memberships_account_idx ON entity_memberships (account_id);
+      CREATE TABLE IF NOT EXISTS agreement_access (id text PRIMARY KEY, account_id text NOT NULL, agreement_id text NOT NULL, participant_id text NOT NULL, payload jsonb NOT NULL, UNIQUE (account_id, agreement_id, participant_id));
+      CREATE TABLE IF NOT EXISTS access_challenges (id text PRIMARY KEY, token_hash text UNIQUE NOT NULL, payload jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
     `);
+    const platformEntity = CustomerEntitySchema.parse({ id: 'bytecrunch', slug: 'bytecrunch', legalName: 'ByteCrunch ApS', businessAddress: null, registrationNumber: null, jurisdiction: 'DK', createdAt: now() });
+    await this.pool.query('INSERT INTO customer_entities (id,slug,payload) VALUES ($1,$2,$3) ON CONFLICT (id) DO NOTHING', [platformEntity.id, platformEntity.slug, JSON.stringify(platformEntity)]);
     await this.pool.query(`
       UPDATE agreements AS agreement
       SET payload = jsonb_set(agreement.payload, '{participants}', (
@@ -343,6 +418,37 @@ export class PostgresRepository extends MemoryRepository {
   override async createNotification(notification: Notification, outbox: NotificationOutbox) { NotificationSchema.parse(notification); NotificationOutboxSchema.parse(outbox); const client = await this.pool.connect(); try { await client.query('BEGIN'); await client.query('INSERT INTO notifications (id,tenant_id,recipient_person_id,payload) VALUES ($1,$2,$3,$4)',[notification.id,notification.tenantId,notification.recipientPersonId,JSON.stringify(notification)]); await client.query('INSERT INTO notification_outbox (id,notification_id,status,next_attempt_at,payload) VALUES ($1,$2,$3,$4,$5)',[outbox.id,outbox.notificationId,outbox.status,outbox.nextAttemptAt,JSON.stringify(outbox)]); await client.query('COMMIT'); } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); } }
   override async listPendingOutbox(limit: number) { const result = await this.pool.query("SELECT payload FROM notification_outbox WHERE status IN ('pending','failed') AND next_attempt_at <= now() ORDER BY next_attempt_at LIMIT $1",[limit]); return result.rows.map((row) => NotificationOutboxSchema.parse(row.payload)); }
   override async saveOutbox(item: NotificationOutbox) { NotificationOutboxSchema.parse(item); await this.pool.query('UPDATE notification_outbox SET payload=$1,status=$2,next_attempt_at=$3 WHERE id=$4',[JSON.stringify(item),item.status,item.nextAttemptAt,item.id]); }
+  override async findOrCreateAccountByIdentity(provider: 'dev' | 'oidc', issuer: string, subject: string, email: string, displayName: string) {
+    const found = await this.pool.query('SELECT account.payload FROM auth_identities identity JOIN accounts account ON account.id=identity.account_id WHERE identity.provider=$1 AND identity.issuer=$2 AND identity.subject=$3', [provider, issuer, subject]);
+    if (found.rows[0]) return AccountSchema.parse(found.rows[0].payload);
+    const account = await this.findOrCreateAccountByEmail(email, displayName);
+    const identity = AuthIdentitySchema.parse({ id: `auth_${randomUUID()}`, accountId: account.id, provider, issuer, subject, emailVerified: true, createdAt: now() });
+    await this.pool.query('INSERT INTO auth_identities (id,provider,issuer,subject,account_id,payload) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (provider,issuer,subject) DO NOTHING', [identity.id, provider, issuer, subject, account.id, JSON.stringify(identity)]);
+    const resolved = await this.pool.query('SELECT account.payload FROM auth_identities identity JOIN accounts account ON account.id=identity.account_id WHERE identity.provider=$1 AND identity.issuer=$2 AND identity.subject=$3', [provider, issuer, subject]);
+    return AccountSchema.parse(resolved.rows[0]?.payload ?? account);
+  }
+  override async findOrCreateAccountByEmail(email: string, displayName: string) {
+    const normalized = email.toLowerCase(); const found = await this.pool.query('SELECT payload FROM accounts WHERE email=$1', [normalized]);
+    if (found.rows[0]) return AccountSchema.parse(found.rows[0].payload);
+    const account = AccountSchema.parse({ id: `acct_${randomUUID()}`, email: normalized, displayName, createdAt: now() });
+    await this.pool.query('INSERT INTO accounts (id,email,payload) VALUES ($1,$2,$3) ON CONFLICT (email) DO NOTHING', [account.id, account.email, JSON.stringify(account)]);
+    const resolved = await this.pool.query('SELECT payload FROM accounts WHERE email=$1', [normalized]); return AccountSchema.parse(resolved.rows[0]?.payload ?? account);
+  }
+  override async getAccount(id: string) { const result = await this.pool.query('SELECT payload FROM accounts WHERE id=$1', [id]); return result.rows[0] ? AccountSchema.parse(result.rows[0].payload) : undefined; }
+  override async getCustomerEntity(id: string) { const result = await this.pool.query('SELECT payload FROM customer_entities WHERE id=$1', [id]); return result.rows[0] ? CustomerEntitySchema.parse(result.rows[0].payload) : undefined; }
+  override async createCustomerEntity(input: Omit<CustomerEntity, 'id' | 'createdAt'> & { id?: string }) { const entity = CustomerEntitySchema.parse({ ...input, id: input.id ?? `org_${randomUUID()}`, createdAt: now() }); await this.pool.query('INSERT INTO customer_entities (id,slug,payload) VALUES ($1,$2,$3)', [entity.id, entity.slug, JSON.stringify(entity)]); return entity; }
+  override async listEntityMemberships(accountId: string) { const result = await this.pool.query('SELECT payload FROM entity_memberships WHERE account_id=$1', [accountId]); return result.rows.map((row) => EntityMembershipSchema.parse(row.payload)); }
+  override async grantEntityMembership(accountId: string, entityId: string, roles: EntityMembership['roles'], permissions: EntityMembership['permissions']) {
+    const found = await this.pool.query('SELECT payload FROM entity_memberships WHERE account_id=$1 AND entity_id=$2', [accountId, entityId]); if (found.rows[0]) return EntityMembershipSchema.parse(found.rows[0].payload);
+    const membership = EntityMembershipSchema.parse({ id: `membership_${randomUUID()}`, accountId, entityId, roles, permissions, status: 'active', createdAt: now() }); await this.pool.query('INSERT INTO entity_memberships (id,account_id,entity_id,payload) VALUES ($1,$2,$3,$4) ON CONFLICT (account_id,entity_id) DO NOTHING', [membership.id, accountId, entityId, JSON.stringify(membership)]); return membership;
+  }
+  override async createAgreementAccess(access: AgreementAccess) { AgreementAccessSchema.parse(access); await this.pool.query('INSERT INTO agreement_access (id,account_id,agreement_id,participant_id,payload) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (account_id,agreement_id,participant_id) DO NOTHING', [access.id, access.accountId, access.agreementId, access.participantId, JSON.stringify(access)]); }
+  override async getAgreementAccess(id: string) { const result = await this.pool.query('SELECT payload FROM agreement_access WHERE id=$1', [id]); return result.rows[0] ? AgreementAccessSchema.parse(result.rows[0].payload) : undefined; }
+  override async findAgreementAccess(accountId: string, agreementId: string, participantId: string) { const result = await this.pool.query('SELECT payload FROM agreement_access WHERE account_id=$1 AND agreement_id=$2 AND participant_id=$3', [accountId, agreementId, participantId]); return result.rows[0] ? AgreementAccessSchema.parse(result.rows[0].payload) : undefined; }
+  override async saveAgreementAccess(access: AgreementAccess) { AgreementAccessSchema.parse(access); await this.pool.query('UPDATE agreement_access SET payload=$1 WHERE id=$2', [JSON.stringify(access), access.id]); }
+  override async createAccessChallenge(challenge: AccessChallenge) { AccessChallengeSchema.parse(challenge); await this.pool.query('INSERT INTO access_challenges (id,token_hash,payload) VALUES ($1,$2,$3)', [challenge.id, challenge.tokenHash, JSON.stringify(challenge)]); }
+  override async getAccessChallengeByTokenHash(tokenHash: string) { const result = await this.pool.query('SELECT payload FROM access_challenges WHERE token_hash=$1', [tokenHash]); return result.rows[0] ? AccessChallengeSchema.parse(result.rows[0].payload) : undefined; }
+  override async saveAccessChallenge(challenge: AccessChallenge) { AccessChallengeSchema.parse(challenge); await this.pool.query('UPDATE access_challenges SET payload=$1 WHERE id=$2', [JSON.stringify(challenge), challenge.id]); }
 }
 
 function permissionsForRole(role: 'owner' | 'reviewer' | 'signatory') {

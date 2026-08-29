@@ -15,6 +15,25 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HealthResponse'
+  /public/access/exchange:
+    post:
+      operationId: ExternalParticipantOperations_exchangeAccess
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/ExchangeResult'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExchangeInvitation'
   /public/integration-sessions/exchange:
     post:
       operationId: ExternalParticipantOperations_exchangeIntegration
@@ -46,6 +65,7 @@ paths:
               schema:
                 anyOf:
                   - $ref: '#/components/schemas/ExchangeResult'
+                  - $ref: '#/components/schemas/RecoveryRequired'
                   - $ref: '#/components/schemas/ErrorResponse'
       requestBody:
         required: true
@@ -436,7 +456,8 @@ paths:
   /v1/agreements:
     get:
       operationId: AgreementOperations_list
-      parameters: []
+      parameters:
+        - $ref: '#/components/parameters/EntityContext'
       responses:
         '200':
           description: The request has succeeded.
@@ -455,7 +476,8 @@ paths:
             - webhooks:manage
     post:
       operationId: AgreementOperations_create
-      parameters: []
+      parameters:
+        - $ref: '#/components/parameters/EntityContext'
       responses:
         '200':
           description: The request has succeeded.
@@ -482,6 +504,7 @@ paths:
     get:
       operationId: AgreementOperations_get
       parameters:
+        - $ref: '#/components/parameters/EntityContext'
         - name: agreementId
           in: path
           required: true
@@ -1050,6 +1073,32 @@ paths:
             - templates:read
             - templates:write
             - webhooks:manage
+  /v1/entities:
+    post:
+      operationId: EntityOperations_create
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/CustomerEntity'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCustomerEntity'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
   /v1/integration-sessions:
     post:
       operationId: IntegrationSessionOperations_create
@@ -1164,6 +1213,31 @@ paths:
             - templates:read
             - templates:write
             - webhooks:manage
+  /v1/me:
+    get:
+      operationId: AccountOperations_get
+      parameters:
+        - name: x-bytecrunch-entity-id
+          in: header
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/CurrentAccount'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
   /v1/notifications:
     get:
       operationId: NotificationOperations_list
@@ -1236,7 +1310,8 @@ paths:
   /v1/templates:
     get:
       operationId: TemplateOperations_list
-      parameters: []
+      parameters:
+        - $ref: '#/components/parameters/EntityContext'
       responses:
         '200':
           description: The request has succeeded.
@@ -1255,7 +1330,8 @@ paths:
             - webhooks:manage
     post:
       operationId: TemplateOperations_create
-      parameters: []
+      parameters:
+        - $ref: '#/components/parameters/EntityContext'
       responses:
         '200':
           description: The request has succeeded.
@@ -1324,6 +1400,13 @@ paths:
             - templates:write
             - webhooks:manage
 components:
+  parameters:
+    EntityContext:
+      name: x-bytecrunch-entity-id
+      in: header
+      required: false
+      schema:
+        type: string
   schemas:
     Agreement:
       type: object
@@ -1521,6 +1604,22 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/CreateParticipant'
+    CreateCustomerEntity:
+      type: object
+      required:
+        - slug
+        - legalName
+      properties:
+        slug:
+          type: string
+        legalName:
+          type: string
+        businessAddress:
+          type: string
+        registrationNumber:
+          type: string
+        jurisdiction:
+          type: string
     CreateIntegration:
       type: object
       required:
@@ -1666,6 +1765,64 @@ components:
           type: array
           items:
             type: string
+    CurrentAccount:
+      type: object
+      required:
+        - id
+        - email
+        - name
+        - activeEntityId
+        - entities
+        - scopes
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+        name:
+          type: string
+        activeEntityId:
+          type: string
+        entities:
+          type: array
+          items:
+            $ref: '#/components/schemas/EntityMembership'
+        scopes:
+          type: array
+          items:
+            type: string
+    CustomerEntity:
+      type: object
+      required:
+        - id
+        - slug
+        - legalName
+        - businessAddress
+        - registrationNumber
+        - jurisdiction
+        - createdAt
+      properties:
+        id:
+          type: string
+        slug:
+          type: string
+        legalName:
+          type: string
+        businessAddress:
+          anyOf:
+            - type: string
+            - type: 'null'
+        registrationNumber:
+          anyOf:
+            - type: string
+            - type: 'null'
+        jurisdiction:
+          anyOf:
+            - type: string
+            - type: 'null'
+        createdAt:
+          type: string
+          format: date-time
     DocumentComment:
       type: object
       required:
@@ -1734,6 +1891,61 @@ components:
           anyOf:
             - type: string
             - type: 'null'
+    EntityMembership:
+      type: object
+      required:
+        - id
+        - accountId
+        - entityId
+        - roles
+        - permissions
+        - status
+        - createdAt
+        - entity
+      properties:
+        id:
+          type: string
+        accountId:
+          type: string
+        entityId:
+          type: string
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/EntityRole'
+        permissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/EntityPermission'
+        status:
+          type: string
+          enum:
+            - invited
+            - active
+            - suspended
+        createdAt:
+          type: string
+          format: date-time
+        entity:
+          $ref: '#/components/schemas/CustomerEntity'
+    EntityPermission:
+      type: string
+      enum:
+        - entity.manage
+        - members.manage
+        - templates.read
+        - templates.write
+        - agreements.read
+        - agreements.write
+        - agreements.sign
+    EntityRole:
+      type: string
+      enum:
+        - administrator
+        - template_manager
+        - contract_manager
+        - signatory
+        - viewer
     EntityVerificationStatus:
       type: string
       enum:
@@ -1983,6 +2195,8 @@ components:
         - expiresAt
         - createdAt
         - acceptedAt
+        - acceptedByAccountId
+        - recoverySentAt
       properties:
         id:
           type: string
@@ -2008,6 +2222,15 @@ components:
           type: string
           format: date-time
         acceptedAt:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+        acceptedByAccountId:
+          anyOf:
+            - type: string
+            - type: 'null'
+        recoverySentAt:
           anyOf:
             - type: string
               format: date-time
@@ -2261,6 +2484,23 @@ components:
         - ready
         - signing
         - executed
+    RecoveryRequired:
+      type: object
+      required:
+        - accepted
+        - verificationRequired
+        - message
+      properties:
+        accepted:
+          type: boolean
+          enum:
+            - false
+        verificationRequired:
+          type: boolean
+          enum:
+            - true
+        message:
+          type: string
     RedlineAnchor:
       type: object
       required:

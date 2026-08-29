@@ -6,6 +6,9 @@ import { config } from './config.js';
 
 export interface AuthUser {
   id: string;
+  authSubjectId: string;
+  authProvider: 'dev' | 'oidc';
+  authIssuer: string;
   email: string;
   name: string;
   tenantId: string;
@@ -57,6 +60,9 @@ async function readSession(token: string): Promise<AuthUser> {
   const { payload } = await jwtVerify(token, secret, { algorithms: ['HS256'] });
   return {
     id: String(payload.sub),
+    authSubjectId: String(payload.sub),
+    authProvider: 'oidc',
+    authIssuer: String(payload.issuer ?? config.OIDC_ISSUER_URL),
     email: String(payload.email),
     name: String(payload.name),
     tenantId: String(payload.tenantId ?? 'bytecrunch'),
@@ -69,6 +75,9 @@ export function authMiddleware(): MiddlewareHandler {
     if (config.AUTH_MODE === 'dev') {
       context.set('user', {
         id: config.DEV_USER_ID,
+        authSubjectId: config.DEV_USER_ID,
+        authProvider: 'dev',
+        authIssuer: 'bytecrunch-local',
         email: config.DEV_USER_EMAIL,
         name: config.DEV_USER_NAME,
         tenantId: 'bytecrunch',
@@ -88,6 +97,9 @@ export function authMiddleware(): MiddlewareHandler {
         });
         context.set('user', {
           id: String(payload.sub),
+          authSubjectId: String(payload.sub),
+          authProvider: 'oidc',
+          authIssuer: config.OIDC_ISSUER_URL,
           email: String(payload.email ?? `${payload.sub}@service.local`),
           name: String(payload.name ?? payload.preferred_username ?? payload.sub),
           tenantId: String(payload.tenant_id ?? 'bytecrunch'),

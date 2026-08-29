@@ -285,11 +285,21 @@ model Invitation {
   expiresAt: utcDateTime;
   createdAt: utcDateTime;
   acceptedAt: utcDateTime | null;
+  acceptedByAccountId: string | null;
+  recoverySentAt: utcDateTime | null;
   invitationUrl?: url;
 }
 
 model ExchangeInvitation { token: string; }
 model ExchangeResult { accepted: true; }
+model RecoveryRequired { accepted: false; verificationRequired: true; message: string; }
+enum EntityRole { administrator, template_manager, contract_manager, signatory, viewer }
+enum EntityPermission { entity_manage: "entity.manage", members_manage: "members.manage", templates_read: "templates.read", templates_write: "templates.write", agreements_read: "agreements.read", agreements_write: "agreements.write", agreements_sign: "agreements.sign" }
+model CustomerEntity { id: string; slug: string; legalName: string; businessAddress: string | null; registrationNumber: string | null; jurisdiction: string | null; createdAt: utcDateTime; }
+model CreateCustomerEntity { slug: string; legalName: string; businessAddress?: string; registrationNumber?: string; jurisdiction?: string; }
+model EntityMembership { id: string; accountId: string; entityId: string; roles: EntityRole[]; permissions: EntityPermission[]; status: "invited" | "active" | "suspended"; createdAt: utcDateTime; entity: CustomerEntity; }
+model CurrentAccount { id: string; email: string; name: string; activeEntityId: string; entities: EntityMembership[]; scopes: string[]; }
+model EntityContext { @header("x-bytecrunch-entity-id") entityId?: string; }
 model OnboardParticipant {
   name: string;
   title: string;
@@ -336,21 +346,29 @@ interface HealthOperations {
   @get get(): HealthResponse;
 }
 
+@route("/v1/me")
+@useAuth(ContractsOAuth2)
+interface AccountOperations { @get get(@header("x-bytecrunch-entity-id") entityId?: string): CurrentAccount | ErrorResponse; }
+
+@route("/v1/entities")
+@useAuth(ContractsOAuth2)
+interface EntityOperations { @post create(@body body: CreateCustomerEntity): CustomerEntity | ErrorResponse; }
+
 @route("/v1/templates")
 @useAuth(ContractsOAuth2)
 interface TemplateOperations {
-  @get list(): Template[];
-  @post create(@body body: CreateTemplate): Template | ErrorResponse;
+  @get list(...EntityContext): Template[];
+  @post create(...EntityContext, @body body: CreateTemplate): Template | ErrorResponse;
 }
 
 @route("/v1/agreements")
 @useAuth(ContractsOAuth2)
 interface AgreementOperations {
-  @get list(): Agreement[];
-  @post create(@body body: CreateAgreement): Agreement | ErrorResponse;
+  @get list(...EntityContext): Agreement[];
+  @post create(...EntityContext, @body body: CreateAgreement): Agreement | ErrorResponse;
 
   @get @route("/{agreementId}")
-  get(@path agreementId: string): Agreement | ErrorResponse;
+  get(...EntityContext, @path agreementId: string): Agreement | ErrorResponse;
 
   @post @route("/{agreementId}/review")
   startReview(@path agreementId: string): Agreement | ErrorResponse;
@@ -459,7 +477,10 @@ interface WebhookOperations {
 @route("/public")
 interface ExternalParticipantOperations {
   @post @route("/invitations/exchange")
-  exchange(@body body: ExchangeInvitation): ExchangeResult | ErrorResponse;
+  exchange(@body body: ExchangeInvitation): ExchangeResult | RecoveryRequired | ErrorResponse;
+
+  @post @route("/access/exchange")
+  exchangeAccess(@body body: ExchangeInvitation): ExchangeResult | ErrorResponse;
 
   @post @route("/integration-sessions/exchange")
   exchangeIntegration(@body body: ExchangeInvitation): ExchangeIntegrationResult | ErrorResponse;

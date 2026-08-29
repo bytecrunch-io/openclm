@@ -15,6 +15,9 @@ import {
   CreateWebhookSchema,
   CreateIntegrationSchema,
   CreateIntegrationSessionSchema,
+  CreateCustomerEntitySchema,
+  AgreementAccessSchema,
+  AccessChallengeSchema,
   IdentityLinkSchema,
   IntegrationSessionSchema,
   EvaluateAgreementStatusSchema,
@@ -39,7 +42,7 @@ import {
 } from '@bytecrunch/contracts-domain';
 import { authMiddleware, currentUser, registerAuthRoutes } from './auth.js';
 import { config } from './config.js';
-import { sendInvitationEmail } from './email.js';
+import { sendAccessEmail, sendInvitationEmail } from './email.js';
 import { createInvitationToken, currentExternalSession, externalSessionMiddleware, hashInvitationToken, setExternalSession } from './external-auth.js';
 import { hashContent, type Repository } from './repository.js';
 import { emitAgreementEvent } from './webhooks.js';
@@ -245,18 +248,93 @@ export function createApp(repository: Repository): Hono {
   });
   registerAuthRoutes(app);
   app.use('/v1/*', authMiddleware());
+  app.use('/v1/*', async (context, next) => {
+    const authenticated = currentUser(context);
+    const account = await repository.findOrCreateAccountByIdentity(authenticated.authProvider, authenticated.authIssuer, authenticated.authSubjectId, authenticated.email, authenticated.name);
+    let memberships = await repository.listEntityMemberships(account.id);
+    if (memberships.length === 0) {
+      let defaultEntity = await repository.getCustomerEntity(authenticated.tenantId);
+      defaultEntity ??= await repository.createCustomerEntity({ id: authenticated.tenantId, slug: authenticated.tenantId, legalName: config.TENANT_LEGAL_NAME, businessAddress: config.TENANT_BUSINESS_ADDRESS || null, registrationNumber: null, jurisdiction: null });
+      await repository.grantEntityMembership(account.id, defaultEntity.id, ['administrator'], ['entity.manage', 'members.manage', 'templates.read', 'templates.write', 'agreements.read', 'agreements.write', 'agreements.sign']);
+      memberships = await repository.listEntityMemberships(account.id);
+    }
+    const requestedEntityId = context.req.header('x-bytecrunch-entity-id');
+    let activeMembership = requestedEntityId
+      ? memberships.find((item) => item.entityId === requestedEntityId && item.status === 'active')
+      : memberships.find((item) => item.entityId === authenticated.tenantId && item.status === 'active') ?? memberships.find((item) => item.status === 'active');
+    if (requestedEntityId && !activeMembership && context.req.path === '/v1/me') activeMembership = memberships.find((item) => item.status === 'active');
+    if (requestedEntityId && !activeMembership) return context.json({ error: 'forbidden', message: 'You are not a member of the requested customer entity.' }, 403);
+    if (!activeMembership) return context.json({ error: 'forbidden', message: 'You do not have an active customer entity membership.' }, 403);
+    const path = context.req.path; const method = context.req.method;
+    const requiredPermission = path.startsWith('/v1/templates') ? (method === 'GET' ? 'templates.read' : 'templates.write')
+      : path.startsWith('/v1/agreements') ? (method === 'GET' ? 'agreements.read' : path.endsWith('/sign') ? 'agreements.sign' : 'agreements.write')
+      : path.startsWith('/v1/notifications') || path.startsWith('/v1/agreement-status') || path.startsWith('/v1/integration-status') ? 'agreements.read'
+      : path.startsWith('/v1/integration-sessions') ? 'agreements.write'
+      : path.startsWith('/v1/integrations') || path.startsWith('/v1/webhooks') ? 'entity.manage'
+      : undefined;
+    if (requiredPermission && !activeMembership.permissions.includes(requiredPermission)) return context.json({ error: 'forbidden', message: `Your role cannot perform '${requiredPermission}' for this customer entity.` }, 403);
+    context.set('user', { ...authenticated, id: account.id, tenantId: activeMembership.entityId });
+    return next();
+  });
+
+  app.get('/v1/me', async (context) => {
+    const user = currentUser(context); const memberships = await repository.listEntityMemberships(user.id);
+    const entities = (await Promise.all(memberships.filter((item) => item.status === 'active').map(async (membership) => {
+      const entity = await repository.getCustomerEntity(membership.entityId); return entity ? { ...membership, entity } : undefined;
+    }))).filter((item) => item !== undefined);
+    return context.json({ id: user.id, email: user.email, name: user.name, activeEntityId: user.tenantId, entities, scopes: user.scopes });
+  });
+
+  app.post('/v1/entities', async (context) => {
+    const user = currentUser(context); const input = CreateCustomerEntitySchema.parse(await context.req.json());
+    const entity = await repository.createCustomerEntity({ ...input, businessAddress: input.businessAddress ?? null, registrationNumber: input.registrationNumber ?? null, jurisdiction: input.jurisdiction ?? null });
+    await repository.grantEntityMembership(user.id, entity.id, ['administrator'], ['entity.manage', 'members.manage', 'templates.read', 'templates.write', 'agreements.read', 'agreements.write', 'agreements.sign']);
+    const sourceTemplate = (await repository.listTemplates('bytecrunch')).filter((item) => item.key === 'mutual-nda').sort((a, b) => b.version - a.version)[0];
+    if (sourceTemplate) await repository.createTemplate(entity.id, { key: sourceTemplate.key, name: sourceTemplate.name, description: sourceTemplate.description, content: sourceTemplate.content });
+    return context.json(entity, 201);
+  });
 
   app.post('/public/invitations/exchange', async (context) => {
     const body = await context.req.json() as { token?: unknown };
     if (typeof body.token !== 'string' || body.token.length < 20) return context.json({ error: 'invalid_invitation', message: 'The invitation token is invalid.' }, 400);
     const invitation = await repository.getInvitationByTokenHash(hashInvitationToken(body.token));
-    if (!invitation || invitation.status !== 'pending') return context.json({ error: 'invalid_invitation', message: 'This invitation is invalid or has already been used.' }, 410);
+    if (!invitation) return context.json({ error: 'invalid_invitation', message: 'This invitation is invalid.' }, 410);
+    if (invitation.status === 'accepted' && invitation.acceptedByAccountId) {
+      const access = await repository.findAgreementAccess(invitation.acceptedByAccountId, invitation.agreementId, invitation.participantId);
+      const account = await repository.getAccount(invitation.acceptedByAccountId);
+      const agreement = await repository.getAgreement(invitation.tenantId, invitation.agreementId);
+      const recentlySent = invitation.recoverySentAt && Date.now() - new Date(invitation.recoverySentAt).getTime() < 60_000;
+      if (access && account && agreement && !recentlySent) { await issueAccessChallenge(repository, access, account.email, account.displayName, agreement.title); invitation.recoverySentAt = isoNow(); await repository.saveInvitation(invitation); }
+      return context.json({ accepted: false, verificationRequired: true, message: 'This invitation was already accepted. We sent a fresh, single-use return link to the invited email address.' }, 202);
+    }
+    if (invitation.status !== 'pending') return context.json({ error: 'invalid_invitation', message: 'This invitation is no longer active. Ask the sender for a new invitation.' }, 410);
     if (new Date(invitation.expiresAt).getTime() <= Date.now()) {
       invitation.status = 'expired'; await repository.saveInvitation(invitation);
       return context.json({ error: 'invitation_expired', message: 'This invitation has expired. Ask the sender for a new one.' }, 410);
     }
-    invitation.status = 'accepted'; invitation.acceptedAt = isoNow(); await repository.saveInvitation(invitation);
-    await setExternalSession(context, { invitationId: invitation.id, agreementId: invitation.agreementId, participantId: invitation.participantId, tenantId: invitation.tenantId });
+    const agreement = await requiredAgreement(repository, invitation.tenantId, invitation.agreementId);
+    const participant = agreement.participants.find((item) => item.id === invitation.participantId);
+    if (!participant) return context.json({ error: 'invalid_invitation', message: 'The invited participant no longer exists.' }, 410);
+    const account = await repository.findOrCreateAccountByEmail(invitation.email, participant.name);
+    participant.personId = account.id; agreement.updatedAt = isoNow(); await repository.saveAgreement(agreement);
+    const access = AgreementAccessSchema.parse({ id: `access_${randomUUID()}`, tenantId: invitation.tenantId, agreementId: invitation.agreementId, participantId: invitation.participantId, accountId: account.id, status: 'active', grantedAt: isoNow(), lastAccessedAt: isoNow() });
+    await repository.createAgreementAccess(access);
+    invitation.status = 'accepted'; invitation.acceptedAt = isoNow(); invitation.acceptedByAccountId = account.id; await repository.saveInvitation(invitation);
+    await setExternalSession(context, { invitationId: invitation.id, agreementId: invitation.agreementId, participantId: invitation.participantId, tenantId: invitation.tenantId, accountId: account.id });
+    return context.json({ accepted: true });
+  });
+
+  app.post('/public/access/exchange', async (context) => {
+    const body = await context.req.json() as { token?: unknown };
+    if (typeof body.token !== 'string' || body.token.length < 20) return context.json({ error: 'invalid_access', message: 'The return-access token is invalid.' }, 400);
+    const challenge = await repository.getAccessChallengeByTokenHash(hashInvitationToken(body.token));
+    if (!challenge || challenge.status !== 'pending') return context.json({ error: 'invalid_access', message: 'This return link is invalid or has already been used.' }, 410);
+    if (new Date(challenge.expiresAt).getTime() <= Date.now()) { challenge.status = 'expired'; await repository.saveAccessChallenge(challenge); return context.json({ error: 'access_expired', message: 'This return link has expired. Open your original invitation to request another one.' }, 410); }
+    const access = await repository.getAgreementAccess(challenge.agreementAccessId);
+    if (!access || access.status !== 'active' || access.accountId !== challenge.accountId) return context.json({ error: 'access_revoked', message: 'Access to this agreement has been revoked.' }, 403);
+    challenge.status = 'accepted'; challenge.acceptedAt = isoNow(); await repository.saveAccessChallenge(challenge);
+    access.lastAccessedAt = isoNow(); await repository.saveAgreementAccess(access);
+    await setExternalSession(context, { invitationId: challenge.id, agreementId: access.agreementId, participantId: access.participantId, tenantId: access.tenantId, accountId: access.accountId });
     return context.json({ accepted: true });
   });
 
@@ -438,10 +516,11 @@ export function createApp(repository: Repository): Hono {
     const input = CreateAgreementSchema.parse(await context.req.json());
     const user = currentUser(context); const agreement = await repository.createAgreement(user.tenantId, input);
     if (agreement.parties.some((party) => party.role === 'counterparty')) {
-      const person = await repository.findPersonByEmail(user.tenantId, user.email) ?? await repository.createPerson(user.tenantId, user.email, user.name);
-      const senderParty = { id: `party_${randomUUID()}`, role: 'sender' as const, status: 'ready' as const, minimumSignatures: 1, entity: { id: `entity_${randomUUID()}`, externalId: null, legalName: config.TENANT_LEGAL_NAME, businessAddress: config.TENANT_BUSINESS_ADDRESS || null, registrationNumber: null, jurisdiction: null, verificationStatus: 'confirmed' as const, proposedDetails: null } };
+      const senderEntity = await repository.getCustomerEntity(user.tenantId);
+      if (!senderEntity) throw new Error('The active customer entity could not be found.');
+      const senderParty = { id: `party_${randomUUID()}`, role: 'sender' as const, status: 'ready' as const, minimumSignatures: 1, entity: { id: senderEntity.id, externalId: null, legalName: senderEntity.legalName, businessAddress: senderEntity.businessAddress, registrationNumber: senderEntity.registrationNumber, jurisdiction: senderEntity.jurisdiction, verificationStatus: 'confirmed' as const, proposedDetails: null } };
       agreement.parties.unshift(senderParty);
-      const creator = { id: `part_${randomUUID()}`, personId: person.id, externalSubjectId: null, email: user.email, name: user.name, role: 'signatory' as const, required: true, status: 'reviewed' as const, signedAt: null, signature: null, partyId: senderParty.id, title: null, capacity: 'authorized_representative' as const, authorityConfirmed: true, onboardingCompletedAt: isoNow(), permissions: ['read', 'comment', 'suggest', 'sign'] as Array<'read' | 'comment' | 'suggest' | 'sign'> };
+      const creator = { id: `part_${randomUUID()}`, personId: user.id, externalSubjectId: null, email: user.email, name: user.name, role: 'signatory' as const, required: true, status: 'reviewed' as const, signedAt: null, signature: null, partyId: senderParty.id, title: null, capacity: 'authorized_representative' as const, authorityConfirmed: true, onboardingCompletedAt: isoNow(), permissions: ['read', 'comment', 'suggest', 'sign'] as Array<'read' | 'comment' | 'suggest' | 'sign'> };
       agreement.participants.push(creator); agreement.createdByParticipantId = creator.id; await repository.saveAgreement(agreement);
       materializePartyVariables(agreement); await repository.saveAgreement(agreement);
     }
@@ -600,16 +679,17 @@ export function createApp(repository: Repository): Hono {
 
   app.get('/v1/notifications', async (context) => {
     const user = currentUser(context); const person = await repository.findPersonByEmail(user.tenantId, user.email);
-    return context.json(person ? await repository.listNotifications(user.tenantId, person.id) : []);
+    const recipientIds = [...new Set([user.id, ...(person ? [person.id] : [])])]; const notifications = (await Promise.all(recipientIds.map((id) => repository.listNotifications(user.tenantId, id)))).flat();
+    return context.json([...new Map(notifications.map((item) => [item.id, item])).values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
   });
 
   app.post('/v1/notifications/:notificationId/read', async (context) => {
-    const user = currentUser(context); const person = await repository.findPersonByEmail(user.tenantId, user.email); if (!person) throw new Error('Person record not found.');
-    const notification = (await repository.listNotifications(user.tenantId, person.id)).find((item) => item.id === context.req.param('notificationId')); if (!notification) throw new Error('Notification not found.'); notification.readAt = isoNow(); await repository.saveNotification(notification); return context.json(notification);
+    const user = currentUser(context); const person = await repository.findPersonByEmail(user.tenantId, user.email); const recipientIds = [...new Set([user.id, ...(person ? [person.id] : [])])]; const notifications = (await Promise.all(recipientIds.map((id) => repository.listNotifications(user.tenantId, id)))).flat();
+    const notification = notifications.find((item) => item.id === context.req.param('notificationId')); if (!notification) throw new Error('Notification not found.'); notification.readAt = isoNow(); await repository.saveNotification(notification); return context.json(notification);
   });
 
   app.post('/v1/notifications/read-all', async (context) => {
-    const user = currentUser(context); const person = await repository.findPersonByEmail(user.tenantId, user.email); if (!person) return context.json({ updated: 0 }); const notifications = await repository.listNotifications(user.tenantId, person.id); const unread = notifications.filter((item) => !item.readAt); await Promise.all(unread.map(async (item) => { item.readAt = isoNow(); await repository.saveNotification(item); })); return context.json({ updated: unread.length });
+    const user = currentUser(context); const person = await repository.findPersonByEmail(user.tenantId, user.email); const recipientIds = [...new Set([user.id, ...(person ? [person.id] : [])])]; const notifications = (await Promise.all(recipientIds.map((id) => repository.listNotifications(user.tenantId, id)))).flat(); const unread = [...new Map(notifications.map((item) => [item.id, item])).values()].filter((item) => !item.readAt); await Promise.all(unread.map(async (item) => { item.readAt = isoNow(); await repository.saveNotification(item); })); return context.json({ updated: unread.length });
   });
 
   app.get('/v1/integrations', async (context) => context.json(await repository.listIntegrations(currentUser(context).tenantId)));
@@ -731,7 +811,7 @@ async function createAndSendInvitation(repository: Repository, agreement: Agreem
   const invitation = InvitationSchema.parse({
     id: `inv_${randomUUID()}`, tenantId: agreement.tenantId, agreementId: agreement.id, participantId,
     email: participant.email, tokenHash, status: 'pending', createdAt: isoNow(),
-    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), acceptedAt: null,
+    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), acceptedAt: null, acceptedByAccountId: null, recoverySentAt: null,
   });
   await repository.createInvitation(invitation);
   if (participant.status === 'not_invited' || participant.status === 'invited') participant.status = 'invited'; agreement.updatedAt = isoNow(); await repository.saveAgreement(agreement);
@@ -740,12 +820,25 @@ async function createAndSendInvitation(repository: Repository, agreement: Agreem
   return { ...publicInvitation(invitation), invitationUrl };
 }
 
+async function issueAccessChallenge(repository: Repository, access: import('@bytecrunch/contracts-domain').AgreementAccess, email: string, name: string, agreementTitle: string) {
+  const { token, tokenHash } = createInvitationToken();
+  const challenge = AccessChallengeSchema.parse({ id: `challenge_${randomUUID()}`, accountId: access.accountId, agreementAccessId: access.id, tokenHash, status: 'pending', expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(), createdAt: isoNow(), acceptedAt: null });
+  await repository.createAccessChallenge(challenge);
+  const accessUrl = `${config.WEB_URL}/invite?accessToken=${encodeURIComponent(token)}`;
+  await sendAccessEmail({ email, name, agreementTitle, accessUrl });
+  return accessUrl;
+}
+
 function publicInvitation(invitation: import('@bytecrunch/contracts-domain').Invitation) {
   const { tokenHash: _, ...safe } = invitation;
   return safe;
 }
 
-async function externalView(repository: Repository, session: { tenantId: string; agreementId: string; participantId: string }) {
+async function externalView(repository: Repository, session: { tenantId: string; agreementId: string; participantId: string; accountId?: string }) {
+  if (session.accountId) {
+    const access = await repository.findAgreementAccess(session.accountId, session.agreementId, session.participantId);
+    if (!access || access.status !== 'active') throw new Error('Access to this agreement has been revoked.');
+  }
   const agreement = await requiredAgreement(repository, session.tenantId, session.agreementId);
   const participant = agreement.participants.find((item) => item.id === session.participantId);
   if (!participant) throw new Error('Participant not found.');
