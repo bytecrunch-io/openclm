@@ -13,7 +13,7 @@ export const AgreementStatusSchema = z.enum([
 ]);
 export type AgreementStatus = z.infer<typeof AgreementStatusSchema>;
 
-export const SuggestionStatusSchema = z.enum(['open', 'accepted', 'rejected']);
+export const SuggestionStatusSchema = z.enum(['open', 'accepted', 'rejected', 'countered']);
 export const ParticipantRoleSchema = z.enum(['owner', 'reviewer', 'signatory']);
 export const ParticipantStatusSchema = z.enum(['not_invited', 'invited', 'reviewed', 'signed', 'declined']);
 export const PartyRoleSchema = z.enum(['sender', 'counterparty']);
@@ -150,6 +150,8 @@ export const SuggestionSchema = z.object({
   messages: z.array(ThreadMessageSchema).default([]),
   mentions: z.array(MentionSchema).default([]),
   reviewRound: z.number().int().nonnegative().default(0),
+  inResponseToSuggestionIds: z.array(z.string().min(1)).default([]),
+  counteredBySuggestionId: z.string().min(1).nullable().default(null),
   status: SuggestionStatusSchema,
   createdAt: z.string().datetime(),
   resolvedAt: z.string().datetime().nullable(),

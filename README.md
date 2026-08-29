@@ -8,6 +8,7 @@ Open-source agreement infrastructure for review, redlining, execution, and integ
 - Agreement creation from representative emails; internal person IDs are assigned automatically
 - Draft, review, signing, and executed lifecycle states
 - Anchored, attributed redlines with word-level diffs, threaded replies, and accept/reject resolution
+- Inline counterproposals with linked attribution and symmetric approval across review rounds
 - Document-level feedback plus editable, removable redline drafts during the active review turn
 - Consolidated hand-back notifications with unread state, deep links, and retrying email delivery through an outbox
 - Immutable revision counters and SHA-256 content hashes

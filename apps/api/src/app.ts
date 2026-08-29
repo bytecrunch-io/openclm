@@ -63,23 +63,41 @@ function assignReview(agreement: Agreement, assignedTo: 'sender' | 'counterparty
   agreement.reviewHistory.push({ round: agreement.reviewRound, assignedTo, sentBy, message, sentAt: isoNow(), returnedAt: null }); agreement.updatedAt = isoNow();
 }
 
-function anchoredSuggestion(agreement: Agreement, input: { originalText: string; replacementText: string; comment: string; anchor?: { start: number; end: number } | undefined }, authorSubjectId: string): Suggestion {
+function rangesOverlap(first: { start: number; end: number }, second: { start: number; end: number }): boolean {
+  if (first.start === first.end) return first.start >= second.start && first.start <= second.end;
+  if (second.start === second.end) return second.start >= first.start && second.start <= first.end;
+  return first.start < second.end && first.end > second.start;
+}
+
+function restoreCounteredParents(agreement: Agreement, suggestion: Suggestion): void {
+  for (const parentId of suggestion.inResponseToSuggestionIds) {
+    const parent = agreement.suggestions.find((candidate) => candidate.id === parentId);
+    if (parent?.status === 'countered' && parent.counteredBySuggestionId === suggestion.id) { parent.status = 'open'; parent.resolvedAt = null; parent.counteredBySuggestionId = null; }
+  }
+}
+
+function anchoredSuggestion(agreement: Agreement, input: { originalText: string; replacementText: string; comment: string; anchor?: { start: number; end: number } | undefined }, authorSubjectId: string, ignoredOpenSuggestionIds = new Set<string>()): Suggestion {
   const start = input.anchor?.start ?? agreement.content.indexOf(input.originalText); const end = input.anchor?.end ?? start + input.originalText.length;
   if (start < 0 || end < start || agreement.content.slice(start, end) !== input.originalText) throw new Error('The selected text no longer matches this revision. Select it again.');
-  if (agreement.suggestions.some((item) => item.status === 'open' && item.anchor?.revision === agreement.revision && start < item.anchor.end && end > item.anchor.start)) throw new Error('This selection overlaps another open redline. Resolve it first.');
-  return { id: `sug_${randomUUID()}`, agreementId: agreement.id, authorSubjectId, originalText: input.originalText, replacementText: input.replacementText, comment: input.comment, anchor: { start, end, revision: agreement.revision, prefix: agreement.content.slice(Math.max(0, start - 40), start), suffix: agreement.content.slice(end, end + 40) }, messages: [], mentions: [], reviewRound: agreement.reviewRound, status: 'open' as const, createdAt: isoNow(), resolvedAt: null };
+  if (agreement.suggestions.some((item) => item.status === 'open' && !ignoredOpenSuggestionIds.has(item.id) && item.anchor?.revision === agreement.revision && rangesOverlap({ start, end }, item.anchor))) throw new Error('This selection overlaps another open redline. Resolve it first.');
+  return { id: `sug_${randomUUID()}`, agreementId: agreement.id, authorSubjectId, originalText: input.originalText, replacementText: input.replacementText, comment: input.comment, anchor: { start, end, revision: agreement.revision, prefix: agreement.content.slice(Math.max(0, start - 40), start), suffix: agreement.content.slice(end, end + 40) }, messages: [], mentions: [], reviewRound: agreement.reviewRound, inResponseToSuggestionIds: [], counteredBySuggestionId: null, status: 'open' as const, createdAt: isoNow(), resolvedAt: null };
 }
 
 function replaceTurnDraft(agreement: Agreement, content: string, authorId: string, side: 'sender' | 'counterparty'): void {
   assertActiveReviewSide(agreement, side);
   const previous = agreement.suggestions.filter((item) => item.status === 'open' && item.reviewRound === agreement.reviewRound && item.authorSubjectId === authorId && item.anchor?.revision === agreement.revision);
+  for (const item of previous) restoreCounteredParents(agreement, item);
   agreement.suggestions = agreement.suggestions.filter((item) => !previous.includes(item));
   if (content === agreement.content) { agreement.updatedAt = isoNow(); return; }
   const used = new Set<string>();
   for (const change of trackedChanges(agreement.content, content)) {
     const match = previous.filter((item) => !used.has(item.id)).map((item) => ({ item, distance: Math.max(0, change.anchor.start - item.anchor!.end, item.anchor!.start - change.anchor.end) })).sort((a, b) => a.distance - b.distance)[0];
-    const suggestion = anchoredSuggestion(agreement, { ...change, comment: match && match.distance <= 24 ? match.item.comment : '' }, authorId);
+    const incoming = agreement.suggestions.filter((item) => item.status === 'open' && item.reviewRound < agreement.reviewRound && item.anchor?.revision === agreement.revision && rangesOverlap(change.anchor, item.anchor));
+    const ignoredIncomingIds = new Set(incoming.map((item) => item.id));
+    const suggestion = anchoredSuggestion(agreement, { ...change, comment: match && match.distance <= 24 ? match.item.comment : '' }, authorId, ignoredIncomingIds);
     if (match && match.distance <= 24) { used.add(match.item.id); suggestion.id = match.item.id; suggestion.messages = match.item.messages; suggestion.mentions = match.item.mentions; suggestion.createdAt = match.item.createdAt; }
+    suggestion.inResponseToSuggestionIds = [...ignoredIncomingIds];
+    for (const item of incoming) { item.status = 'countered'; item.resolvedAt = isoNow(); item.counteredBySuggestionId = suggestion.id; }
     agreement.suggestions.push(suggestion);
   }
   agreement.updatedAt = isoNow();
@@ -143,6 +161,25 @@ function materializePartyVariables(agreement: Agreement): boolean {
 }
 function assertActiveReviewSide(agreement: Agreement, side: 'sender' | 'counterparty') { if (agreement.status !== 'in_review' || agreement.reviewAssignedTo !== side) throw new Error('This review turn is no longer editable.'); }
 function assertDraftOwner(agreement: Agreement, reviewRound: number, authorId: string, actorId: string, side: 'sender' | 'counterparty') { assertActiveReviewSide(agreement, side); if (reviewRound !== agreement.reviewRound || authorId !== actorId) throw new Error('Submitted review items are immutable. Only your changes from the active turn can be edited or removed.'); }
+function assertIncomingSuggestionsResolved(agreement: Agreement): void {
+  const unresolved = agreement.suggestions.filter((item) => item.status === 'open' && item.reviewRound < agreement.reviewRound).length;
+  if (unresolved > 0) throw new Error(`Accept, keep original, or counter ${unresolved} incoming redline${unresolved === 1 ? '' : 's'} before sending your response.`);
+}
+function resolveSuggestionDecision(agreement: Agreement, suggestion: Suggestion, resolution: 'accepted' | 'rejected'): void {
+  if (suggestion.status !== 'open') throw new Error('This suggestion has already been resolved.');
+  if (agreement.createdByParticipantId && suggestion.reviewRound >= agreement.reviewRound) throw new Error('You cannot resolve your own redline from the active review turn.');
+  if (resolution === 'accepted') {
+    if (!agreement.content.includes(suggestion.originalText)) throw new Error('The original text changed before this suggestion was accepted.');
+    const acceptedAnchor = suggestion.anchor; const delta = suggestion.replacementText.length - suggestion.originalText.length;
+    agreement.content = acceptedAnchor && agreement.content.slice(acceptedAnchor.start, acceptedAnchor.end) === suggestion.originalText
+      ? agreement.content.slice(0, acceptedAnchor.start) + suggestion.replacementText + agreement.content.slice(acceptedAnchor.end)
+      : agreement.content.replace(suggestion.originalText, suggestion.replacementText);
+    agreement.contentSha256 = hashContent(agreement.content); agreement.revision += 1;
+    if (acceptedAnchor) agreement.suggestions.forEach((item) => { if (item.id !== suggestion.id && item.status === 'open' && item.anchor?.revision === acceptedAnchor.revision) { if (item.anchor.start >= acceptedAnchor.end) { item.anchor.start += delta; item.anchor.end += delta; } item.anchor.revision = agreement.revision; } });
+  }
+  suggestion.status = resolution; suggestion.resolvedAt = isoNow();
+  agreement.updatedAt = isoNow();
+}
 function openSigningRevision(agreement: Agreement, completingReviewSide: 'sender' | 'counterparty' = 'sender'): void {
   assertReadyForSignature(agreement, completingReviewSide);
   if (agreement.status === 'draft' || agreement.status === 'in_review') transition(agreement, 'ready_for_signature');
@@ -244,7 +281,7 @@ export function createApp(repository: Repository): Hono {
 
   app.delete('/public/session/suggestions/:suggestionId', externalSessionMiddleware(), async (context) => {
     const session = currentExternalSession(context); const agreement = await requiredAgreement(repository, session.tenantId, session.agreementId); const participant = agreement.participants.find((item) => item.id === session.participantId); const index = agreement.suggestions.findIndex((item) => item.id === context.req.param('suggestionId')); const suggestion = agreement.suggestions[index];
-    if (!participant || !suggestion || suggestion.status !== 'open') throw new Error('Removable redline not found.'); assertDraftOwner(agreement, suggestion.reviewRound, suggestion.authorSubjectId, participant.personId ?? participant.id, 'counterparty'); agreement.suggestions.splice(index, 1); agreement.updatedAt = isoNow(); await repository.saveAgreement(agreement); return context.json(await externalView(repository, session));
+    if (!participant || !suggestion || suggestion.status !== 'open') throw new Error('Removable redline not found.'); assertDraftOwner(agreement, suggestion.reviewRound, suggestion.authorSubjectId, participant.personId ?? participant.id, 'counterparty'); restoreCounteredParents(agreement, suggestion); agreement.suggestions.splice(index, 1); agreement.updatedAt = isoNow(); await repository.saveAgreement(agreement); return context.json(await externalView(repository, session));
   });
 
   app.post('/public/session/comments', externalSessionMiddleware(), async (context) => {
@@ -271,9 +308,16 @@ export function createApp(repository: Repository): Hono {
     if (!participant || !suggestion) throw new Error('Redline thread not found.'); assertActiveReviewSide(agreement, 'counterparty'); suggestion.messages.push({ id: `msg_${randomUUID()}`, authorId: participant.personId ?? participant.id, authorName: participant.name, body: input.body, mentions: [], createdAt: isoNow() }); agreement.updatedAt = isoNow(); await repository.saveAgreement(agreement); return context.json(await externalView(repository, session));
   });
 
+  app.post('/public/session/suggestions/:suggestionId/resolve', externalSessionMiddleware(), async (context) => {
+    const input = ResolveSuggestionSchema.parse(await context.req.json()); const session = currentExternalSession(context); const agreement = await requiredAgreement(repository, session.tenantId, session.agreementId);
+    assertActiveReviewSide(agreement, 'counterparty'); const suggestion = agreement.suggestions.find((item) => item.id === context.req.param('suggestionId'));
+    if (!suggestion) return context.json({ error: 'not_found', message: 'Suggestion not found.' }, 404);
+    resolveSuggestionDecision(agreement, suggestion, input.resolution); await repository.saveAgreement(agreement); void emitAgreementEvent(repository, 'agreement.suggestion.resolved', agreement); return context.json(await externalView(repository, session));
+  });
+
   app.post('/public/session/return-review', externalSessionMiddleware(), async (context) => {
     const input = SendReviewSchema.parse(await context.req.json()); const session = currentExternalSession(context); const agreement = await requiredAgreement(repository, session.tenantId, session.agreementId); const participant = agreement.participants.find((item) => item.id === session.participantId);
-    if (!participant || agreement.reviewAssignedTo !== 'counterparty') throw new Error('This review is not assigned to you.'); const submittedRound = agreement.reviewRound; const redlineCount = agreement.suggestions.filter((item) => item.reviewRound === submittedRound).length; const commentCount = agreement.documentComments.filter((item) => item.reviewRound === submittedRound).length; assignReview(agreement, 'sender', participant.name, input.message); participant.status = 'reviewed'; await repository.saveAgreement(agreement); await notifyParticipants(repository, agreement, { type: 'review.returned', actorName: participant.name, actorParticipantId: participant.id, recipientParticipantIds: creatorRecipients(agreement), title: `Review returned: ${agreement.title}`, body: `${participant.name} returned their review with ${redlineCount} redline${redlineCount === 1 ? '' : 's'} and ${commentCount} general comment${commentCount === 1 ? '' : 's'}.${input.message ? ` ${input.message}` : ''}` }); return context.json(await externalView(repository, session));
+    if (!participant || agreement.reviewAssignedTo !== 'counterparty') throw new Error('This review is not assigned to you.'); assertIncomingSuggestionsResolved(agreement); const submittedRound = agreement.reviewRound; const redlineCount = agreement.suggestions.filter((item) => item.reviewRound === submittedRound).length; const commentCount = agreement.documentComments.filter((item) => item.reviewRound === submittedRound).length; assignReview(agreement, 'sender', participant.name, input.message); participant.status = 'reviewed'; await repository.saveAgreement(agreement); await notifyParticipants(repository, agreement, { type: 'review.returned', actorName: participant.name, actorParticipantId: participant.id, recipientParticipantIds: creatorRecipients(agreement), title: `Review returned: ${agreement.title}`, body: `${participant.name} returned their review with ${redlineCount} redline${redlineCount === 1 ? '' : 's'} and ${commentCount} general comment${commentCount === 1 ? '' : 's'}.${input.message ? ` ${input.message}` : ''}` }); return context.json(await externalView(repository, session));
   });
 
   app.post('/public/session/approve-for-signature', externalSessionMiddleware(), async (context) => {
@@ -377,7 +421,7 @@ export function createApp(repository: Repository): Hono {
 
   app.post('/v1/agreements/:agreementId/send-review', async (context) => {
     const input = SendReviewSchema.parse(await context.req.json()); const user = currentUser(context); const agreement = await requiredAgreement(repository, user.tenantId, context.req.param('agreementId'));
-    if (agreement.suggestions.some((item) => item.status === 'open' && item.messages.length === 0 && !item.comment)) throw new Error('Respond to unresolved redlines before returning the review.');
+    assertActiveReviewSide(agreement, 'sender'); assertIncomingSuggestionsResolved(agreement);
     const redlineCount = agreement.suggestions.filter((item) => item.status === 'open').length; const commentCount = agreement.documentComments.filter((item) => item.status === 'open').length; assignReview(agreement, 'counterparty', user.name, input.message); await repository.saveAgreement(agreement); await notifyParticipants(repository, agreement, { type: 'review.assigned', actorName: user.name, actorParticipantId: agreement.createdByParticipantId ?? undefined, recipientParticipantIds: counterpartyRecipients(agreement), title: `Review ready: ${agreement.title}`, body: `${user.name} handed the agreement back for your next review. ${redlineCount} redline${redlineCount === 1 ? '' : 's'} and ${commentCount} general comment${commentCount === 1 ? '' : 's'} remain open.${input.message ? ` ${input.message}` : ''}` }); void emitAgreementEvent(repository, 'agreement.sent_for_review', agreement); return context.json(agreement);
   });
 
@@ -419,7 +463,7 @@ export function createApp(repository: Repository): Hono {
 
   app.delete('/v1/agreements/:agreementId/suggestions/:suggestionId', async (context) => {
     const user = currentUser(context); const agreement = await requiredAgreement(repository, user.tenantId, context.req.param('agreementId')); const index = agreement.suggestions.findIndex((item) => item.id === context.req.param('suggestionId')); const suggestion = agreement.suggestions[index];
-    if (!suggestion || suggestion.status !== 'open') throw new Error('Removable redline not found.'); assertDraftOwner(agreement, suggestion.reviewRound, suggestion.authorSubjectId, user.id, 'sender'); agreement.suggestions.splice(index, 1); agreement.updatedAt = isoNow(); await repository.saveAgreement(agreement); return context.json(agreement);
+    if (!suggestion || suggestion.status !== 'open') throw new Error('Removable redline not found.'); assertDraftOwner(agreement, suggestion.reviewRound, suggestion.authorSubjectId, user.id, 'sender'); restoreCounteredParents(agreement, suggestion); agreement.suggestions.splice(index, 1); agreement.updatedAt = isoNow(); await repository.saveAgreement(agreement); return context.json(agreement);
   });
 
   app.post('/v1/agreements/:agreementId/comments', async (context) => {
@@ -449,20 +493,7 @@ export function createApp(repository: Repository): Hono {
     if (agreement.createdByParticipantId && agreement.reviewAssignedTo !== 'sender') throw new Error('Wait for the counterparty to return its review before resolving redlines.');
     const suggestion = agreement.suggestions.find((item) => item.id === context.req.param('suggestionId'));
     if (!suggestion) return context.json({ error: 'not_found', message: 'Suggestion not found.' }, 404);
-    if (suggestion.status !== 'open') throw new Error('This suggestion has already been resolved.');
-    suggestion.status = input.resolution;
-    suggestion.resolvedAt = isoNow();
-    if (input.resolution === 'accepted') {
-      if (!agreement.content.includes(suggestion.originalText)) throw new Error('The original text changed before this suggestion was accepted.');
-      const acceptedAnchor = suggestion.anchor; const delta = suggestion.replacementText.length - suggestion.originalText.length;
-      agreement.content = acceptedAnchor && agreement.content.slice(acceptedAnchor.start, acceptedAnchor.end) === suggestion.originalText
-        ? agreement.content.slice(0, acceptedAnchor.start) + suggestion.replacementText + agreement.content.slice(acceptedAnchor.end)
-        : agreement.content.replace(suggestion.originalText, suggestion.replacementText);
-      agreement.contentSha256 = hashContent(agreement.content);
-      agreement.revision += 1;
-      if (acceptedAnchor) agreement.suggestions.forEach((item) => { if (item.id !== suggestion.id && item.status === 'open' && item.anchor?.revision === acceptedAnchor.revision) { if (item.anchor.start >= acceptedAnchor.end) { item.anchor.start += delta; item.anchor.end += delta; } item.anchor.revision = agreement.revision; } });
-    }
-    agreement.updatedAt = isoNow();
+    resolveSuggestionDecision(agreement, suggestion, input.resolution);
     await repository.saveAgreement(agreement);
     void emitAgreementEvent(repository, 'agreement.suggestion.resolved', agreement);
     return context.json(agreement);

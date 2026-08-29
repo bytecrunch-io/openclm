@@ -69,6 +69,7 @@ export const api = {
   externalSaveReviewDraft: (content: string) => request('/public/session/review-draft', ExternalViewSchema, { method: 'PUT', body: JSON.stringify({ content }) }),
   externalUpdateSuggestion: (suggestionId: string, input: { replacementText: string; comment: string }) => request(`/public/session/suggestions/${suggestionId}`, ExternalViewSchema, { method: 'PATCH', body: JSON.stringify(input) }),
   externalRemoveSuggestion: (suggestionId: string) => request(`/public/session/suggestions/${suggestionId}`, ExternalViewSchema, { method: 'DELETE' }),
+  externalResolveSuggestion: (suggestionId: string, resolution: 'accepted' | 'rejected') => request(`/public/session/suggestions/${suggestionId}/resolve`, ExternalViewSchema, { method: 'POST', body: JSON.stringify({ resolution }) }),
   externalReplySuggestion: (suggestionId: string, body: string) => request(`/public/session/suggestions/${suggestionId}/messages`, ExternalViewSchema, { method: 'POST', body: JSON.stringify({ body }) }),
   externalDocumentComment: (body: string) => request('/public/session/comments', ExternalViewSchema, { method: 'POST', body: JSON.stringify({ body }) }),
   externalUpdateDocumentComment: (commentId: string, body: string) => request(`/public/session/comments/${commentId}`, ExternalViewSchema, { method: 'PATCH', body: JSON.stringify({ body }) }),

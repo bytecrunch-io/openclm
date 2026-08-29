@@ -185,6 +185,43 @@ describe('contracts API vertical slice', () => {
     expect(await status.json()).toMatchObject({ satisfied: true, status: 'executed' });
   });
 
+  it('turns an inline edit of an incoming redline into a counterproposal that the other party must decide', async () => {
+    const app = await testApp();
+    const createdResponse = await app.request('/v1/agreements', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: 'Counterproposal NDA', templateKey: 'mutual-nda', participants: [], metadata: {}, parties: [{ role: 'counterparty', minimumSignatures: 1, entity: { legalName: 'Counter Co' }, participants: [{ email: 'counter@example.com', name: 'Counter Reviewer', role: 'signatory', required: true }] }] }) });
+    const created = await createdResponse.json() as { id: string; createdByParticipantId: string; content: string; participants: Array<{ id: string }> };
+    const external = created.participants.find((item) => item.id !== created.createdByParticipantId)!;
+    const invitationResponse = await app.request(`/v1/agreements/${created.id}/participants/${external.id}/invite`, { method: 'POST' });
+    const invitation = await invitationResponse.json() as { invitationUrl: string }; const token = new URL(invitation.invitationUrl).searchParams.get('token')!;
+    const exchange = await app.request('/public/invitations/exchange', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token }) });
+    const cookie = exchange.headers.get('set-cookie')!.split(';')[0]!; const externalHeaders = { 'content-type': 'application/json', cookie };
+    const onboarding = await app.request('/public/session/onboarding', { method: 'POST', headers: externalHeaders, body: JSON.stringify({ name: 'Counter Reviewer', title: 'Director', capacity: 'director', authorityConfirmed: true, entity: { legalName: 'Counter Co' } }) });
+    const onboarded = await onboarding.json() as { agreement: { content: string } };
+
+    const partyBDraft = await app.request('/public/session/review-draft', { method: 'PUT', headers: externalHeaders, body: JSON.stringify({ content: onboarded.agreement.content.replace('two years', 'one year') }) });
+    const partyBView = await partyBDraft.json() as { agreement: { suggestions: Array<{ id: string }> } }; const partyBRedlineId = partyBView.agreement.suggestions[0]!.id;
+    expect((await app.request('/public/session/return-review', { method: 'POST', headers: externalHeaders, body: JSON.stringify({ message: 'Please shorten the term.' }) })).status).toBe(200);
+
+    const prematureHandback = await app.request(`/v1/agreements/${created.id}/send-review`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ message: '' }) });
+    expect(prematureHandback.status).toBe(409); expect(await prematureHandback.json()).toMatchObject({ message: expect.stringContaining('Accept, keep original, or counter') });
+
+    const counterDraft = await app.request(`/v1/agreements/${created.id}/review-draft`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ content: created.content.replace('two years', 'eighteen months') }) });
+    expect(counterDraft.status).toBe(200); const countered = await counterDraft.json() as { suggestions: Array<{ id: string; status: string; replacementText: string; inResponseToSuggestionIds: string[]; counteredBySuggestionId: string | null }> };
+    const partyBRedline = countered.suggestions.find((item) => item.id === partyBRedlineId)!; let partyACounter = countered.suggestions.find((item) => item.inResponseToSuggestionIds.includes(partyBRedlineId))!;
+    expect(partyBRedline).toMatchObject({ status: 'countered', counteredBySuggestionId: partyACounter.id });
+    expect(partyACounter).toMatchObject({ status: 'open', replacementText: 'eighteen months', inResponseToSuggestionIds: [partyBRedlineId] });
+    const removedCounter = await app.request(`/v1/agreements/${created.id}/suggestions/${partyACounter.id}`, { method: 'DELETE' });
+    expect(await removedCounter.json()).toMatchObject({ suggestions: expect.arrayContaining([expect.objectContaining({ id: partyBRedlineId, status: 'open', counteredBySuggestionId: null })]) });
+    const recreatedCounter = await app.request(`/v1/agreements/${created.id}/review-draft`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ content: created.content.replace('two years', 'eighteen months') }) });
+    const recreated = await recreatedCounter.json() as { suggestions: Array<{ id: string; status: string; replacementText: string; inResponseToSuggestionIds: string[]; counteredBySuggestionId: string | null }> }; partyACounter = recreated.suggestions.find((item) => item.inResponseToSuggestionIds.includes(partyBRedlineId))!;
+    expect((await app.request(`/v1/agreements/${created.id}/send-review`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ message: 'We can agree to eighteen months.' }) })).status).toBe(200);
+
+    const unresolvedReturn = await app.request('/public/session/return-review', { method: 'POST', headers: externalHeaders, body: JSON.stringify({ message: '' }) });
+    expect(unresolvedReturn.status).toBe(409);
+    const acceptedCounter = await app.request(`/public/session/suggestions/${partyACounter.id}/resolve`, { method: 'POST', headers: externalHeaders, body: JSON.stringify({ resolution: 'accepted' }) });
+    expect(acceptedCounter.status).toBe(200); expect(await acceptedCounter.json()).toMatchObject({ agreement: { revision: 2, content: expect.stringContaining('eighteen months'), suggestions: expect.arrayContaining([expect.objectContaining({ id: partyACounter.id, status: 'accepted' })]) } });
+    expect((await app.request('/public/session/return-review', { method: 'POST', headers: externalHeaders, body: JSON.stringify({ message: 'Accepted.' }) })).status).toBe(200);
+  });
+
   it('allows the sender to sign before the counterparty', async () => {
     const app = await testApp();
     const createdResponse = await app.request('/v1/agreements', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: 'Unordered signatures', templateKey: 'mutual-nda', participants: [], metadata: {}, parties: [{ role: 'counterparty', minimumSignatures: 1, entity: { legalName: 'Other Co' }, participants: [{ email: 'other@example.com', name: 'Other Signer', role: 'signatory', required: true }] }] }) });

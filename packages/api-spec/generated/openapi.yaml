@@ -346,6 +346,30 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/ThreadMessageInput'
+  /public/session/suggestions/{suggestionId}/resolve:
+    post:
+      operationId: ExternalParticipantOperations_resolveSuggestion
+      parameters:
+        - name: suggestionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/ExternalView'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResolveSuggestion'
   /v1/agreement-status:
     get:
       operationId: StatusOperations_get
@@ -2442,6 +2466,8 @@ components:
         - messages
         - mentions
         - reviewRound
+        - inResponseToSuggestionIds
+        - counteredBySuggestionId
         - status
         - createdAt
         - resolvedAt
@@ -2473,6 +2499,14 @@ components:
         reviewRound:
           type: integer
           format: int32
+        inResponseToSuggestionIds:
+          type: array
+          items:
+            type: string
+        counteredBySuggestionId:
+          anyOf:
+            - type: string
+            - type: 'null'
         status:
           $ref: '#/components/schemas/SuggestionStatus'
         createdAt:
@@ -2489,6 +2523,7 @@ components:
         - open
         - accepted
         - rejected
+        - countered
     Template:
       type: object
       required:

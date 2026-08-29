@@ -35,7 +35,7 @@ enum AgreementStatus {
 
 enum ParticipantRole { owner, reviewer, signatory }
 enum ParticipantStatus { not_invited, invited, reviewed, signed, declined }
-enum SuggestionStatus { open, accepted, rejected }
+enum SuggestionStatus { open, accepted, rejected, countered }
 enum RequirementOperator { all, any }
 enum PartyRole { sender, counterparty }
 enum PartyStatus { invited, onboarding, reviewing, ready, signing, executed }
@@ -155,6 +155,8 @@ model Suggestion {
   messages: ThreadMessage[];
   mentions: Mention[];
   reviewRound: int32;
+  inResponseToSuggestionIds: string[];
+  counteredBySuggestionId: string | null;
   status: SuggestionStatus;
   createdAt: utcDateTime;
   resolvedAt: utcDateTime | null;
@@ -482,6 +484,9 @@ interface ExternalParticipantOperations {
 
   @post @route("/session/suggestions/{suggestionId}/messages")
   replySuggestion(@path suggestionId: string, @body body: ThreadMessageInput): ExternalView | ErrorResponse;
+
+  @post @route("/session/suggestions/{suggestionId}/resolve")
+  resolveSuggestion(@path suggestionId: string, @body body: ResolveSuggestion): ExternalView | ErrorResponse;
 
   @post @route("/session/comments")
   comment(@body body: ThreadMessageInput): ExternalView | ErrorResponse;
