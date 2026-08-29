@@ -20,6 +20,8 @@ const ConfigSchema = z.object({
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().int().positive().default(1025),
   SMTP_FROM: z.string().default('Bytecrunch Contracts <contracts@bytecrunch.local>'),
+  WEBAUTHN_RP_ID: z.string().min(1).optional(),
+  WEBAUTHN_ORIGIN: z.string().url().optional(),
 });
 
 export const config = ConfigSchema.parse(process.env);

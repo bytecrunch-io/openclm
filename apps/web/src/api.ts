@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { AuthenticationResponseJSON, RegistrationResponseJSON } from '@simplewebauthn/browser';
 import {
   AgreementSchema,
   AgreementPartySchema,
@@ -24,6 +25,8 @@ const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3001';
 const UserSchema = z.object({ id: z.string(), email: z.string().email(), name: z.string(), activeEntityId: z.string().nullable(), entities: z.array(EntityMembershipViewSchema), scopes: z.array(z.string()) });
 const ExternalViewSchema = z.object({ agreement: AgreementSchema, participant: ParticipantSchema, party: AgreementPartySchema.nullable() });
 const EntityMemberListSchema = z.object({ members: z.array(z.object({ membership: EntityMembershipSchema, account: AccountSchema })), invitations: z.array(EntityMemberInvitationSchema.omit({ tokenHash: true })) });
+const PasskeySchema = z.object({ id: z.string(), accountId: z.string(), counter: z.number(), transports: z.array(z.string()), deviceType: z.enum(['singleDevice', 'multiDevice']), backedUp: z.boolean(), name: z.string(), createdAt: z.string(), lastUsedAt: z.string().nullable() });
+const PasskeyOptionsSchema = z.object({ requestId: z.string(), options: z.record(z.string(), z.unknown()) });
 const InvitationResponseSchema = z.object({
   id: z.string(), tenantId: z.string(), agreementId: z.string(), participantId: z.string(), email: z.string().email(),
   status: z.enum(['pending', 'accepted', 'revoked', 'expired']), expiresAt: z.string(), createdAt: z.string(), acceptedAt: z.string().nullable(), invitationUrl: z.string().url().optional(),
@@ -33,6 +36,7 @@ export type ExternalView = z.infer<typeof ExternalViewSchema>;
 export type EntityMemberList = z.infer<typeof EntityMemberListSchema>;
 export type EntityRole = z.infer<typeof EntityRoleSchema>;
 export type RecipientInboxItem = z.infer<typeof RecipientInboxItemSchema>;
+export type Passkey = z.infer<typeof PasskeySchema>;
 
 async function request<T>(path: string, schema: z.ZodType<T>, init?: RequestInit): Promise<T> {
   const activeEntityId = localStorage.getItem('bc-contracts-active-entity');
@@ -64,7 +68,13 @@ export const api = {
   acceptEntityMemberInvitation: (token: string) => request('/v1/entity-member-invitations/accept', z.object({ membership: EntityMembershipSchema, entity: CustomerEntitySchema }), { method: 'POST', body: JSON.stringify({ token }) }),
   requestRecipientCode: (email: string) => request('/public/recipient-auth/request', z.object({ accepted: z.literal(true), requestId: z.string(), expiresAt: z.string(), developmentCode: z.string().optional() }), { method: 'POST', body: JSON.stringify({ email }) }),
   verifyRecipientCode: (requestId: string, code: string) => request('/public/recipient-auth/verify', z.object({ accepted: z.literal(true), account: AccountSchema }), { method: 'POST', body: JSON.stringify({ requestId, code }) }),
+  recipientPasskeyOptions: () => request('/public/recipient-auth/passkey/options', PasskeyOptionsSchema, { method: 'POST' }),
+  verifyRecipientPasskey: (requestId: string, response: AuthenticationResponseJSON) => request('/public/recipient-auth/passkey/verify', z.object({ accepted: z.literal(true), account: AccountSchema }), { method: 'POST', body: JSON.stringify({ requestId, response }) }),
   recipientInbox: () => request('/public/recipient/inbox', z.array(RecipientInboxItemSchema)),
+  recipientPasskeys: () => request('/public/recipient/passkeys', z.array(PasskeySchema)),
+  recipientPasskeyRegistrationOptions: () => request('/public/recipient/passkeys/registration/options', PasskeyOptionsSchema, { method: 'POST' }),
+  verifyRecipientPasskeyRegistration: (requestId: string, response: RegistrationResponseJSON) => request('/public/recipient/passkeys/registration/verify', PasskeySchema, { method: 'POST', body: JSON.stringify({ requestId, response }) }),
+  deleteRecipientPasskey: (credentialId: string) => request(`/public/recipient/passkeys/${encodeURIComponent(credentialId)}`, z.object({ ok: z.literal(true) }), { method: 'DELETE' }),
   openRecipientAgreement: (accessId: string) => request('/public/recipient/open', z.object({ opened: z.literal(true) }), { method: 'POST', body: JSON.stringify({ accessId }) }),
   logoutRecipient: () => request('/public/recipient/logout', z.object({ ok: z.literal(true) }), { method: 'POST' }),
   templates: () => request('/v1/templates', z.array(TemplateSchema)),

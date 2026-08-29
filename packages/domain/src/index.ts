@@ -135,6 +135,17 @@ export const RecipientLoginChallengeSchema = z.object({
   expiresAt: z.string().datetime(), createdAt: z.string().datetime(), acceptedAt: z.string().datetime().nullable(),
 });
 export type RecipientLoginChallenge = z.infer<typeof RecipientLoginChallengeSchema>;
+export const PasskeyCredentialSchema = z.object({
+  id: z.string().min(1), accountId: z.string().min(1), publicKey: z.string().min(1), counter: z.number().int().nonnegative(),
+  transports: z.array(z.string()).default([]), deviceType: z.enum(['singleDevice', 'multiDevice']), backedUp: z.boolean(),
+  name: z.string().min(1).max(100), createdAt: z.string().datetime(), lastUsedAt: z.string().datetime().nullable(),
+});
+export type PasskeyCredential = z.infer<typeof PasskeyCredentialSchema>;
+export const PasskeyChallengeSchema = z.object({
+  id: z.string().min(1), accountId: z.string().min(1).nullable(), purpose: z.enum(['registration', 'authentication']), challenge: z.string().min(20),
+  status: z.enum(['pending', 'accepted', 'expired']), attempts: z.number().int().nonnegative().max(5), expiresAt: z.string().datetime(), createdAt: z.string().datetime(),
+});
+export type PasskeyChallenge = z.infer<typeof PasskeyChallengeSchema>;
 export const RecipientInboxItemSchema = z.object({
   accessId: z.string().min(1), tenantId: z.string().min(1), entityName: z.string().min(1), agreementId: z.string().min(1),
   title: z.string().min(1), agreementStatus: AgreementStatusSchema, participantId: z.string().min(1), participantName: z.string().min(1),

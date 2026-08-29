@@ -54,7 +54,9 @@ An entity invitation grants application access only. It does not prove that the 
 
 Recipients can also open `/inbox` and request a six-digit email code. The request response does not reveal whether an account or assignment exists. Challenges expire after ten minutes, lock after five failed attempts, are throttled per address, and are stored as keyed hashes rather than plaintext codes. Successful verification creates an eight-hour account-level recipient session. Selecting an inbox item then creates the existing agreement-scoped participant session, preserving the narrow authorization boundary.
 
-The current slice treats possession of the original emailed invitation as initial email verification and supports email-code return access across assignments. Passkeys, optional organisation SSO, recovery/revocation controls, and recent-authentication requirements immediately before higher-assurance signing remain future work.
+After verified email access, a recipient can enroll one or more discoverable WebAuthn passkeys. Registration and authentication require authenticator user verification, validate the expected relying-party ID and origin, persist credential counters, and never store private-key material. Authentication is username-less: the signed credential identifies the account, then the server creates the same narrow recipient session. Original invitation and recovery exchanges also create this inbox session so a recipient is not challenged twice.
+
+Optional organisation SSO, credential recovery/revocation history, and recent-authentication requirements immediately before higher-assurance signing remain future work. Production deployments must set `WEBAUTHN_RP_ID` to their registrable host and `WEBAUTHN_ORIGIN` to the exact HTTPS browser origin; localhost works without HTTPS for local development.
 
 ## Roles and permissions
 

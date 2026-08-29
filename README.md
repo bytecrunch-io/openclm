@@ -27,6 +27,7 @@ Open-source agreement infrastructure for review, redlining, execution, and integ
 - Safe return access: an accepted invitation sends a fresh, single-use 15-minute email link instead of becoming a dead end
 - Cross-entity **My work** inbox for staff and an account-level recipient inbox for invited parties
 - Non-enumerating six-digit recipient sign-in codes with short expiry, attempt limits, throttling, and narrow agreement-session handoff
+- Discoverable WebAuthn passkeys with required user verification, checked RP/origin, signature-counter persistence, and local `localhost` support
 - External onboarding with title, signing capacity, and authority confirmation
 - External reviewer/signatory portal with signatory nomination
 - Agreement-status query and multi-requirement evaluation API
@@ -80,6 +81,7 @@ Everything runs locally. There is no required hosted database, identity provider
 11. Verify that both signature blocks appear, the agreement becomes executed, and the agreement-status API returns `satisfied: true`.
 12. Close the participant browser, reopen the original invitation, then open the fresh return email in Mailpit. The new 15-minute link restores access without reusing the accepted invitation.
 13. Alternatively, open http://localhost:3000/inbox, enter the invited email, copy the six-digit code from Mailpit, and open any agreement assigned to that address.
+14. From the recipient inbox, select **Add a passkey** and complete the browser prompt. Sign out and use **Use a passkey** to return without another email.
 
 To exercise multi-entity membership, select **Add entity** next to **Acting for**. Creating and switching to it gives that customer entity its own template copy, agreements, sender identity, and data boundary.
 
@@ -151,7 +153,7 @@ docker compose config
 
 ## Next production milestones
 
-1. Add passkeys as a phishing-resistant option for returning recipients and require recent authentication for sensitive signing profiles.
+1. Require recent authentication for configurable signing-assurance profiles and record the authentication method in append-only signing evidence.
 2. Expand route-family authorization into resource-level policy tests and add invitation resend/revoke controls.
 3. Add recent-authentication checks, signing-capacity evidence, and an append-only signing/audit evidence package.
 4. Add a signing-provider interface and a self-hosted PAdES-capable provider.

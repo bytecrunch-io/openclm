@@ -49,6 +49,7 @@ This pass adds an explicit next-action layer, touch-friendly typed/drawn signing
 - Added non-consuming invitation previews, OIDC return-to handling, explicit acceptance, and final-administrator protection.
 - Added first-run onboarding for a verified SSO user with no memberships, clearly framing the new entity as an independent customer tenant.
 - Added a prioritized **My work** inbox across customer entities and a recipient inbox that can be recovered with a privacy-preserving email code.
+- Added passkey enrollment after verified recipient access and a prominent passkey return path, while retaining email code as recovery.
 
 ## Prioritized findings
 
@@ -62,7 +63,7 @@ This pass adds an explicit next-action layer, touch-friendly typed/drawn signing
 
 ### P1 — highest UX value next
 
-1. Add passkey enrollment/sign-in and optional organisation SSO, with recent-authentication checks before higher-assurance signatures.
+1. Add optional organisation SSO and recent-authentication checks before higher-assurance signatures.
 2. Add resource-level authorization tests beyond the current route-family checks, plus invitation resend/revoke and membership audit history.
 3. Add a secure “continue on phone” handoff using a short-lived, one-time QR token. Do not encode the reusable invitation/session credential directly in the QR code.
 4. Add explicit signature-field placement to templates for agreements that need placement other than the standard closing signature section.

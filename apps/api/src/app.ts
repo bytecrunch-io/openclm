@@ -5,6 +5,8 @@ import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { secureHeaders } from 'hono/secure-headers';
 import { z, ZodError } from 'zod';
+import { generateAuthenticationOptions, generateRegistrationOptions, verifyAuthenticationResponse, verifyRegistrationResponse } from '@simplewebauthn/server';
+import type { AuthenticationResponseJSON, AuthenticatorTransportFuture, RegistrationResponseJSON } from '@simplewebauthn/server';
 import {
   AgreementSchema,
   AddThreadMessageSchema,
@@ -20,6 +22,8 @@ import {
   AccessChallengeSchema,
   RecipientLoginChallengeSchema,
   RecipientInboxItemSchema,
+  PasskeyCredentialSchema,
+  PasskeyChallengeSchema,
   EntityMemberInvitationSchema,
   InviteEntityMemberSchema,
   UpdateEntityMemberSchema,
@@ -291,7 +295,36 @@ export function createApp(repository: Repository): Hono {
     if (!verifyRecipientLoginCode(challenge.id, input.code, challenge.codeHash) || !challenge.accountId) { if (challenge.attempts >= 5) challenge.status = 'locked'; await repository.saveRecipientLoginChallenge(challenge); return invalid(); }
     const account = await repository.getAccount(challenge.accountId); if (!account) return invalid(); challenge.status = 'accepted'; challenge.acceptedAt = isoNow(); await repository.saveRecipientLoginChallenge(challenge); await setRecipientSession(context, { accountId: account.id, email: account.email }); return context.json({ accepted: true, account });
   });
+  app.post('/public/recipient-auth/passkey/options', async (context) => {
+    const options = await generateAuthenticationOptions({ rpID: webauthnRPID(), userVerification: 'required' }); const challenge = PasskeyChallengeSchema.parse({ id: `passkey_challenge_${randomUUID()}`, accountId: null, purpose: 'authentication', challenge: options.challenge, status: 'pending', attempts: 0, expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(), createdAt: isoNow() }); await repository.createPasskeyChallenge(challenge); return context.json({ requestId: challenge.id, options });
+  });
+  app.post('/public/recipient-auth/passkey/verify', async (context) => {
+    const parsed = z.object({ requestId: z.string().min(1), response: z.object({ id: z.string().min(1) }).passthrough() }).parse(await context.req.json()); const challenge = await repository.getPasskeyChallenge(parsed.requestId); const credential = await repository.getPasskeyCredential(parsed.response.id);
+    const invalid = () => context.json({ error: 'invalid_passkey', message: 'The passkey could not be verified. Try again or use an email code.' }, 401);
+    if (!challenge || challenge.purpose !== 'authentication' || challenge.status !== 'pending' || !credential) return invalid();
+    if (new Date(challenge.expiresAt).getTime() <= Date.now()) { challenge.status = 'expired'; await repository.savePasskeyChallenge(challenge); return invalid(); }
+    challenge.attempts += 1;
+    try {
+      const verification = await verifyAuthenticationResponse({ response: parsed.response as unknown as AuthenticationResponseJSON, expectedChallenge: challenge.challenge, expectedOrigin: webauthnOrigin(), expectedRPID: webauthnRPID(), credential: { id: credential.id, publicKey: Buffer.from(credential.publicKey, 'base64url'), counter: credential.counter, transports: credential.transports as AuthenticatorTransportFuture[] }, requireUserVerification: true });
+      if (!verification.verified) { await repository.savePasskeyChallenge(challenge); return invalid(); }
+      challenge.status = 'accepted'; await repository.savePasskeyChallenge(challenge); credential.counter = verification.authenticationInfo.newCounter; credential.deviceType = verification.authenticationInfo.credentialDeviceType; credential.backedUp = verification.authenticationInfo.credentialBackedUp; credential.lastUsedAt = isoNow(); await repository.savePasskeyCredential(credential); const account = await repository.getAccount(credential.accountId); if (!account) return invalid(); await setRecipientSession(context, { accountId: account.id, email: account.email }); return context.json({ accepted: true, account });
+    } catch { if (challenge.attempts >= 5) challenge.status = 'expired'; await repository.savePasskeyChallenge(challenge); return invalid(); }
+  });
   app.get('/public/recipient/inbox', recipientSessionMiddleware(), async (context) => context.json(await buildPersonalInbox(repository, currentRecipientSession(context).accountId, currentRecipientSession(context).email, true)));
+  app.get('/public/recipient/passkeys', recipientSessionMiddleware(), async (context) => context.json((await repository.listPasskeyCredentials(currentRecipientSession(context).accountId)).map(publicPasskey)));
+  app.post('/public/recipient/passkeys/registration/options', recipientSessionMiddleware(), async (context) => {
+    const recipient = currentRecipientSession(context); const account = await repository.getAccount(recipient.accountId); if (!account) return context.json({ error: 'not_found', message: 'Recipient account not found.' }, 404); const credentials = await repository.listPasskeyCredentials(account.id);
+    const options = await generateRegistrationOptions({ rpName: 'Bytecrunch Contracts', rpID: webauthnRPID(), userID: new TextEncoder().encode(account.id), userName: account.email, userDisplayName: account.displayName, attestationType: 'none', excludeCredentials: credentials.map((item) => ({ id: item.id, transports: item.transports as AuthenticatorTransportFuture[] })), authenticatorSelection: { residentKey: 'required', userVerification: 'required' } }); const challenge = PasskeyChallengeSchema.parse({ id: `passkey_challenge_${randomUUID()}`, accountId: account.id, purpose: 'registration', challenge: options.challenge, status: 'pending', attempts: 0, expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(), createdAt: isoNow() }); await repository.createPasskeyChallenge(challenge); return context.json({ requestId: challenge.id, options });
+  });
+  app.post('/public/recipient/passkeys/registration/verify', recipientSessionMiddleware(), async (context) => {
+    const recipient = currentRecipientSession(context); const parsed = z.object({ requestId: z.string().min(1), response: z.object({ id: z.string().min(1), response: z.object({ transports: z.array(z.string()).optional() }).passthrough() }).passthrough() }).parse(await context.req.json()); const challenge = await repository.getPasskeyChallenge(parsed.requestId);
+    if (!challenge || challenge.accountId !== recipient.accountId || challenge.purpose !== 'registration' || challenge.status !== 'pending' || new Date(challenge.expiresAt).getTime() <= Date.now()) return context.json({ error: 'invalid_passkey_registration', message: 'Passkey registration expired. Start again.' }, 400);
+    const existing = await repository.getPasskeyCredential(parsed.response.id); if (existing) return context.json({ error: 'passkey_exists', message: 'That passkey is already registered.' }, 409);
+    try {
+      const verification = await verifyRegistrationResponse({ response: parsed.response as unknown as RegistrationResponseJSON, expectedChallenge: challenge.challenge, expectedOrigin: webauthnOrigin(), expectedRPID: webauthnRPID(), requireUserVerification: true }); if (!verification.verified || !verification.registrationInfo) throw new Error('Registration was not verified'); const info = verification.registrationInfo; const credential = PasskeyCredentialSchema.parse({ id: info.credential.id, accountId: recipient.accountId, publicKey: Buffer.from(info.credential.publicKey).toString('base64url'), counter: info.credential.counter, transports: parsed.response.response.transports ?? [], deviceType: info.credentialDeviceType, backedUp: info.credentialBackedUp, name: `Passkey · ${new Date().toLocaleDateString('en-CA')}`, createdAt: isoNow(), lastUsedAt: null }); await repository.savePasskeyCredential(credential); challenge.status = 'accepted'; await repository.savePasskeyChallenge(challenge); return context.json(publicPasskey(credential), 201);
+    } catch { challenge.attempts += 1; if (challenge.attempts >= 5) challenge.status = 'expired'; await repository.savePasskeyChallenge(challenge); return context.json({ error: 'invalid_passkey_registration', message: 'The authenticator response could not be verified.' }, 400); }
+  });
+  app.delete('/public/recipient/passkeys/:credentialId', recipientSessionMiddleware(), async (context) => { const recipient = currentRecipientSession(context); await repository.deletePasskeyCredential(context.req.param('credentialId'), recipient.accountId); return context.json({ ok: true }); });
   app.post('/public/recipient/open', recipientSessionMiddleware(), async (context) => {
     const { accessId } = z.object({ accessId: z.string().min(1) }).parse(await context.req.json()); const recipient = currentRecipientSession(context); const access = (await repository.listAgreementAccesses(recipient.accountId)).find((item) => item.id === accessId);
     if (!access) return context.json({ error: 'not_found', message: 'That agreement assignment is no longer available.' }, 404); access.lastAccessedAt = isoNow(); await repository.saveAgreementAccess(access); await setExternalSession(context, { invitationId: 'recipient-inbox', agreementId: access.agreementId, participantId: access.participantId, tenantId: access.tenantId, accountId: access.accountId }); return context.json({ opened: true });
@@ -424,6 +457,7 @@ export function createApp(repository: Repository): Hono {
     await repository.createAgreementAccess(access);
     invitation.status = 'accepted'; invitation.acceptedAt = isoNow(); invitation.acceptedByAccountId = account.id; await repository.saveInvitation(invitation);
     await setExternalSession(context, { invitationId: invitation.id, agreementId: invitation.agreementId, participantId: invitation.participantId, tenantId: invitation.tenantId, accountId: account.id });
+    await setRecipientSession(context, { accountId: account.id, email: account.email });
     return context.json({ accepted: true });
   });
 
@@ -438,6 +472,7 @@ export function createApp(repository: Repository): Hono {
     challenge.status = 'accepted'; challenge.acceptedAt = isoNow(); await repository.saveAccessChallenge(challenge);
     access.lastAccessedAt = isoNow(); await repository.saveAgreementAccess(access);
     await setExternalSession(context, { invitationId: challenge.id, agreementId: access.agreementId, participantId: access.participantId, tenantId: access.tenantId, accountId: access.accountId });
+    const account = await repository.getAccount(access.accountId); if (account) await setRecipientSession(context, { accountId: account.id, email: account.email });
     return context.json({ accepted: true });
   });
 
@@ -940,6 +975,10 @@ function publicInvitation(invitation: import('@bytecrunch/contracts-domain').Inv
 function publicEntityMemberInvitation(invitation: import('@bytecrunch/contracts-domain').EntityMemberInvitation) {
   const { tokenHash: _, ...safe } = invitation; return safe;
 }
+
+function publicPasskey(credential: import('@bytecrunch/contracts-domain').PasskeyCredential) { const { publicKey: _, ...safe } = credential; return safe; }
+function webauthnOrigin(): string { return new URL(config.WEBAUTHN_ORIGIN ?? config.WEB_URL).origin; }
+function webauthnRPID(): string { return config.WEBAUTHN_RP_ID ?? new URL(config.WEB_URL).hostname; }
 
 function maskEmail(email: string): string {
   const [local = '', domain = ''] = email.split('@'); return `${local.slice(0, 2)}${local.length > 2 ? '•••' : ''}@${domain}`;

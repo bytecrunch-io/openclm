@@ -18,6 +18,8 @@ import {
   AccessChallengeSchema,
   EntityMemberInvitationSchema,
   RecipientLoginChallengeSchema,
+  PasskeyCredentialSchema,
+  PasskeyChallengeSchema,
   type Agreement,
   type CreateAgreement,
   type CreateTemplate,
@@ -37,6 +39,8 @@ import {
   type AccessChallenge,
   type EntityMemberInvitation,
   type RecipientLoginChallenge,
+  type PasskeyCredential,
+  type PasskeyChallenge,
 } from '@bytecrunch/contracts-domain';
 
 export interface WebhookEndpoint {
@@ -105,6 +109,13 @@ export interface Repository {
   getRecipientLoginChallenge(id: string): Promise<RecipientLoginChallenge | undefined>;
   listRecipientLoginChallenges(email: string): Promise<RecipientLoginChallenge[]>;
   saveRecipientLoginChallenge(challenge: RecipientLoginChallenge): Promise<void>;
+  listPasskeyCredentials(accountId: string): Promise<PasskeyCredential[]>;
+  getPasskeyCredential(id: string): Promise<PasskeyCredential | undefined>;
+  savePasskeyCredential(credential: PasskeyCredential): Promise<void>;
+  deletePasskeyCredential(id: string, accountId: string): Promise<void>;
+  createPasskeyChallenge(challenge: PasskeyChallenge): Promise<void>;
+  getPasskeyChallenge(id: string): Promise<PasskeyChallenge | undefined>;
+  savePasskeyChallenge(challenge: PasskeyChallenge): Promise<void>;
 }
 
 function now(): string { return new Date().toISOString(); }
@@ -130,6 +141,8 @@ export class MemoryRepository implements Repository {
   protected accessChallenges: AccessChallenge[] = [];
   protected entityMemberInvitations: EntityMemberInvitation[] = [];
   protected recipientLoginChallenges: RecipientLoginChallenge[] = [];
+  protected passkeyCredentials: PasskeyCredential[] = [];
+  protected passkeyChallenges: PasskeyChallenge[] = [];
 
   async init(): Promise<void> {
     if (!this.customerEntities.some((entity) => entity.id === 'bytecrunch')) {
@@ -288,6 +301,13 @@ export class MemoryRepository implements Repository {
   async getRecipientLoginChallenge(id: string) { const value = this.recipientLoginChallenges.find((item) => item.id === id); return value ? structuredClone(value) : undefined; }
   async listRecipientLoginChallenges(email: string) { return this.recipientLoginChallenges.filter((item) => item.email === email.toLowerCase()).map((item) => structuredClone(item)); }
   async saveRecipientLoginChallenge(challenge: RecipientLoginChallenge) { const index = this.recipientLoginChallenges.findIndex((item) => item.id === challenge.id); if (index < 0) throw new Error('Recipient login challenge not found.'); this.recipientLoginChallenges[index] = RecipientLoginChallengeSchema.parse(challenge); }
+  async listPasskeyCredentials(accountId: string) { return this.passkeyCredentials.filter((item) => item.accountId === accountId).map((item) => structuredClone(item)); }
+  async getPasskeyCredential(id: string) { const value = this.passkeyCredentials.find((item) => item.id === id); return value ? structuredClone(value) : undefined; }
+  async savePasskeyCredential(credential: PasskeyCredential) { const value = PasskeyCredentialSchema.parse(credential); const index = this.passkeyCredentials.findIndex((item) => item.id === value.id); if (index < 0) this.passkeyCredentials.push(value); else this.passkeyCredentials[index] = value; }
+  async deletePasskeyCredential(id: string, accountId: string) { this.passkeyCredentials = this.passkeyCredentials.filter((item) => item.id !== id || item.accountId !== accountId); }
+  async createPasskeyChallenge(challenge: PasskeyChallenge) { this.passkeyChallenges.push(PasskeyChallengeSchema.parse(challenge)); }
+  async getPasskeyChallenge(id: string) { const value = this.passkeyChallenges.find((item) => item.id === id); return value ? structuredClone(value) : undefined; }
+  async savePasskeyChallenge(challenge: PasskeyChallenge) { const index = this.passkeyChallenges.findIndex((item) => item.id === challenge.id); if (index < 0) throw new Error('Passkey challenge not found.'); this.passkeyChallenges[index] = PasskeyChallengeSchema.parse(challenge); }
 }
 
 export class PostgresRepository extends MemoryRepository {
@@ -337,6 +357,9 @@ export class PostgresRepository extends MemoryRepository {
       CREATE INDEX IF NOT EXISTS entity_member_invitations_entity_idx ON entity_member_invitations (entity_id, created_at DESC);
       CREATE TABLE IF NOT EXISTS recipient_login_challenges (id text PRIMARY KEY, email text NOT NULL, payload jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
       CREATE INDEX IF NOT EXISTS recipient_login_challenges_email_idx ON recipient_login_challenges (email, created_at DESC);
+      CREATE TABLE IF NOT EXISTS passkey_credentials (id text PRIMARY KEY, account_id text NOT NULL, payload jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
+      CREATE INDEX IF NOT EXISTS passkey_credentials_account_idx ON passkey_credentials (account_id);
+      CREATE TABLE IF NOT EXISTS passkey_challenges (id text PRIMARY KEY, payload jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
     `);
     const platformEntity = CustomerEntitySchema.parse({ id: 'bytecrunch', slug: 'bytecrunch', legalName: 'ByteCrunch ApS', businessAddress: null, registrationNumber: null, jurisdiction: 'DK', createdAt: now() });
     await this.pool.query('INSERT INTO customer_entities (id,slug,payload) VALUES ($1,$2,$3) ON CONFLICT (id) DO NOTHING', [platformEntity.id, platformEntity.slug, JSON.stringify(platformEntity)]);
@@ -498,6 +521,13 @@ export class PostgresRepository extends MemoryRepository {
   override async getRecipientLoginChallenge(id: string) { const result = await this.pool.query('SELECT payload FROM recipient_login_challenges WHERE id=$1', [id]); return result.rows[0] ? RecipientLoginChallengeSchema.parse(result.rows[0].payload) : undefined; }
   override async listRecipientLoginChallenges(email: string) { const result = await this.pool.query('SELECT payload FROM recipient_login_challenges WHERE email=$1 ORDER BY created_at DESC', [email.toLowerCase()]); return result.rows.map((row) => RecipientLoginChallengeSchema.parse(row.payload)); }
   override async saveRecipientLoginChallenge(challenge: RecipientLoginChallenge) { RecipientLoginChallengeSchema.parse(challenge); await this.pool.query('UPDATE recipient_login_challenges SET payload=$1 WHERE id=$2', [JSON.stringify(challenge), challenge.id]); }
+  override async listPasskeyCredentials(accountId: string) { const result = await this.pool.query('SELECT payload FROM passkey_credentials WHERE account_id=$1', [accountId]); return result.rows.map((row) => PasskeyCredentialSchema.parse(row.payload)); }
+  override async getPasskeyCredential(id: string) { const result = await this.pool.query('SELECT payload FROM passkey_credentials WHERE id=$1', [id]); return result.rows[0] ? PasskeyCredentialSchema.parse(result.rows[0].payload) : undefined; }
+  override async savePasskeyCredential(credential: PasskeyCredential) { PasskeyCredentialSchema.parse(credential); await this.pool.query('INSERT INTO passkey_credentials (id,account_id,payload) VALUES ($1,$2,$3) ON CONFLICT (id) DO UPDATE SET payload=EXCLUDED.payload', [credential.id, credential.accountId, JSON.stringify(credential)]); }
+  override async deletePasskeyCredential(id: string, accountId: string) { await this.pool.query('DELETE FROM passkey_credentials WHERE id=$1 AND account_id=$2', [id, accountId]); }
+  override async createPasskeyChallenge(challenge: PasskeyChallenge) { PasskeyChallengeSchema.parse(challenge); await this.pool.query('INSERT INTO passkey_challenges (id,payload) VALUES ($1,$2)', [challenge.id, JSON.stringify(challenge)]); }
+  override async getPasskeyChallenge(id: string) { const result = await this.pool.query('SELECT payload FROM passkey_challenges WHERE id=$1', [id]); return result.rows[0] ? PasskeyChallengeSchema.parse(result.rows[0].payload) : undefined; }
+  override async savePasskeyChallenge(challenge: PasskeyChallenge) { PasskeyChallengeSchema.parse(challenge); await this.pool.query('UPDATE passkey_challenges SET payload=$1 WHERE id=$2', [JSON.stringify(challenge), challenge.id]); }
 }
 
 function permissionsForRole(role: 'owner' | 'reviewer' | 'signatory') {

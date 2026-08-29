@@ -314,6 +314,9 @@ model RecipientCodeRequested { accepted: true; requestId: string; expiresAt: utc
 model VerifyRecipientCode { requestId: string; code: string; }
 model RecipientAuthenticated { accepted: true; account: AccountSummary; }
 model OpenRecipientAgreement { accessId: string; }
+model PasskeyOptions { requestId: string; options: Record<unknown>; }
+model VerifyPasskey { requestId: string; response: Record<unknown>; }
+model PasskeyCredential { id: string; accountId: string; counter: int32; transports: string[]; deviceType: "singleDevice" | "multiDevice"; backedUp: boolean; name: string; createdAt: utcDateTime; lastUsedAt: utcDateTime | null; }
 model OnboardParticipant {
   name: string;
   title: string;
@@ -513,8 +516,26 @@ interface ExternalParticipantOperations {
   @post @route("/recipient-auth/verify")
   verifyRecipientCode(@body body: VerifyRecipientCode): RecipientAuthenticated | ErrorResponse;
 
+  @post @route("/recipient-auth/passkey/options")
+  recipientPasskeyOptions(): PasskeyOptions | ErrorResponse;
+
+  @post @route("/recipient-auth/passkey/verify")
+  verifyRecipientPasskey(@body body: VerifyPasskey): RecipientAuthenticated | ErrorResponse;
+
   @get @route("/recipient/inbox")
   recipientInbox(): RecipientInboxItem[] | ErrorResponse;
+
+  @get @route("/recipient/passkeys")
+  listRecipientPasskeys(): PasskeyCredential[] | ErrorResponse;
+
+  @post @route("/recipient/passkeys/registration/options")
+  recipientPasskeyRegistrationOptions(): PasskeyOptions | ErrorResponse;
+
+  @post @route("/recipient/passkeys/registration/verify")
+  verifyRecipientPasskeyRegistration(@body body: VerifyPasskey): PasskeyCredential | ErrorResponse;
+
+  @delete @route("/recipient/passkeys/{credentialId}")
+  deleteRecipientPasskey(@path credentialId: string): { ok: true; } | ErrorResponse;
 
   @post @route("/recipient/open")
   openRecipientAgreement(@body body: OpenRecipientAgreement): { opened: true; } | ErrorResponse;

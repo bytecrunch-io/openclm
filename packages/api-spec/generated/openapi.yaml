@@ -92,6 +92,38 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/ExchangeInvitation'
+  /public/recipient-auth/passkey/options:
+    post:
+      operationId: ExternalParticipantOperations_recipientPasskeyOptions
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/PasskeyOptions'
+                  - $ref: '#/components/schemas/ErrorResponse'
+  /public/recipient-auth/passkey/verify:
+    post:
+      operationId: ExternalParticipantOperations_verifyRecipientPasskey
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/RecipientAuthenticated'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyPasskey'
   /public/recipient-auth/request:
     post:
       operationId: ExternalParticipantOperations_requestRecipientCode
@@ -191,6 +223,78 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/OpenRecipientAgreement'
+  /public/recipient/passkeys:
+    get:
+      operationId: ExternalParticipantOperations_listRecipientPasskeys
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - type: array
+                    items:
+                      $ref: '#/components/schemas/PasskeyCredential'
+                  - $ref: '#/components/schemas/ErrorResponse'
+  /public/recipient/passkeys/registration/options:
+    post:
+      operationId: ExternalParticipantOperations_recipientPasskeyRegistrationOptions
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/PasskeyOptions'
+                  - $ref: '#/components/schemas/ErrorResponse'
+  /public/recipient/passkeys/registration/verify:
+    post:
+      operationId: ExternalParticipantOperations_verifyRecipientPasskeyRegistration
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/PasskeyCredential'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyPasskey'
+  /public/recipient/passkeys/{credentialId}:
+    delete:
+      operationId: ExternalParticipantOperations_deleteRecipientPasskey
+      parameters:
+        - name: credentialId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - type: object
+                    properties:
+                      ok:
+                        type: boolean
+                        enum:
+                          - true
+                    required:
+                      - ok
+                  - $ref: '#/components/schemas/ErrorResponse'
   /public/session:
     get:
       operationId: ExternalParticipantOperations_session
@@ -2929,6 +3033,58 @@ components:
         - ready
         - signing
         - executed
+    PasskeyCredential:
+      type: object
+      required:
+        - id
+        - accountId
+        - counter
+        - transports
+        - deviceType
+        - backedUp
+        - name
+        - createdAt
+        - lastUsedAt
+      properties:
+        id:
+          type: string
+        accountId:
+          type: string
+        counter:
+          type: integer
+          format: int32
+        transports:
+          type: array
+          items:
+            type: string
+        deviceType:
+          type: string
+          enum:
+            - singleDevice
+            - multiDevice
+        backedUp:
+          type: boolean
+        name:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        lastUsedAt:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+    PasskeyOptions:
+      type: object
+      required:
+        - requestId
+        - options
+      properties:
+        requestId:
+          type: string
+        options:
+          type: object
+          unevaluatedProperties: {}
     RecipientAuthenticated:
       type: object
       required:
@@ -3383,6 +3539,17 @@ components:
           type: string
         comment:
           type: string
+    VerifyPasskey:
+      type: object
+      required:
+        - requestId
+        - response
+      properties:
+        requestId:
+          type: string
+        response:
+          type: object
+          unevaluatedProperties: {}
     VerifyRecipientCode:
       type: object
       required:

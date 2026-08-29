@@ -58,7 +58,7 @@ export default function ExternalPortal() {
 }
 
 function PortalFrame({ children }: { children: ReactNode }) {
-  return <main className="external-shell"><header className="external-header"><div className="external-brand"><img src={logo} alt="" /><strong>BYTECRUNCH</strong><span>CONTRACTS</span></div><span className="secure-label"><ShieldCheck /> Secure participant portal</span></header>{children}</main>;
+  return <main className="external-shell"><header className="external-header"><div className="external-brand"><img src={logo} alt="" /><strong>BYTECRUNCH</strong><span>CONTRACTS</span></div><div className="external-header-actions"><a href="/inbox">All my agreements</a><span className="secure-label"><ShieldCheck /> Secure participant portal</span></div></header>{children}</main>;
 }
 
 function Onboarding({ view, busy, error, onSubmit }: { view: ExternalView; busy: boolean; error?: string; onSubmit: (input: Parameters<typeof api.onboardExternal>[0]) => void }) {
