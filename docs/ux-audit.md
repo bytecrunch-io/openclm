@@ -24,7 +24,7 @@ This pass adds an explicit next-action layer, touch-friendly typed/drawn signing
 | Production signing assurance | Not production-ready | No signing provider, sealed PDF/PAdES, immutable evidence ledger, identity assurance policy, or downloadable completion certificate. |
 | Mobile | Good baseline | Review and touch signing reflow to one column; long-document navigation still needs a mobile progress pattern. |
 | Accessibility | Fair | Typed signing provides a keyboard alternative, but focus trapping, modal announcements, document semantics, and a full screen-reader pass remain. |
-| Multi-entity identity | Good foundation | Global accounts, explicit customer-entity context, isolated data, and durable recipient access are implemented; member administration and a cross-entity personal inbox remain. |
+| Multi-entity identity | Good foundation | Global accounts, explicit customer-entity context, isolated data, durable recipient access, and permission-aware member administration are implemented; a cross-entity personal inbox remains. |
 
 ## Changes completed in this pass
 
@@ -45,6 +45,8 @@ This pass adds an explicit next-action layer, touch-friendly typed/drawn signing
 - Added a persistent **Acting for** selector so sender identity, templates, and agreements follow the selected customer entity.
 - Separated global accounts, customer-entity memberships, agreement participants, and durable agreement access.
 - Replaced the accepted-invite dead end with a fresh, single-use 15-minute return link delivered to the invited email.
+- Added a permission-aware **People** workspace for verified-email member invitations, multi-role assignment, and entity-scoped suspension.
+- Added non-consuming invitation previews, OIDC return-to handling, explicit acceptance, and final-administrator protection.
 
 ## Prioritized findings
 
@@ -58,8 +60,8 @@ This pass adds an explicit next-action layer, touch-friendly typed/drawn signing
 
 ### P1 — highest UX value next
 
-1. Add entity member invitation/administration, role editing, and resource-level authorization tests beyond the current route-family permission checks.
-2. Add a cross-entity personal action inbox and non-enumerating recipient sign-in with email code, passkey, and optional organisation SSO.
+1. Add a cross-entity personal action inbox and non-enumerating recipient sign-in with email code, passkey, and optional organisation SSO.
+2. Add resource-level authorization tests beyond the current route-family checks, plus invitation resend/revoke and membership audit history.
 3. Add a secure “continue on phone” handoff using a short-lived, one-time QR token. Do not encode the reusable invitation/session credential directly in the QR code.
 4. Add explicit signature-field placement to templates for agreements that need placement other than the standard closing signature section.
 5. Add a lifecycle timeline showing sent, opened, reviewed, returned, signature requested, viewed, signed, and executed events.

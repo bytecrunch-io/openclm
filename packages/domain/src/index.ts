@@ -68,10 +68,12 @@ export type LegalEntity = z.infer<typeof LegalEntitySchema>;
 // whose templates and agreements are being managed. ByteCrunch operates the
 // platform; it is not a parent workspace for customer entities.
 export const EntityRoleSchema = z.enum(['administrator', 'template_manager', 'contract_manager', 'signatory', 'viewer']);
+export type EntityRole = z.infer<typeof EntityRoleSchema>;
 export const EntityPermissionSchema = z.enum([
   'entity.manage', 'members.manage', 'templates.read', 'templates.write',
   'agreements.read', 'agreements.write', 'agreements.sign',
 ]);
+export type EntityPermission = z.infer<typeof EntityPermissionSchema>;
 export const CustomerEntitySchema = z.object({
   id: z.string().min(1),
   slug: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
@@ -103,6 +105,17 @@ export const EntityMembershipSchema = z.object({
 export type EntityMembership = z.infer<typeof EntityMembershipSchema>;
 export const EntityMembershipViewSchema = EntityMembershipSchema.extend({ entity: CustomerEntitySchema });
 export type EntityMembershipView = z.infer<typeof EntityMembershipViewSchema>;
+export const EntityMemberViewSchema = z.object({ membership: EntityMembershipSchema, account: AccountSchema });
+export type EntityMemberView = z.infer<typeof EntityMemberViewSchema>;
+export const InviteEntityMemberSchema = z.object({ email: z.string().email(), roles: z.array(EntityRoleSchema).min(1) });
+export const UpdateEntityMemberSchema = z.object({ roles: z.array(EntityRoleSchema).min(1) });
+export const EntityMemberInvitationSchema = z.object({
+  id: z.string().min(1), entityId: z.string().min(1), email: z.string().email(), roles: z.array(EntityRoleSchema).min(1),
+  tokenHash: z.string().length(64), status: z.enum(['pending', 'accepted', 'revoked', 'expired']),
+  invitedByAccountId: z.string().min(1), acceptedByAccountId: z.string().min(1).nullable(),
+  expiresAt: z.string().datetime(), createdAt: z.string().datetime(), acceptedAt: z.string().datetime().nullable(),
+});
+export type EntityMemberInvitation = z.infer<typeof EntityMemberInvitationSchema>;
 
 export const AgreementAccessSchema = z.object({
   id: z.string().min(1), tenantId: z.string().min(1), agreementId: z.string().min(1),

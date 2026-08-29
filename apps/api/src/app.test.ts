@@ -56,6 +56,30 @@ describe('contracts API vertical slice', () => {
     expect((await app.request('/public/access/exchange', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: returnToken }) })).status).toBe(410);
   });
 
+  it('administers entity members without allowing the last administrator to be removed', async () => {
+    const repository = new MemoryRepository(); await repository.init(); const app = createApp(repository);
+    const meResponse = await app.request('/v1/me'); const me = await meResponse.json() as { id: string };
+    const colleague = await repository.findOrCreateAccountByEmail('colleague@example.com', 'Colleague'); const colleagueMembership = await repository.grantEntityMembership(colleague.id, 'bytecrunch', ['viewer'], ['templates.read', 'agreements.read']);
+    const listed = await app.request('/v1/entity-members'); expect(await listed.json()).toMatchObject({ members: expect.arrayContaining([expect.objectContaining({ account: expect.objectContaining({ email: 'colleague@example.com' }), membership: expect.objectContaining({ roles: ['viewer'] }) })]) });
+    const updated = await app.request(`/v1/entity-members/${colleagueMembership.id}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ roles: ['contract_manager', 'signatory'] }) }); expect(await updated.json()).toMatchObject({ roles: ['contract_manager', 'signatory'], permissions: expect.arrayContaining(['agreements.write', 'agreements.sign']) });
+    const admin = (await repository.listEntityMembers('bytecrunch')).find((item) => item.accountId === me.id)!; const removeLastAdmin = await app.request(`/v1/entity-members/${admin.id}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ roles: ['viewer'] }) }); expect(removeLastAdmin.status).toBe(409);
+    const invited = await app.request('/v1/entity-members/invitations', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'new.member@example.com', roles: ['template_manager'] }) }); expect(invited.status).toBe(201); expect(await invited.json()).toMatchObject({ email: 'new.member@example.com', roles: ['template_manager'], status: 'pending', invitationUrl: expect.any(String) });
+    const suspended = await app.request(`/v1/entity-members/${colleagueMembership.id}`, { method: 'DELETE' }); expect(await suspended.json()).toMatchObject({ status: 'suspended' });
+    const restrictedEntity = await repository.createCustomerEntity({ slug: 'restricted-customer', legalName: 'Restricted Customer ApS', businessAddress: null, registrationNumber: null, jurisdiction: 'DK' });
+    await repository.grantEntityMembership(me.id, restrictedEntity.id, ['viewer'], ['templates.read', 'agreements.read']);
+    expect((await app.request('/v1/entity-members', { headers: { 'x-bytecrunch-entity-id': restrictedEntity.id } })).status).toBe(403);
+  });
+
+  it('previews and accepts a customer-entity invitation with the verified signed-in email', async () => {
+    const repository = new MemoryRepository(); await repository.init(); const app = createApp(repository); const me = await (await app.request('/v1/me')).json() as { id: string; email: string };
+    const entity = await repository.createCustomerEntity({ slug: 'invited-entity', legalName: 'Invited Entity ApS', businessAddress: null, registrationNumber: null, jurisdiction: 'DK' }); const token = 'entity-membership-invitation-token';
+    await repository.createEntityMemberInvitation({ id: 'member_inv_test', entityId: entity.id, email: me.email, roles: ['contract_manager'], tokenHash: hashInvitationToken(token), status: 'pending', invitedByAccountId: 'inviter_account', acceptedByAccountId: null, expiresAt: new Date(Date.now() + 60_000).toISOString(), createdAt: new Date().toISOString(), acceptedAt: null });
+    const preview = await app.request(`/public/entity-member-invitations/preview?token=${token}`); expect(await preview.json()).toMatchObject({ entityName: 'Invited Entity ApS', emailHint: expect.stringContaining('@bytecrunch.local'), roles: ['contract_manager'] });
+    const accepted = await app.request('/v1/entity-member-invitations/accept', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token }) }); expect(accepted.status).toBe(200); expect(await accepted.json()).toMatchObject({ membership: { accountId: me.id, entityId: entity.id, roles: ['contract_manager'], status: 'active' } });
+    const selected = await app.request('/v1/me', { headers: { 'x-bytecrunch-entity-id': entity.id } }); expect(await selected.json()).toMatchObject({ activeEntityId: entity.id });
+    expect((await app.request('/v1/entity-member-invitations/accept', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token }) })).status).toBe(410);
+  });
+
   it('uses an integration-scoped identity link for a secure handoff and status lookup', async () => {
     const app = await testApp();
     const integration = await app.request('/v1/integrations', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: 'fiftysixty', name: 'FiftySixty', mappingStrategy: 'host_asserted', allowedRedirectUris: ['https://fiftysixty.example/projects'], allowedOrigins: [] }) });

@@ -1,19 +1,20 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import {
   ArrowRight, Bell, Check, ChevronRight, CircleUserRound, FileCheck2, FileClock, FilePenLine,
-  Building2, FilePlus2, Files, LayoutDashboard, Moon, Plus, Settings, ShieldCheck, Sun, Webhook, X,
+  Building2, FilePlus2, Files, LayoutDashboard, Moon, Plus, Settings, ShieldCheck, Sun, UserPlus, UsersRound, Webhook, X,
 } from 'lucide-react';
 import type { Agreement, CreateAgreement, Notification, Template } from '@bytecrunch/contracts-domain';
 import logo from './assets/logomark.svg';
-import { api, statusLabel, type User } from './api';
+import { api, statusLabel, type EntityMemberList, type EntityRole, type User } from './api';
 import ExternalPortal from './ExternalPortal';
 import { BusyMark, DirectContractEditor, DocumentCommentCard, RedlineCard, SIGNATURE_BLOCKS_PLACEHOLDER, SelectableContract, type DraftSaveState, type TextSelection } from './ReviewWorkspace';
 import { NextActionBanner, SignatureBlocks, SignatureCeremony } from './SigningExperience';
 
-type View = 'dashboard' | 'agreements' | 'settings';
+type View = 'dashboard' | 'agreements' | 'members' | 'settings';
 
 function App() {
   if (window.location.pathname === '/invite') return <ExternalPortal />;
+  if (window.location.pathname === '/membership') return <MembershipInvitationPage />;
   return <AdminApp />;
 }
 
@@ -70,6 +71,7 @@ function AdminApp() {
     signing: agreements.filter((item) => ['out_for_signature', 'partially_signed'].includes(item.status)).length,
     executed: agreements.filter((item) => item.status === 'executed').length,
   }), [agreements]);
+  const activeMembership = user?.entities.find((item) => item.entityId === user.activeEntityId);
 
   if (!user && !loading) return <SignIn {...(error ? { error } : {})} />;
 
@@ -82,6 +84,7 @@ function AdminApp() {
         <nav className="side-nav" aria-label="Primary navigation">
           <NavButton icon={<LayoutDashboard />} active={view === 'dashboard'} onClick={() => { setView('dashboard'); setSelected(undefined); }}>Overview</NavButton>
           <NavButton icon={<Files />} active={view === 'agreements'} onClick={() => setView('agreements')}>Agreements</NavButton>
+          {activeMembership?.permissions.includes('members.manage') && <NavButton icon={<UsersRound />} active={view === 'members'} onClick={() => { setView('members'); setSelected(undefined); }}>People</NavButton>}
           <NavButton icon={<Settings />} active={view === 'settings'} onClick={() => { setView('settings'); setSelected(undefined); }}>Integrations</NavButton>
         </nav>
         <div className="sidebar-foot">
@@ -107,6 +110,7 @@ function AdminApp() {
         {view === 'agreements' && (selected
           ? <AgreementDetail agreement={selected} user={user!} onBack={() => setSelected(undefined)} onUpdate={(agreement) => { setSelected(agreement); setAgreements((items) => items.map((item) => item.id === agreement.id ? agreement : item)); }} onError={setError} />
           : <AgreementList agreements={agreements} onOpen={openAgreement} />)}
+        {view === 'members' && user && <MemberSettings user={user} onError={setError} />}
         {view === 'settings' && <IntegrationSettings />}
       </main>
       {creating && <CreateAgreementModal templates={templates} onClose={() => setCreating(false)} onCreated={(agreement) => { setAgreements((items) => [agreement, ...items]); setCreating(false); openAgreement(agreement); }} onError={setError} />}
@@ -211,6 +215,37 @@ function CreateAgreementModal({ templates, onClose, onCreated, onError }: { temp
       </form>
     </section>
   </div>;
+}
+
+const entityRoles: EntityRole[] = ['administrator', 'template_manager', 'contract_manager', 'signatory', 'viewer'];
+const entityRoleLabel = (role: EntityRole) => role.replace('_', ' ');
+
+function MembershipInvitationPage() {
+  const token = new URLSearchParams(window.location.search).get('token'); const [preview, setPreview] = useState<{ entityName: string; emailHint: string; roles: EntityRole[]; expiresAt: string }>(); const [error, setError] = useState<string>(); const [busy, setBusy] = useState(false);
+  useEffect(() => { const stored = localStorage.getItem('bc-contracts-theme-choice'); document.documentElement.className = stored === 'dark' || stored === 'light' ? stored : window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'; if (!token) { setError('The membership invitation token is missing.'); return; } void api.previewEntityMemberInvitation(token).then(setPreview).catch((cause) => setError(cause instanceof Error ? cause.message : 'The invitation could not be opened.')); }, [token]);
+  async function accept() { if (!token) return; try { setBusy(true); setError(undefined); const result = await api.acceptEntityMemberInvitation(token); api.selectEntity(result.entity.id); window.location.assign('/'); } catch (cause) { setError(cause instanceof Error ? cause.message : 'The invitation could not be accepted.'); } finally { setBusy(false); } }
+  const returnTo = `${window.location.pathname}${window.location.search}`;
+  return <main className="membership-invitation"><section><img src={logo} alt="" /><span className="bc-eyebrow bc-text-orange">// CUSTOMER ENTITY INVITATION</span>{preview ? <><h1>Join {preview.entityName}</h1><p>This invitation grants <strong>{preview.roles.map(entityRoleLabel).join(', ')}</strong> access to the customer entity. Sign in as <strong>{preview.emailHint}</strong> to accept it.</p><div className="membership-invite-actions"><button disabled={busy} className="button button-accent" onClick={() => void accept()}>{busy ? <><BusyMark /> Accepting…</> : <>Accept invitation <ArrowRight /></>}</button><a className="button button-secondary" href={api.loginUrlFor(returnTo)}>Sign in with SSO</a></div><small>Expires {new Date(preview.expiresAt).toLocaleString()}</small></> : !error ? <div className="portal-loading"><div className="loading-line" /></div> : null}{error && <div className="inline-error">{error}</div>}{error?.toLowerCase().includes('sign in') && <a className="button button-accent" href={api.loginUrlFor(returnTo)}>Sign in with the invited email <ArrowRight /></a>}</section></main>;
+}
+
+function MemberSettings({ user, onError }: { user: User; onError: (message: string) => void }) {
+  const [data, setData] = useState<EntityMemberList>(); const [loading, setLoading] = useState(true); const [email, setEmail] = useState(''); const [inviteRoles, setInviteRoles] = useState<EntityRole[]>(['contract_manager']); const [busy, setBusy] = useState<string>();
+  const entityName = user.entities.find((item) => item.entityId === user.activeEntityId)?.entity.legalName ?? 'this entity';
+  async function refreshMembers() { try { setLoading(true); setData(await api.entityMembers()); } catch (cause) { onError(cause instanceof Error ? cause.message : 'Could not load entity members.'); } finally { setLoading(false); } }
+  useEffect(() => { void refreshMembers(); }, [user.activeEntityId]);
+  async function invite(event: FormEvent) { event.preventDefault(); try { setBusy('invite'); await api.inviteEntityMember({ email, roles: inviteRoles }); setEmail(''); await refreshMembers(); } catch (cause) { onError(cause instanceof Error ? cause.message : 'Could not invite this person.'); } finally { setBusy(undefined); } }
+  async function updateMember(id: string, roles: EntityRole[]) { try { setBusy(id); await api.updateEntityMember(id, roles); await refreshMembers(); } catch (cause) { onError(cause instanceof Error ? cause.message : 'Could not update this member.'); } finally { setBusy(undefined); } }
+  async function suspendMember(id: string) { if (!window.confirm('Suspend this person’s access to the active customer entity? Their account and other entity memberships will remain active.')) return; try { setBusy(`suspend-${id}`); await api.suspendEntityMember(id); await refreshMembers(); } catch (cause) { onError(cause instanceof Error ? cause.message : 'Could not suspend this member.'); } finally { setBusy(undefined); } }
+  return <div className="page"><div className="page-heading"><div><span className="bc-eyebrow bc-text-blue">// PEOPLE & PERMISSIONS</span><h1>{entityName}</h1><p>Manage who can create templates, run agreements, and sign for this customer entity.</p></div></div><section className="member-admin-grid"><form className="member-invite-card" onSubmit={(event) => void invite(event)}><UserPlus /><span className="bc-eyebrow bc-text-orange">// INVITE MEMBER</span><h2>Add someone to this entity</h2><label>Email address<input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="colleague@example.com" /></label><RolePicker roles={inviteRoles} onChange={setInviteRoles} /><button disabled={busy === 'invite' || inviteRoles.length === 0} className="button button-accent">{busy === 'invite' ? <><BusyMark /> Sending…</> : <>Send invitation <ArrowRight /></>}</button></form><div className="member-list-card"><div className="section-title"><div><span className="bc-eyebrow">// ACTIVE MEMBERS</span><h2>Entity access</h2></div><b className="attention-count">{String(data?.members.filter((item) => item.membership.status === 'active').length ?? 0).padStart(2, '0')}</b></div>{loading && !data ? <div className="member-loading"><BusyMark /> Loading members…</div> : data?.members.map((item) => <MemberRow key={item.membership.id} item={item} currentAccountId={user.id} busy={busy} onSave={updateMember} onSuspend={suspendMember} />)}</div></section>{data?.invitations.some((item) => item.status === 'pending') && <section className="section-block pending-member-invites"><div className="section-title"><div><span className="bc-eyebrow bc-text-orange">// PENDING</span><h2>Membership invitations</h2></div></div>{data.invitations.filter((item) => item.status === 'pending').map((invitation) => <div key={invitation.id}><span><strong>{invitation.email}</strong><small>{invitation.roles.map(entityRoleLabel).join(', ')} · expires {new Date(invitation.expiresAt).toLocaleDateString()}</small></span><b>invited</b></div>)}</section>}</div>;
+}
+
+function MemberRow({ item, currentAccountId, busy, onSave, onSuspend }: { item: EntityMemberList['members'][number]; currentAccountId: string; busy: string | undefined; onSave: (id: string, roles: EntityRole[]) => void; onSuspend: (id: string) => void }) {
+  const [roles, setRoles] = useState<EntityRole[]>(item.membership.roles); const changed = [...roles].sort().join() !== [...item.membership.roles].sort().join();
+  return <article className={`member-row ${item.membership.status}`}><div className="member-identity"><CircleUserRound /><span><strong>{item.account.displayName}{item.account.id === currentAccountId ? ' · You' : ''}</strong><small>{item.account.email} · {item.membership.status}</small></span></div><RolePicker roles={roles} onChange={setRoles} compact /><div className="member-row-actions">{changed && <button disabled={busy === item.membership.id || roles.length === 0} className="button button-accent button-small" onClick={() => onSave(item.membership.id, roles)}>{busy === item.membership.id ? <BusyMark /> : 'Save roles'}</button>}<button disabled={Boolean(busy) || item.membership.status === 'suspended'} className="button button-secondary button-small" onClick={() => onSuspend(item.membership.id)}>{busy === `suspend-${item.membership.id}` ? <><BusyMark /> Suspending…</> : 'Suspend access'}</button></div></article>;
+}
+
+function RolePicker({ roles, onChange, compact = false }: { roles: EntityRole[]; onChange: (roles: EntityRole[]) => void; compact?: boolean }) {
+  return <fieldset className={`role-picker ${compact ? 'compact' : ''}`}><legend>Roles</legend>{entityRoles.map((role) => <label key={role}><input type="checkbox" checked={roles.includes(role)} onChange={(event) => onChange(event.target.checked ? [...roles, role] : roles.filter((item) => item !== role))} /><span>{entityRoleLabel(role)}</span></label>)}</fieldset>;
 }
 
 function CreateEntityModal({ onClose, onCreated, onError }: { onClose: () => void; onCreated: (entityId: string) => void; onError: (message: string) => void }) {

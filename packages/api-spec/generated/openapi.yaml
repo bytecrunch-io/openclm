@@ -34,6 +34,25 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/ExchangeInvitation'
+  /public/entity-member-invitations/preview:
+    get:
+      operationId: ExternalParticipantOperations_previewEntityMemberInvitation
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema:
+            type: string
+          explode: false
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/EntityMemberInvitationPreview'
+                  - $ref: '#/components/schemas/ErrorResponse'
   /public/integration-sessions/exchange:
     post:
       operationId: ExternalParticipantOperations_exchangeIntegration
@@ -1099,6 +1118,145 @@ paths:
             - templates:read
             - templates:write
             - webhooks:manage
+  /v1/entity-member-invitations/accept:
+    post:
+      operationId: EntityMemberInvitationOperations_accept
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - type: object
+                    properties:
+                      membership:
+                        $ref: '#/components/schemas/EntityMembershipRecord'
+                      entity:
+                        $ref: '#/components/schemas/CustomerEntity'
+                    required:
+                      - membership
+                      - entity
+                  - $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExchangeInvitation'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+  /v1/entity-members:
+    get:
+      operationId: EntityMemberOperations_list
+      parameters:
+        - $ref: '#/components/parameters/EntityContext'
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/EntityMemberList'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+  /v1/entity-members/invitations:
+    post:
+      operationId: EntityMemberOperations_invite
+      parameters:
+        - $ref: '#/components/parameters/EntityContext'
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/EntityMemberInvitation'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InviteEntityMember'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+  /v1/entity-members/{membershipId}:
+    patch:
+      operationId: EntityMemberOperations_update
+      parameters:
+        - $ref: '#/components/parameters/EntityContext'
+        - name: membershipId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/EntityMembershipRecord'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateEntityMember'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+    delete:
+      operationId: EntityMemberOperations_suspend
+      parameters:
+        - $ref: '#/components/parameters/EntityContext'
+        - name: membershipId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/EntityMembershipRecord'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
   /v1/integration-sessions:
     post:
       operationId: IntegrationSessionOperations_create
@@ -1408,6 +1566,23 @@ components:
       schema:
         type: string
   schemas:
+    AccountSummary:
+      type: object
+      required:
+        - id
+        - email
+        - displayName
+        - createdAt
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+        displayName:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
     Agreement:
       type: object
       required:
@@ -1891,6 +2066,100 @@ components:
           anyOf:
             - type: string
             - type: 'null'
+    EntityMember:
+      type: object
+      required:
+        - membership
+        - account
+      properties:
+        membership:
+          $ref: '#/components/schemas/EntityMembershipRecord'
+        account:
+          $ref: '#/components/schemas/AccountSummary'
+    EntityMemberInvitation:
+      type: object
+      required:
+        - id
+        - entityId
+        - email
+        - roles
+        - status
+        - invitedByAccountId
+        - acceptedByAccountId
+        - expiresAt
+        - createdAt
+        - acceptedAt
+      properties:
+        id:
+          type: string
+        entityId:
+          type: string
+        email:
+          type: string
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/EntityRole'
+        status:
+          type: string
+          enum:
+            - pending
+            - accepted
+            - revoked
+            - expired
+        invitedByAccountId:
+          type: string
+        acceptedByAccountId:
+          anyOf:
+            - type: string
+            - type: 'null'
+        expiresAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        acceptedAt:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+        invitationUrl:
+          type: string
+          format: uri
+    EntityMemberInvitationPreview:
+      type: object
+      required:
+        - entityName
+        - emailHint
+        - roles
+        - expiresAt
+      properties:
+        entityName:
+          type: string
+        emailHint:
+          type: string
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/EntityRole'
+        expiresAt:
+          type: string
+          format: date-time
+    EntityMemberList:
+      type: object
+      required:
+        - members
+        - invitations
+      properties:
+        members:
+          type: array
+          items:
+            $ref: '#/components/schemas/EntityMember'
+        invitations:
+          type: array
+          items:
+            $ref: '#/components/schemas/EntityMemberInvitation'
     EntityMembership:
       type: object
       required:
@@ -1928,6 +2197,40 @@ components:
           format: date-time
         entity:
           $ref: '#/components/schemas/CustomerEntity'
+    EntityMembershipRecord:
+      type: object
+      required:
+        - id
+        - accountId
+        - entityId
+        - roles
+        - permissions
+        - status
+        - createdAt
+      properties:
+        id:
+          type: string
+        accountId:
+          type: string
+        entityId:
+          type: string
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/EntityRole'
+        permissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/EntityPermission'
+        status:
+          type: string
+          enum:
+            - invited
+            - active
+            - suspended
+        createdAt:
+          type: string
+          format: date-time
     EntityPermission:
       type: string
       enum:
@@ -2238,6 +2541,18 @@ components:
         invitationUrl:
           type: string
           format: uri
+    InviteEntityMember:
+      type: object
+      required:
+        - email
+        - roles
+      properties:
+        email:
+          type: string
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/EntityRole'
     LegalEntity:
       type: object
       required:
@@ -2830,6 +3145,15 @@ components:
       properties:
         body:
           type: string
+    UpdateEntityMember:
+      type: object
+      required:
+        - roles
+      properties:
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/EntityRole'
     UpdateReviewDraft:
       type: object
       required:

@@ -19,6 +19,8 @@ Open-source agreement infrastructure for review, redlining, execution, and integ
 - Global human accounts with memberships in one or more customer entities
 - A visible “Acting for” entity switcher; templates, agreements, and sender details follow the selected customer entity
 - Entity-scoped role and permission foundations for administrators, template managers, contract managers, signatories, and viewers
+- Customer-entity member administration with email invitations, multi-role assignment, suspension, and final-administrator protection
+- Invitation acceptance through the configured OIDC provider, restricted to the verified invited email
 - Optional counterparty details with recipient confirmation and sender approval for material changes
 - One-time participant invitations that create durable account-to-agreement access
 - Safe return access: an accepted invitation sends a fresh, single-use 15-minute email link instead of becoming a dead end
@@ -76,6 +78,8 @@ Everything runs locally. There is no required hosted database, identity provider
 12. Close the participant browser, reopen the original invitation, then open the fresh return email in Mailpit. The new 15-minute link restores access without reusing the accepted invitation.
 
 To exercise multi-entity membership, select **Add entity** next to **Acting for**. Creating and switching to it gives that customer entity its own template copy, agreements, sender identity, and data boundary.
+
+To exercise entity administration, open **People**, invite a second Keycloak user, select one or more roles, and open the resulting email in Mailpit. The recipient can return through the same invitation after signing in with the verified invited address. Role changes and suspension apply only to the selected customer entity; the final active administrator cannot remove their own administrative access.
 
 An automated equivalent runs against the Docker services:
 
@@ -141,8 +145,8 @@ docker compose config
 
 ## Next production milestones
 
-1. Add entity member invitation/administration UI and expand the current route-level checks into resource-level policy tests.
-2. Add a cross-entity personal agreement inbox plus passkey and email-code sign-in for recipients.
+1. Add a cross-entity personal agreement inbox plus passkey and non-enumerating email-code sign-in for recipients.
+2. Expand route-family authorization into resource-level policy tests and add invitation resend/revoke controls.
 3. Add recent-authentication checks, signing-capacity evidence, and an append-only signing/audit evidence package.
 4. Add a signing-provider interface and a self-hosted PAdES-capable provider.
 5. Persist immutable revision and audit-event tables rather than aggregate snapshots alone.

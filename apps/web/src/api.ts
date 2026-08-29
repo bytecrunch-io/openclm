@@ -9,6 +9,10 @@ import {
   NotificationSchema,
   CustomerEntitySchema,
   EntityMembershipViewSchema,
+  EntityMembershipSchema,
+  EntityMemberInvitationSchema,
+  AccountSchema,
+  EntityRoleSchema,
   type Agreement,
   type CreateAgreement,
   type CreateSuggestion,
@@ -18,12 +22,15 @@ import {
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3001';
 const UserSchema = z.object({ id: z.string(), email: z.string().email(), name: z.string(), activeEntityId: z.string(), entities: z.array(EntityMembershipViewSchema), scopes: z.array(z.string()) });
 const ExternalViewSchema = z.object({ agreement: AgreementSchema, participant: ParticipantSchema, party: AgreementPartySchema.nullable() });
+const EntityMemberListSchema = z.object({ members: z.array(z.object({ membership: EntityMembershipSchema, account: AccountSchema })), invitations: z.array(EntityMemberInvitationSchema.omit({ tokenHash: true })) });
 const InvitationResponseSchema = z.object({
   id: z.string(), tenantId: z.string(), agreementId: z.string(), participantId: z.string(), email: z.string().email(),
   status: z.enum(['pending', 'accepted', 'revoked', 'expired']), expiresAt: z.string(), createdAt: z.string(), acceptedAt: z.string().nullable(), invitationUrl: z.string().url().optional(),
 });
 export type User = z.infer<typeof UserSchema>;
 export type ExternalView = z.infer<typeof ExternalViewSchema>;
+export type EntityMemberList = z.infer<typeof EntityMemberListSchema>;
+export type EntityRole = z.infer<typeof EntityRoleSchema>;
 
 async function request<T>(path: string, schema: z.ZodType<T>, init?: RequestInit): Promise<T> {
   const activeEntityId = localStorage.getItem('bc-contracts-active-entity');
@@ -42,9 +49,16 @@ async function request<T>(path: string, schema: z.ZodType<T>, init?: RequestInit
 
 export const api = {
   loginUrl: `${API_URL}/auth/login`,
+  loginUrlFor: (returnTo: string) => `${API_URL}/auth/login?returnTo=${encodeURIComponent(returnTo)}`,
   me: () => request('/v1/me', UserSchema),
   selectEntity: (entityId: string) => { localStorage.setItem('bc-contracts-active-entity', entityId); },
   createEntity: (input: { slug: string; legalName: string; businessAddress?: string; registrationNumber?: string; jurisdiction?: string }) => request('/v1/entities', CustomerEntitySchema, { method: 'POST', body: JSON.stringify(input) }),
+  entityMembers: () => request('/v1/entity-members', EntityMemberListSchema),
+  inviteEntityMember: (input: { email: string; roles: EntityRole[] }) => request('/v1/entity-members/invitations', EntityMemberInvitationSchema.omit({ tokenHash: true }).extend({ invitationUrl: z.string().url().optional() }), { method: 'POST', body: JSON.stringify(input) }),
+  updateEntityMember: (membershipId: string, roles: EntityRole[]) => request(`/v1/entity-members/${membershipId}`, EntityMembershipSchema, { method: 'PATCH', body: JSON.stringify({ roles }) }),
+  suspendEntityMember: (membershipId: string) => request(`/v1/entity-members/${membershipId}`, EntityMembershipSchema, { method: 'DELETE' }),
+  previewEntityMemberInvitation: (token: string) => request(`/public/entity-member-invitations/preview?token=${encodeURIComponent(token)}`, z.object({ entityName: z.string(), emailHint: z.string(), roles: z.array(EntityRoleSchema), expiresAt: z.string() })),
+  acceptEntityMemberInvitation: (token: string) => request('/v1/entity-member-invitations/accept', z.object({ membership: EntityMembershipSchema, entity: CustomerEntitySchema }), { method: 'POST', body: JSON.stringify({ token }) }),
   templates: () => request('/v1/templates', z.array(TemplateSchema)),
   agreements: () => request('/v1/agreements', z.array(AgreementSchema)),
   agreement: (id: string) => request(`/v1/agreements/${id}`, AgreementSchema),

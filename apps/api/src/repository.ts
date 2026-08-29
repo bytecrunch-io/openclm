@@ -16,6 +16,7 @@ import {
   EntityMembershipSchema,
   AgreementAccessSchema,
   AccessChallengeSchema,
+  EntityMemberInvitationSchema,
   type Agreement,
   type CreateAgreement,
   type CreateTemplate,
@@ -33,6 +34,7 @@ import {
   type EntityMembership,
   type AgreementAccess,
   type AccessChallenge,
+  type EntityMemberInvitation,
 } from '@bytecrunch/contracts-domain';
 
 export interface WebhookEndpoint {
@@ -88,6 +90,13 @@ export interface Repository {
   createAccessChallenge(challenge: AccessChallenge): Promise<void>;
   getAccessChallengeByTokenHash(tokenHash: string): Promise<AccessChallenge | undefined>;
   saveAccessChallenge(challenge: AccessChallenge): Promise<void>;
+  listEntityMembers(entityId: string): Promise<EntityMembership[]>;
+  getEntityMembership(id: string): Promise<EntityMembership | undefined>;
+  saveEntityMembership(membership: EntityMembership): Promise<void>;
+  createEntityMemberInvitation(invitation: EntityMemberInvitation): Promise<void>;
+  getEntityMemberInvitationByTokenHash(tokenHash: string): Promise<EntityMemberInvitation | undefined>;
+  listEntityMemberInvitations(entityId: string): Promise<EntityMemberInvitation[]>;
+  saveEntityMemberInvitation(invitation: EntityMemberInvitation): Promise<void>;
 }
 
 function now(): string { return new Date().toISOString(); }
@@ -111,6 +120,7 @@ export class MemoryRepository implements Repository {
   protected entityMemberships: EntityMembership[] = [];
   protected agreementAccess: AgreementAccess[] = [];
   protected accessChallenges: AccessChallenge[] = [];
+  protected entityMemberInvitations: EntityMemberInvitation[] = [];
 
   async init(): Promise<void> {
     if (!this.customerEntities.some((entity) => entity.id === 'bytecrunch')) {
@@ -256,6 +266,13 @@ export class MemoryRepository implements Repository {
   async createAccessChallenge(challenge: AccessChallenge) { this.accessChallenges.push(AccessChallengeSchema.parse(challenge)); }
   async getAccessChallengeByTokenHash(tokenHash: string) { const value = this.accessChallenges.find((item) => item.tokenHash === tokenHash); return value ? structuredClone(value) : undefined; }
   async saveAccessChallenge(challenge: AccessChallenge) { const index = this.accessChallenges.findIndex((item) => item.id === challenge.id); if (index < 0) throw new Error('Access challenge not found.'); this.accessChallenges[index] = AccessChallengeSchema.parse(challenge); }
+  async listEntityMembers(entityId: string) { return this.entityMemberships.filter((item) => item.entityId === entityId).map((item) => structuredClone(item)); }
+  async getEntityMembership(id: string) { const value = this.entityMemberships.find((item) => item.id === id); return value ? structuredClone(value) : undefined; }
+  async saveEntityMembership(membership: EntityMembership) { const index = this.entityMemberships.findIndex((item) => item.id === membership.id); if (index < 0) throw new Error('Entity membership not found.'); this.entityMemberships[index] = EntityMembershipSchema.parse(membership); }
+  async createEntityMemberInvitation(invitation: EntityMemberInvitation) { this.entityMemberInvitations.push(EntityMemberInvitationSchema.parse(invitation)); }
+  async getEntityMemberInvitationByTokenHash(tokenHash: string) { const value = this.entityMemberInvitations.find((item) => item.tokenHash === tokenHash); return value ? structuredClone(value) : undefined; }
+  async listEntityMemberInvitations(entityId: string) { return this.entityMemberInvitations.filter((item) => item.entityId === entityId).map((item) => structuredClone(item)); }
+  async saveEntityMemberInvitation(invitation: EntityMemberInvitation) { const index = this.entityMemberInvitations.findIndex((item) => item.id === invitation.id); if (index < 0) throw new Error('Entity member invitation not found.'); this.entityMemberInvitations[index] = EntityMemberInvitationSchema.parse(invitation); }
 }
 
 export class PostgresRepository extends MemoryRepository {
@@ -301,6 +318,8 @@ export class PostgresRepository extends MemoryRepository {
       CREATE INDEX IF NOT EXISTS entity_memberships_account_idx ON entity_memberships (account_id);
       CREATE TABLE IF NOT EXISTS agreement_access (id text PRIMARY KEY, account_id text NOT NULL, agreement_id text NOT NULL, participant_id text NOT NULL, payload jsonb NOT NULL, UNIQUE (account_id, agreement_id, participant_id));
       CREATE TABLE IF NOT EXISTS access_challenges (id text PRIMARY KEY, token_hash text UNIQUE NOT NULL, payload jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
+      CREATE TABLE IF NOT EXISTS entity_member_invitations (id text PRIMARY KEY, entity_id text NOT NULL, email text NOT NULL, token_hash text UNIQUE NOT NULL, payload jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
+      CREATE INDEX IF NOT EXISTS entity_member_invitations_entity_idx ON entity_member_invitations (entity_id, created_at DESC);
     `);
     const platformEntity = CustomerEntitySchema.parse({ id: 'bytecrunch', slug: 'bytecrunch', legalName: 'ByteCrunch ApS', businessAddress: null, registrationNumber: null, jurisdiction: 'DK', createdAt: now() });
     await this.pool.query('INSERT INTO customer_entities (id,slug,payload) VALUES ($1,$2,$3) ON CONFLICT (id) DO NOTHING', [platformEntity.id, platformEntity.slug, JSON.stringify(platformEntity)]);
@@ -449,6 +468,13 @@ export class PostgresRepository extends MemoryRepository {
   override async createAccessChallenge(challenge: AccessChallenge) { AccessChallengeSchema.parse(challenge); await this.pool.query('INSERT INTO access_challenges (id,token_hash,payload) VALUES ($1,$2,$3)', [challenge.id, challenge.tokenHash, JSON.stringify(challenge)]); }
   override async getAccessChallengeByTokenHash(tokenHash: string) { const result = await this.pool.query('SELECT payload FROM access_challenges WHERE token_hash=$1', [tokenHash]); return result.rows[0] ? AccessChallengeSchema.parse(result.rows[0].payload) : undefined; }
   override async saveAccessChallenge(challenge: AccessChallenge) { AccessChallengeSchema.parse(challenge); await this.pool.query('UPDATE access_challenges SET payload=$1 WHERE id=$2', [JSON.stringify(challenge), challenge.id]); }
+  override async listEntityMembers(entityId: string) { const result = await this.pool.query('SELECT payload FROM entity_memberships WHERE entity_id=$1', [entityId]); return result.rows.map((row) => EntityMembershipSchema.parse(row.payload)); }
+  override async getEntityMembership(id: string) { const result = await this.pool.query('SELECT payload FROM entity_memberships WHERE id=$1', [id]); return result.rows[0] ? EntityMembershipSchema.parse(result.rows[0].payload) : undefined; }
+  override async saveEntityMembership(membership: EntityMembership) { EntityMembershipSchema.parse(membership); await this.pool.query('UPDATE entity_memberships SET payload=$1 WHERE id=$2', [JSON.stringify(membership), membership.id]); }
+  override async createEntityMemberInvitation(invitation: EntityMemberInvitation) { EntityMemberInvitationSchema.parse(invitation); await this.pool.query('INSERT INTO entity_member_invitations (id,entity_id,email,token_hash,payload) VALUES ($1,$2,$3,$4,$5)', [invitation.id, invitation.entityId, invitation.email, invitation.tokenHash, JSON.stringify(invitation)]); }
+  override async getEntityMemberInvitationByTokenHash(tokenHash: string) { const result = await this.pool.query('SELECT payload FROM entity_member_invitations WHERE token_hash=$1', [tokenHash]); return result.rows[0] ? EntityMemberInvitationSchema.parse(result.rows[0].payload) : undefined; }
+  override async listEntityMemberInvitations(entityId: string) { const result = await this.pool.query('SELECT payload FROM entity_member_invitations WHERE entity_id=$1 ORDER BY created_at DESC', [entityId]); return result.rows.map((row) => EntityMemberInvitationSchema.parse(row.payload)); }
+  override async saveEntityMemberInvitation(invitation: EntityMemberInvitation) { EntityMemberInvitationSchema.parse(invitation); await this.pool.query('UPDATE entity_member_invitations SET payload=$1 WHERE id=$2', [JSON.stringify(invitation), invitation.id]); }
 }
 
 function permissionsForRole(role: 'owner' | 'reviewer' | 'signatory') {

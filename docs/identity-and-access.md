@@ -10,6 +10,7 @@ ByteCrunch operates and may host the CLM. It is not a parent workspace and is no
 | `AuthIdentity` | A verified way to authenticate that account, keyed by provider + issuer + subject |
 | `CustomerEntity` | A paying or self-hosted customer legal entity and tenant |
 | `EntityMembership` | The roles and permissions an account has for one customer entity |
+| `EntityMemberInvitation` | A seven-day invitation to join one customer entity with an explicit role set |
 | `AgreementParty` | An immutable snapshot of a contracting party for one agreement |
 | `Participant` | A person's transactional role in one agreement |
 | `AgreementAccess` | Durable account access to one participant assignment |
@@ -29,6 +30,17 @@ Customer entity membership must never be inferred from agreement onboarding. A r
 
 Templates, agreements, sender details, members, and policies follow the active entity. A future personal action inbox should span memberships so an entity switch cannot hide a required signature.
 
+## Customer-entity invitation flow
+
+1. An administrator opens **People**, enters the recipient's email, and selects one or more role bundles.
+2. The server invalidates an older pending invitation for the same entity and email, stores only a token hash, and sends a seven-day link.
+3. Opening the link previews the customer entity, masked recipient address, roles, and expiry without consuming it.
+4. The recipient authenticates through the configured OIDC provider. The callback requires a verified email claim and returns to the invitation.
+5. Explicit acceptance requires an exact match with the verified invited email, creates or reactivates only that entity membership, and consumes the invitation.
+6. Administrators may edit role bundles or suspend entity access. The server prevents removal or suspension of the final active administrator.
+
+An entity invitation grants application access only. It does not prove that the member has legal authority to bind the entity; signing capacity and intent are captured separately per agreement.
+
 ## Recipient flow
 
 1. The sender creates an agreement participant and sends an invitation.
@@ -42,7 +54,7 @@ The current slice treats possession of the original emailed invitation as initia
 
 ## Roles and permissions
 
-Initial role bundles are administrator, template manager, contract manager, signatory, and viewer. Runtime permissions are explicit: entity/member management, template read/write, agreement read/write, and agreement signing. Entity-scoped route families enforce these membership permissions now. Member invitation/administration, custom role assignment, and finer resource-level policies are the next authorization milestone.
+Initial role bundles are administrator, template manager, contract manager, signatory, and viewer. Runtime permissions are explicit: entity/member management, template read/write, agreement read/write, and agreement signing. Entity-scoped route families enforce these membership permissions, and administrators can invite members and assign multiple bundles. Custom roles, invitation revoke/resend controls, recent-authentication policy, and finer resource-level authorization remain future milestones.
 
 ## Signing assurance
 

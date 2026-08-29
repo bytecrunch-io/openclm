@@ -18,6 +18,9 @@ import {
   CreateCustomerEntitySchema,
   AgreementAccessSchema,
   AccessChallengeSchema,
+  EntityMemberInvitationSchema,
+  InviteEntityMemberSchema,
+  UpdateEntityMemberSchema,
   IdentityLinkSchema,
   IntegrationSessionSchema,
   EvaluateAgreementStatusSchema,
@@ -39,16 +42,27 @@ import {
   type Agreement,
   type AgreementStatus,
   type Suggestion,
+  type EntityRole,
+  type EntityPermission,
 } from '@bytecrunch/contracts-domain';
 import { authMiddleware, currentUser, registerAuthRoutes } from './auth.js';
 import { config } from './config.js';
-import { sendAccessEmail, sendInvitationEmail } from './email.js';
+import { sendAccessEmail, sendInvitationEmail, sendMemberInvitationEmail } from './email.js';
 import { createInvitationToken, currentExternalSession, externalSessionMiddleware, hashInvitationToken, setExternalSession } from './external-auth.js';
 import { hashContent, type Repository } from './repository.js';
 import { emitAgreementEvent } from './webhooks.js';
 import { notifyParticipants } from './notifications.js';
 
 function isoNow(): string { return new Date().toISOString(); }
+
+const rolePermissions: Record<EntityRole, EntityPermission[]> = {
+  administrator: ['entity.manage', 'members.manage', 'templates.read', 'templates.write', 'agreements.read', 'agreements.write', 'agreements.sign'],
+  template_manager: ['templates.read', 'templates.write', 'agreements.read'],
+  contract_manager: ['templates.read', 'agreements.read', 'agreements.write'],
+  signatory: ['templates.read', 'agreements.read', 'agreements.sign'],
+  viewer: ['templates.read', 'agreements.read'],
+};
+function permissionsForEntityRoles(roles: EntityRole[]): EntityPermission[] { return [...new Set(roles.flatMap((role) => rolePermissions[role]))]; }
 
 function transition(agreement: Agreement, status: AgreementStatus): void {
   if (!canTransition(agreement.status, status)) {
@@ -247,12 +261,22 @@ export function createApp(repository: Repository): Hono {
     }
   });
   registerAuthRoutes(app);
+  app.get('/public/entity-member-invitations/preview', async (context) => {
+    const token = context.req.query('token'); if (!token || token.length < 20) return context.json({ error: 'invalid_invitation', message: 'The membership invitation is invalid.' }, 400);
+    const invitation = await repository.getEntityMemberInvitationByTokenHash(hashInvitationToken(token));
+    if (!invitation || invitation.status !== 'pending') return context.json({ error: 'invalid_invitation', message: 'This membership invitation is no longer active.' }, 410);
+    if (new Date(invitation.expiresAt).getTime() <= Date.now()) { invitation.status = 'expired'; await repository.saveEntityMemberInvitation(invitation); return context.json({ error: 'invitation_expired', message: 'This membership invitation has expired.' }, 410); }
+    const entity = await repository.getCustomerEntity(invitation.entityId); if (!entity) return context.json({ error: 'not_found', message: 'The customer entity no longer exists.' }, 404);
+    return context.json({ entityName: entity.legalName, emailHint: maskEmail(invitation.email), roles: invitation.roles, expiresAt: invitation.expiresAt });
+  });
   app.use('/v1/*', authMiddleware());
   app.use('/v1/*', async (context, next) => {
     const authenticated = currentUser(context);
     const account = await repository.findOrCreateAccountByIdentity(authenticated.authProvider, authenticated.authIssuer, authenticated.authSubjectId, authenticated.email, authenticated.name);
+    context.set('user', { ...authenticated, id: account.id });
+    if (context.req.path === '/v1/entity-member-invitations/accept') return next();
     let memberships = await repository.listEntityMemberships(account.id);
-    if (memberships.length === 0) {
+    if (memberships.length === 0 && (config.AUTH_MODE === 'dev' || authenticated.email.toLowerCase() === config.DEV_USER_EMAIL.toLowerCase())) {
       let defaultEntity = await repository.getCustomerEntity(authenticated.tenantId);
       defaultEntity ??= await repository.createCustomerEntity({ id: authenticated.tenantId, slug: authenticated.tenantId, legalName: config.TENANT_LEGAL_NAME, businessAddress: config.TENANT_BUSINESS_ADDRESS || null, registrationNumber: null, jurisdiction: null });
       await repository.grantEntityMembership(account.id, defaultEntity.id, ['administrator'], ['entity.manage', 'members.manage', 'templates.read', 'templates.write', 'agreements.read', 'agreements.write', 'agreements.sign']);
@@ -271,6 +295,7 @@ export function createApp(repository: Repository): Hono {
       : path.startsWith('/v1/notifications') || path.startsWith('/v1/agreement-status') || path.startsWith('/v1/integration-status') ? 'agreements.read'
       : path.startsWith('/v1/integration-sessions') ? 'agreements.write'
       : path.startsWith('/v1/integrations') || path.startsWith('/v1/webhooks') ? 'entity.manage'
+      : path.startsWith('/v1/entity-members') ? 'members.manage'
       : undefined;
     if (requiredPermission && !activeMembership.permissions.includes(requiredPermission)) return context.json({ error: 'forbidden', message: `Your role cannot perform '${requiredPermission}' for this customer entity.` }, 403);
     context.set('user', { ...authenticated, id: account.id, tenantId: activeMembership.entityId });
@@ -292,6 +317,50 @@ export function createApp(repository: Repository): Hono {
     const sourceTemplate = (await repository.listTemplates('bytecrunch')).filter((item) => item.key === 'mutual-nda').sort((a, b) => b.version - a.version)[0];
     if (sourceTemplate) await repository.createTemplate(entity.id, { key: sourceTemplate.key, name: sourceTemplate.name, description: sourceTemplate.description, content: sourceTemplate.content });
     return context.json(entity, 201);
+  });
+
+  app.get('/v1/entity-members', async (context) => {
+    const user = currentUser(context); const memberships = await repository.listEntityMembers(user.tenantId);
+    const members = (await Promise.all(memberships.map(async (membership) => { const account = await repository.getAccount(membership.accountId); return account ? { membership, account } : undefined; }))).filter((item) => item !== undefined);
+    const invitations = (await repository.listEntityMemberInvitations(user.tenantId)).map(publicEntityMemberInvitation);
+    return context.json({ members, invitations });
+  });
+
+  app.post('/v1/entity-members/invitations', async (context) => {
+    const user = currentUser(context); const input = InviteEntityMemberSchema.parse(await context.req.json()); const email = input.email.toLowerCase();
+    const entity = await repository.getCustomerEntity(user.tenantId); if (!entity) throw new Error('The active customer entity could not be found.');
+    const existingMembers = await repository.listEntityMembers(user.tenantId); const existingAccounts = await Promise.all(existingMembers.map((item) => repository.getAccount(item.accountId)));
+    if (existingAccounts.some((account) => account?.email === email)) return context.json({ error: 'already_member', message: 'That person is already a member of this customer entity.' }, 409);
+    const invitations = await repository.listEntityMemberInvitations(user.tenantId); await Promise.all(invitations.filter((item) => item.email === email && item.status === 'pending').map(async (item) => { item.status = 'revoked'; await repository.saveEntityMemberInvitation(item); }));
+    const { token, tokenHash } = createInvitationToken(); const invitation = EntityMemberInvitationSchema.parse({ id: `member_inv_${randomUUID()}`, entityId: user.tenantId, email, roles: input.roles, tokenHash, status: 'pending', invitedByAccountId: user.id, acceptedByAccountId: null, expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), createdAt: isoNow(), acceptedAt: null });
+    await repository.createEntityMemberInvitation(invitation); const invitationUrl = `${config.WEB_URL}/membership?token=${encodeURIComponent(token)}`; await sendMemberInvitationEmail({ email, inviterName: user.name, entityName: entity.legalName, invitationUrl });
+    return context.json({ ...publicEntityMemberInvitation(invitation), invitationUrl }, 201);
+  });
+
+  app.patch('/v1/entity-members/:membershipId', async (context) => {
+    const user = currentUser(context); const input = UpdateEntityMemberSchema.parse(await context.req.json()); const membership = await repository.getEntityMembership(context.req.param('membershipId'));
+    if (!membership || membership.entityId !== user.tenantId) return context.json({ error: 'not_found', message: 'Entity member not found.' }, 404);
+    if (membership.roles.includes('administrator') && !input.roles.includes('administrator')) await assertAnotherAdministrator(repository, membership);
+    membership.roles = input.roles; membership.permissions = permissionsForEntityRoles(input.roles); membership.status = 'active'; await repository.saveEntityMembership(membership); return context.json(membership);
+  });
+
+  app.delete('/v1/entity-members/:membershipId', async (context) => {
+    const user = currentUser(context); const membership = await repository.getEntityMembership(context.req.param('membershipId'));
+    if (!membership || membership.entityId !== user.tenantId) return context.json({ error: 'not_found', message: 'Entity member not found.' }, 404);
+    if (membership.roles.includes('administrator')) await assertAnotherAdministrator(repository, membership);
+    membership.status = 'suspended'; await repository.saveEntityMembership(membership); return context.json(membership);
+  });
+
+  app.post('/v1/entity-member-invitations/accept', async (context) => {
+    const user = currentUser(context); const body = await context.req.json() as { token?: unknown }; if (typeof body.token !== 'string' || body.token.length < 20) return context.json({ error: 'invalid_invitation', message: 'The membership invitation is invalid.' }, 400);
+    const invitation = await repository.getEntityMemberInvitationByTokenHash(hashInvitationToken(body.token)); if (!invitation || invitation.status !== 'pending') return context.json({ error: 'invalid_invitation', message: 'This membership invitation is no longer active.' }, 410);
+    if (new Date(invitation.expiresAt).getTime() <= Date.now()) { invitation.status = 'expired'; await repository.saveEntityMemberInvitation(invitation); return context.json({ error: 'invitation_expired', message: 'This membership invitation has expired.' }, 410); }
+    if (!user.emailVerified || user.email.toLowerCase() !== invitation.email) return context.json({ error: 'email_mismatch', message: 'Sign in with the verified email address that received this invitation.' }, 403);
+    let membership = (await repository.listEntityMemberships(user.id)).find((item) => item.entityId === invitation.entityId);
+    if (membership) { membership.roles = invitation.roles; membership.permissions = permissionsForEntityRoles(invitation.roles); membership.status = 'active'; await repository.saveEntityMembership(membership); }
+    else membership = await repository.grantEntityMembership(user.id, invitation.entityId, invitation.roles, permissionsForEntityRoles(invitation.roles));
+    invitation.status = 'accepted'; invitation.acceptedAt = isoNow(); invitation.acceptedByAccountId = user.id; await repository.saveEntityMemberInvitation(invitation);
+    const entity = await repository.getCustomerEntity(invitation.entityId); return context.json({ membership, entity });
   });
 
   app.post('/public/invitations/exchange', async (context) => {
@@ -832,6 +901,19 @@ async function issueAccessChallenge(repository: Repository, access: import('@byt
 function publicInvitation(invitation: import('@bytecrunch/contracts-domain').Invitation) {
   const { tokenHash: _, ...safe } = invitation;
   return safe;
+}
+
+function publicEntityMemberInvitation(invitation: import('@bytecrunch/contracts-domain').EntityMemberInvitation) {
+  const { tokenHash: _, ...safe } = invitation; return safe;
+}
+
+function maskEmail(email: string): string {
+  const [local = '', domain = ''] = email.split('@'); return `${local.slice(0, 2)}${local.length > 2 ? '•••' : ''}@${domain}`;
+}
+
+async function assertAnotherAdministrator(repository: Repository, membership: import('@bytecrunch/contracts-domain').EntityMembership) {
+  const administrators = (await repository.listEntityMembers(membership.entityId)).filter((item) => item.id !== membership.id && item.status === 'active' && item.roles.includes('administrator'));
+  if (administrators.length === 0) throw new Error('Assign another administrator before removing the final administrator role.');
 }
 
 async function externalView(repository: Repository, session: { tenantId: string; agreementId: string; participantId: string; accountId?: string }) {

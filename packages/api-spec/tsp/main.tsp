@@ -297,9 +297,17 @@ enum EntityRole { administrator, template_manager, contract_manager, signatory, 
 enum EntityPermission { entity_manage: "entity.manage", members_manage: "members.manage", templates_read: "templates.read", templates_write: "templates.write", agreements_read: "agreements.read", agreements_write: "agreements.write", agreements_sign: "agreements.sign" }
 model CustomerEntity { id: string; slug: string; legalName: string; businessAddress: string | null; registrationNumber: string | null; jurisdiction: string | null; createdAt: utcDateTime; }
 model CreateCustomerEntity { slug: string; legalName: string; businessAddress?: string; registrationNumber?: string; jurisdiction?: string; }
-model EntityMembership { id: string; accountId: string; entityId: string; roles: EntityRole[]; permissions: EntityPermission[]; status: "invited" | "active" | "suspended"; createdAt: utcDateTime; entity: CustomerEntity; }
+model EntityMembershipRecord { id: string; accountId: string; entityId: string; roles: EntityRole[]; permissions: EntityPermission[]; status: "invited" | "active" | "suspended"; createdAt: utcDateTime; }
+model EntityMembership is EntityMembershipRecord { entity: CustomerEntity; }
 model CurrentAccount { id: string; email: string; name: string; activeEntityId: string; entities: EntityMembership[]; scopes: string[]; }
 model EntityContext { @header("x-bytecrunch-entity-id") entityId?: string; }
+model AccountSummary { id: string; email: string; displayName: string; createdAt: utcDateTime; }
+model EntityMember { membership: EntityMembershipRecord; account: AccountSummary; }
+model EntityMemberInvitation { id: string; entityId: string; email: string; roles: EntityRole[]; status: "pending" | "accepted" | "revoked" | "expired"; invitedByAccountId: string; acceptedByAccountId: string | null; expiresAt: utcDateTime; createdAt: utcDateTime; acceptedAt: utcDateTime | null; invitationUrl?: url; }
+model EntityMemberList { members: EntityMember[]; invitations: EntityMemberInvitation[]; }
+model InviteEntityMember { email: string; roles: EntityRole[]; }
+model UpdateEntityMember { roles: EntityRole[]; }
+model EntityMemberInvitationPreview { entityName: string; emailHint: string; roles: EntityRole[]; expiresAt: utcDateTime; }
 model OnboardParticipant {
   name: string;
   title: string;
@@ -353,6 +361,19 @@ interface AccountOperations { @get get(@header("x-bytecrunch-entity-id") entityI
 @route("/v1/entities")
 @useAuth(ContractsOAuth2)
 interface EntityOperations { @post create(@body body: CreateCustomerEntity): CustomerEntity | ErrorResponse; }
+
+@route("/v1/entity-members")
+@useAuth(ContractsOAuth2)
+interface EntityMemberOperations {
+  @get list(...EntityContext): EntityMemberList | ErrorResponse;
+  @post @route("/invitations") invite(...EntityContext, @body body: InviteEntityMember): EntityMemberInvitation | ErrorResponse;
+  @patch @route("/{membershipId}") update(...EntityContext, @path membershipId: string, @body body: UpdateEntityMember): EntityMembershipRecord | ErrorResponse;
+  @delete @route("/{membershipId}") suspend(...EntityContext, @path membershipId: string): EntityMembershipRecord | ErrorResponse;
+}
+
+@route("/v1/entity-member-invitations")
+@useAuth(ContractsOAuth2)
+interface EntityMemberInvitationOperations { @post @route("/accept") accept(@body body: ExchangeInvitation): { membership: EntityMembershipRecord; entity: CustomerEntity; } | ErrorResponse; }
 
 @route("/v1/templates")
 @useAuth(ContractsOAuth2)
@@ -476,6 +497,9 @@ interface WebhookOperations {
 
 @route("/public")
 interface ExternalParticipantOperations {
+  @get @route("/entity-member-invitations/preview")
+  previewEntityMemberInvitation(@query token: string): EntityMemberInvitationPreview | ErrorResponse;
+
   @post @route("/invitations/exchange")
   exchange(@body body: ExchangeInvitation): ExchangeResult | RecoveryRequired | ErrorResponse;
 

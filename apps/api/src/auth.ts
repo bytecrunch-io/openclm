@@ -10,6 +10,7 @@ export interface AuthUser {
   authProvider: 'dev' | 'oidc';
   authIssuer: string;
   email: string;
+  emailVerified: boolean;
   name: string;
   tenantId: string;
   scopes: string[];
@@ -64,6 +65,7 @@ async function readSession(token: string): Promise<AuthUser> {
     authProvider: 'oidc',
     authIssuer: String(payload.issuer ?? config.OIDC_ISSUER_URL),
     email: String(payload.email),
+    emailVerified: Boolean(payload.emailVerified),
     name: String(payload.name),
     tenantId: String(payload.tenantId ?? 'bytecrunch'),
     scopes: Array.isArray(payload.scopes) ? payload.scopes.map(String) : [],
@@ -79,6 +81,7 @@ export function authMiddleware(): MiddlewareHandler {
         authProvider: 'dev',
         authIssuer: 'bytecrunch-local',
         email: config.DEV_USER_EMAIL,
+        emailVerified: true,
         name: config.DEV_USER_NAME,
         tenantId: 'bytecrunch',
         scopes: ['*'],
@@ -101,6 +104,7 @@ export function authMiddleware(): MiddlewareHandler {
           authProvider: 'oidc',
           authIssuer: config.OIDC_ISSUER_URL,
           email: String(payload.email ?? `${payload.sub}@service.local`),
+          emailVerified: Boolean(payload.email_verified),
           name: String(payload.name ?? payload.preferred_username ?? payload.sub),
           tenantId: String(payload.tenant_id ?? 'bytecrunch'),
           scopes: String(payload.scope ?? '').split(' ').filter(Boolean),
@@ -134,8 +138,10 @@ export function registerAuthRoutes(app: import('hono').Hono): void {
     const state = randomBytes(24).toString('base64url');
     const nonce = randomBytes(24).toString('base64url');
     const verifier = randomBytes(48).toString('base64url');
+    const requestedReturnTo = context.req.query('returnTo');
+    const returnTo = requestedReturnTo?.startsWith('/') && !requestedReturnTo.startsWith('//') ? requestedReturnTo : '/';
     const challenge = createHash('sha256').update(verifier).digest('base64url');
-    const authState = await signPayload({ state, nonce, verifier }, '10m');
+    const authState = await signPayload({ state, nonce, verifier, returnTo }, '10m');
     setCookie(context, 'bc_contracts_auth_state', authState, {
       httpOnly: true, sameSite: 'Lax', secure: config.OIDC_REDIRECT_URI.startsWith('https://'), path: '/', maxAge: 600,
     });
@@ -180,8 +186,10 @@ export function registerAuthRoutes(app: import('hono').Hono): void {
         audience: config.OIDC_CLIENT_ID,
       });
       if (payload.nonce !== authState.nonce) throw new Error('Nonce does not match');
+      if (typeof payload.email !== 'string' || payload.email_verified !== true) throw new Error('A verified email address is required');
       const session = await new SignJWT({
         email: payload.email,
+        emailVerified: Boolean(payload.email_verified),
         name: payload.name ?? payload.preferred_username,
         tenantId: payload.tenant_id ?? 'bytecrunch',
         scopes: ['agreements:read', 'agreements:write', 'templates:write', 'webhooks:manage'],
@@ -190,7 +198,8 @@ export function registerAuthRoutes(app: import('hono').Hono): void {
         httpOnly: true, sameSite: 'Lax', secure: config.WEB_URL.startsWith('https://'), path: '/', maxAge: 28_800,
       });
       deleteCookie(context, 'bc_contracts_auth_state');
-      return context.redirect(config.WEB_URL);
+      const returnUrl = new URL(String(authState.returnTo ?? '/'), config.WEB_URL);
+      return context.redirect(returnUrl.origin === new URL(config.WEB_URL).origin ? returnUrl.toString() : config.WEB_URL);
     } catch (error) {
       return context.text(`Authentication failed: ${error instanceof Error ? error.message : 'Unknown error'}`, 401);
     }
