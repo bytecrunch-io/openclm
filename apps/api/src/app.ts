@@ -375,6 +375,7 @@ export function createApp(repository: Repository): Hono {
   app.post('/public/session/reopen-review', externalSessionMiddleware(), async (context) => {
     ReopenReviewSchema.parse(await context.req.json()); const session = currentExternalSession(context); const agreement = await requiredAgreement(repository, session.tenantId, session.agreementId); const participant = agreement.participants.find((item) => item.id === session.participantId);
     if (!participant?.permissions.includes('suggest')) throw new Error('You do not have permission to propose changes.');
+    if (participant.status === 'signed') throw new Error('Your approval and signature are complete. Only an unsigned reviewer can reopen negotiation.');
     if (!['out_for_signature', 'partially_signed'].includes(agreement.status)) throw new Error('Only an agreement awaiting signatures can be reopened for review.');
     const invalidatedAt = isoNow(); const signed = agreement.participants.filter((item) => item.signature);
     for (const signer of signed) {

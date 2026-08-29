@@ -278,5 +278,6 @@ describe('contracts API vertical slice', () => {
     await app.request('/public/session/onboarding', { method: 'POST', headers, body: JSON.stringify({ name: 'Clean Reviewer', title: 'Director', capacity: 'director', authorityConfirmed: true, entity: { legalName: 'Clean Co' } }) });
     const approved = await app.request('/public/session/approve-for-signature', { method: 'POST', headers }); expect(await approved.json()).toMatchObject({ agreement: { status: 'out_for_signature', signatureNotificationsSentAt: null } });
     const signed = await app.request('/public/session/sign', { method: 'POST', headers, body: JSON.stringify({ intentConfirmed: true }) }); expect(await signed.json()).toMatchObject({ agreement: { status: 'partially_signed', signatureNotificationsSentAt: expect.any(String) }, participant: { status: 'signed' } });
+    const reopenAfterSigning = await app.request('/public/session/reopen-review', { method: 'POST', headers, body: JSON.stringify({ invalidateSignatures: true, confirmation: 'VOID_SIGNATURES_AND_REOPEN' }) }); expect(reopenAfterSigning.status).toBe(409); expect(await reopenAfterSigning.json()).toMatchObject({ message: expect.stringContaining('signature are complete') });
   });
 });
