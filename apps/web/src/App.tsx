@@ -49,7 +49,7 @@ function AdminApp() {
   async function refresh() {
     try {
       setLoading(true); setError(undefined);
-      const nextUser = await api.me(); api.selectEntity(nextUser.activeEntityId);
+      const nextUser = await api.me(); if (!nextUser.activeEntityId) { setUser(nextUser); setAgreements([]); setTemplates([]); setNotifications([]); return; } api.selectEntity(nextUser.activeEntityId);
       const [nextAgreements, nextTemplates, nextNotifications] = await Promise.all([api.agreements(), api.templates(), api.notifications()]);
       setUser(nextUser); setAgreements(nextAgreements); setTemplates(nextTemplates); setNotifications(nextNotifications);
       if (selected) setSelected(nextAgreements.find((item) => item.id === selected.id));
@@ -74,6 +74,7 @@ function AdminApp() {
   const activeMembership = user?.entities.find((item) => item.entityId === user.activeEntityId);
 
   if (!user && !loading) return <SignIn {...(error ? { error } : {})} />;
+  if (user && user.entities.length === 0) return <CustomerEntityOnboarding user={user} onCreated={(entityId) => { api.selectEntity(entityId); void refresh(); }} />;
 
   return (
     <div className="app-shell">
@@ -95,7 +96,7 @@ function AdminApp() {
 
       <main className="main-panel">
         <header className="topbar">
-          <div className="entity-context"><span className="bc-eyebrow">// ACTING FOR</span>{user && <label><Building2 /><select aria-label="Active customer entity" value={user.activeEntityId} onChange={(event) => { api.selectEntity(event.target.value); setSelected(undefined); void refresh(); }}>{user.entities.map((membership) => <option key={membership.entityId} value={membership.entityId}>{membership.entity.legalName}</option>)}</select></label>}<button className="text-button" onClick={() => setCreatingEntity(true)}>Add entity</button></div>
+          <div className="entity-context"><span className="bc-eyebrow">// ACTING FOR</span>{user && <label><Building2 /><select aria-label="Active customer entity" value={user.activeEntityId ?? ''} onChange={(event) => { api.selectEntity(event.target.value); setSelected(undefined); void refresh(); }}>{user.entities.map((membership) => <option key={membership.entityId} value={membership.entityId}>{membership.entity.legalName}</option>)}</select></label>}<button className="text-button" onClick={() => setCreatingEntity(true)}>Add entity</button></div>
           <div className="top-actions">
             <button className="icon-button notification-trigger" aria-label="Notifications" onClick={() => setShowNotifications((value) => !value)}><Bell />{notifications.some((item) => !item.readAt) && <i>{notifications.filter((item) => !item.readAt).length}</i>}</button>
             <button className="icon-button" aria-label={`Use ${theme === 'dark' ? 'light' : 'dark'} theme`} onClick={() => { const next = theme === 'dark' ? 'light' : 'dark'; localStorage.setItem('bc-contracts-theme-choice', next); setTheme(next); }}>{theme === 'dark' ? <Sun /> : <Moon />}</button>
@@ -129,6 +130,13 @@ function NavButton({ icon, active, onClick, children }: { icon: React.ReactNode;
 
 function SignIn({ error }: { error?: string }) {
   return <main className="signin"><div className="bc-bytewave" /><section><img src={logo} alt="Bytecrunch" /><span className="bc-eyebrow">// AGREEMENT INFRASTRUCTURE</span><h1>Contracts move faster when the workflow is clear.</h1><p>Review, redline, execute, and verify agreements from one auditable workspace.</p>{error && <div className="error-banner">{error}</div>}<a className="button button-accent" href={api.loginUrl}>Continue with SSO <ArrowRight /></a></section></main>;
+}
+
+function CustomerEntityOnboarding({ user, onCreated }: { user: User; onCreated: (entityId: string) => void }) {
+  const [legalName, setLegalName] = useState(''); const [slug, setSlug] = useState(''); const [businessAddress, setBusinessAddress] = useState(''); const [registrationNumber, setRegistrationNumber] = useState(''); const [jurisdiction, setJurisdiction] = useState(''); const [error, setError] = useState<string>(); const [busy, setBusy] = useState(false);
+  const suggestedSlug = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  async function submit(event: FormEvent) { event.preventDefault(); try { setBusy(true); setError(undefined); const entity = await api.createEntity({ legalName, slug, ...(businessAddress ? { businessAddress } : {}), ...(registrationNumber ? { registrationNumber } : {}), ...(jurisdiction ? { jurisdiction } : {}) }); onCreated(entity.id); } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not create the customer entity.'); } finally { setBusy(false); } }
+  return <main className="entity-onboarding"><section className="entity-onboarding-intro"><img src={logo} alt="Bytecrunch" /><span className="bc-eyebrow bc-text-orange">// WELCOME, {user.name.toUpperCase()}</span><h1>Who are you acting for?</h1><p>Create the first customer entity you represent. This becomes an independent tenant and contracting context—not a ByteCrunch subsidiary or shared parent workspace.</p></section><form className="entity-onboarding-form" onSubmit={(event) => void submit(event)}><span className="bc-eyebrow bc-text-blue">// CUSTOMER ENTITY</span><h2>Set up your workspace</h2><label>Legal name<input required value={legalName} onChange={(event) => { const previousSuggestion = suggestedSlug(legalName); setLegalName(event.target.value); if (!slug || slug === previousSuggestion) setSlug(suggestedSlug(event.target.value)); }} placeholder="Example ApS" /></label><label>Entity identifier<input required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" value={slug} onChange={(event) => setSlug(event.target.value.toLowerCase())} placeholder="example-aps" /><small>Used in API context and cannot be changed in this version.</small></label><label>Business address<textarea value={businessAddress} onChange={(event) => setBusinessAddress(event.target.value)} rows={3} /></label><div className="form-split"><label>Registration number<input value={registrationNumber} onChange={(event) => setRegistrationNumber(event.target.value)} /></label><label>Jurisdiction<input value={jurisdiction} onChange={(event) => setJurisdiction(event.target.value)} placeholder="e.g. DK" /></label></div>{error && <div className="inline-error">{error}</div>}<button disabled={busy} className="button button-accent">{busy ? <><BusyMark /> Creating…</> : <>Create customer entity <ArrowRight /></>}</button><small>Signed in as {user.email}</small></form></main>;
 }
 
 function Dashboard({ agreements, counts, onOpen, onCreate }: { agreements: Agreement[]; counts: Record<string, number>; onOpen: (agreement: Agreement) => void; onCreate: () => void }) {

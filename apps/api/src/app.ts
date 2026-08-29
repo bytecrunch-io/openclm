@@ -282,6 +282,11 @@ export function createApp(repository: Repository): Hono {
       await repository.grantEntityMembership(account.id, defaultEntity.id, ['administrator'], ['entity.manage', 'members.manage', 'templates.read', 'templates.write', 'agreements.read', 'agreements.write', 'agreements.sign']);
       memberships = await repository.listEntityMemberships(account.id);
     }
+    if (memberships.length === 0 && context.req.path === '/v1/me') return next();
+    if (memberships.length === 0 && context.req.path === '/v1/entities' && context.req.method === 'POST') {
+      if (!authenticated.emailVerified) return context.json({ error: 'verified_email_required', message: 'Verify your email with the identity provider before creating a customer entity.' }, 403);
+      return next();
+    }
     const requestedEntityId = context.req.header('x-bytecrunch-entity-id');
     let activeMembership = requestedEntityId
       ? memberships.find((item) => item.entityId === requestedEntityId && item.status === 'active')
@@ -307,7 +312,7 @@ export function createApp(repository: Repository): Hono {
     const entities = (await Promise.all(memberships.filter((item) => item.status === 'active').map(async (membership) => {
       const entity = await repository.getCustomerEntity(membership.entityId); return entity ? { ...membership, entity } : undefined;
     }))).filter((item) => item !== undefined);
-    return context.json({ id: user.id, email: user.email, name: user.name, activeEntityId: user.tenantId, entities, scopes: user.scopes });
+    return context.json({ id: user.id, email: user.email, name: user.name, activeEntityId: entities.some((item) => item?.entityId === user.tenantId) ? user.tenantId : entities[0]?.entityId ?? null, entities, scopes: user.scopes });
   });
 
   app.post('/v1/entities', async (context) => {

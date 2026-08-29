@@ -299,7 +299,7 @@ model CustomerEntity { id: string; slug: string; legalName: string; businessAddr
 model CreateCustomerEntity { slug: string; legalName: string; businessAddress?: string; registrationNumber?: string; jurisdiction?: string; }
 model EntityMembershipRecord { id: string; accountId: string; entityId: string; roles: EntityRole[]; permissions: EntityPermission[]; status: "invited" | "active" | "suspended"; createdAt: utcDateTime; }
 model EntityMembership is EntityMembershipRecord { entity: CustomerEntity; }
-model CurrentAccount { id: string; email: string; name: string; activeEntityId: string; entities: EntityMembership[]; scopes: string[]; }
+model CurrentAccount { id: string; email: string; name: string; activeEntityId: string | null; entities: EntityMembership[]; scopes: string[]; }
 model EntityContext { @header("x-bytecrunch-entity-id") entityId?: string; }
 model AccountSummary { id: string; email: string; displayName: string; createdAt: utcDateTime; }
 model EntityMember { membership: EntityMembershipRecord; account: AccountSummary; }

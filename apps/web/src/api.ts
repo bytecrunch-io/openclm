@@ -20,7 +20,7 @@ import {
 } from '@bytecrunch/contracts-domain';
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3001';
-const UserSchema = z.object({ id: z.string(), email: z.string().email(), name: z.string(), activeEntityId: z.string(), entities: z.array(EntityMembershipViewSchema), scopes: z.array(z.string()) });
+const UserSchema = z.object({ id: z.string(), email: z.string().email(), name: z.string(), activeEntityId: z.string().nullable(), entities: z.array(EntityMembershipViewSchema), scopes: z.array(z.string()) });
 const ExternalViewSchema = z.object({ agreement: AgreementSchema, participant: ParticipantSchema, party: AgreementPartySchema.nullable() });
 const EntityMemberListSchema = z.object({ members: z.array(z.object({ membership: EntityMembershipSchema, account: AccountSchema })), invitations: z.array(EntityMemberInvitationSchema.omit({ tokenHash: true })) });
 const InvitationResponseSchema = z.object({

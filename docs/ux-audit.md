@@ -47,6 +47,7 @@ This pass adds an explicit next-action layer, touch-friendly typed/drawn signing
 - Replaced the accepted-invite dead end with a fresh, single-use 15-minute return link delivered to the invited email.
 - Added a permission-aware **People** workspace for verified-email member invitations, multi-role assignment, and entity-scoped suspension.
 - Added non-consuming invitation previews, OIDC return-to handling, explicit acceptance, and final-administrator protection.
+- Added first-run onboarding for a verified SSO user with no memberships, clearly framing the new entity as an independent customer tenant.
 
 ## Prioritized findings
 

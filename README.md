@@ -18,6 +18,7 @@ Open-source agreement infrastructure for review, redlining, execution, and integ
 - Legal entities, agreement parties, and per-party signature requirements
 - Global human accounts with memberships in one or more customer entities
 - A visible “Acting for” entity switcher; templates, agreements, and sender details follow the selected customer entity
+- First-run onboarding that lets a verified SSO user establish an independent customer entity when they were not invited to one
 - Entity-scoped role and permission foundations for administrators, template managers, contract managers, signatories, and viewers
 - Customer-entity member administration with email invitations, multi-role assignment, suspension, and final-administrator protection
 - Invitation acceptance through the configured OIDC provider, restricted to the verified invited email
@@ -78,6 +79,8 @@ Everything runs locally. There is no required hosted database, identity provider
 12. Close the participant browser, reopen the original invitation, then open the fresh return email in Mailpit. The new 15-minute link restores access without reusing the accepted invitation.
 
 To exercise multi-entity membership, select **Add entity** next to **Acting for**. Creating and switching to it gives that customer entity its own template copy, agreements, sender identity, and data boundary.
+
+In a non-development OIDC deployment, a verified user with no invitation or existing memberships sees first-run customer-entity onboarding after sign-in. Invited users skip that setup and accept only the entity and roles named in their invitation.
 
 To exercise entity administration, open **People**, invite a second Keycloak user, select one or more roles, and open the resulting email in Mailpit. The recipient can return through the same invitation after signing in with the verified invited address. Role changes and suspension apply only to the selected customer entity; the final active administrator cannot remove their own administrative access.
 

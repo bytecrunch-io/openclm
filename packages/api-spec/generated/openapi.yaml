@@ -1957,7 +1957,9 @@ components:
         name:
           type: string
         activeEntityId:
-          type: string
+          anyOf:
+            - type: string
+            - type: 'null'
         entities:
           type: array
           items:
