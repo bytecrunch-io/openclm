@@ -432,7 +432,7 @@ export function createApp(repository: Repository): Hono {
     return context.json(await repository.createTemplate(currentUser(context).tenantId, input), 201);
   });
 
-  app.get('/v1/agreements', async (context) => { const agreements = await repository.listAgreements(currentUser(context).tenantId); await Promise.all(agreements.map(async (agreement) => { if (materializePartyVariables(agreement)) await repository.saveAgreement(agreement); })); return context.json(agreements); });
+  app.get('/v1/agreements', async (context) => { const agreements = await repository.listAgreements(currentUser(context).tenantId); await Promise.all(agreements.map(async (agreement) => { if (materializePartyVariables(agreement)) await repository.saveAgreement(agreement); })); return context.json(agreements.map((agreement) => agreementForReviewSide(agreement, 'sender'))); });
   app.post('/v1/agreements', async (context) => {
     const input = CreateAgreementSchema.parse(await context.req.json());
     const user = currentUser(context); const agreement = await repository.createAgreement(user.tenantId, input);
@@ -450,7 +450,7 @@ export function createApp(repository: Repository): Hono {
 
   app.get('/v1/agreements/:agreementId', async (context) => {
     const agreement = await repository.getAgreement(currentUser(context).tenantId, context.req.param('agreementId'));
-    return agreement ? context.json(agreement) : context.json({ error: 'not_found', message: 'Agreement not found.' }, 404);
+    return agreement ? context.json(agreementForReviewSide(AgreementSchema.parse(agreement), 'sender')) : context.json({ error: 'not_found', message: 'Agreement not found.' }, 404);
   });
 
   app.post('/v1/agreements/:agreementId/review', async (context) => {
@@ -749,5 +749,19 @@ async function externalView(repository: Repository, session: { tenantId: string;
   const participant = agreement.participants.find((item) => item.id === session.participantId);
   if (!participant) throw new Error('Participant not found.');
   const party = agreement.parties.find((item) => item.id === participant.partyId) ?? null;
-  return { agreement, participant, party };
+  return { agreement: agreementForReviewSide(agreement, 'counterparty'), participant, party };
+}
+
+function agreementForReviewSide(agreement: Agreement, viewerSide: 'sender' | 'counterparty'): Agreement {
+  if (agreement.status !== 'in_review' || agreement.reviewAssignedTo === viewerSide) return agreement;
+  const visible = AgreementSchema.parse(agreement);
+  const hiddenSuggestionIds = new Set(visible.suggestions.filter((item) => item.reviewRound === visible.reviewRound).map((item) => item.id));
+  visible.suggestions = visible.suggestions.filter((item) => !hiddenSuggestionIds.has(item.id));
+  for (const suggestion of visible.suggestions) {
+    if (suggestion.status === 'countered' && suggestion.counteredBySuggestionId && hiddenSuggestionIds.has(suggestion.counteredBySuggestionId)) {
+      suggestion.status = 'open'; suggestion.counteredBySuggestionId = null; suggestion.resolvedAt = null;
+    }
+  }
+  visible.documentComments = visible.documentComments.filter((item) => item.reviewRound !== visible.reviewRound);
+  return visible;
 }

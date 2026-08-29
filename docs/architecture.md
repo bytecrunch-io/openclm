@@ -25,7 +25,7 @@ TypeSpec public contract -> Hono API -> Zod runtime validation -> domain invaria
 - External identities are stored as tenant-scoped opaque subject IDs.
 - Agreement content is hashed whenever an accepted suggestion changes it.
 - Executed state requires every party's minimum signature requirement and every unassigned required signature to be satisfied. Normal agreements do not impose a signing order.
-- Review edits are stored as private turn-scoped suggestions until the reviewer explicitly sends the review.
+- Review edits and comments are stored as private turn-scoped work until the reviewer explicitly sends the review. Agreement responses omit the active side's current-round work from the waiting party in both directions; sending the review advances the round and publishes it.
 - A turn draft is always diffed cumulatively against its immutable revision. Nearby edits are grouped into one review hunk and repeated edits retain the same suggestion identity, thread, and attribution.
 - Incoming redlines are projected into the active editor as the returned document version and require an explicit accept or keep-original decision. Editing the highlighted proposed wording inline instead creates an attributed counterproposal, links it to the incoming redline, and marks the earlier proposal as countered. Counterproposals travel in the next review round and do not change the accepted content hash or revision until the receiving party accepts them.
 - `{{signature_blocks}}` is a structural template placeholder. The renderer replaces it with the agreement's live signature fields; the placeholder remains in the hashed agreement content while signature evidence is recorded separately against that hash.

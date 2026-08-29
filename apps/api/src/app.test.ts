@@ -199,6 +199,8 @@ describe('contracts API vertical slice', () => {
 
     const partyBDraft = await app.request('/public/session/review-draft', { method: 'PUT', headers: externalHeaders, body: JSON.stringify({ content: onboarded.agreement.content.replace('two years', 'one year') }) });
     const partyBView = await partyBDraft.json() as { agreement: { suggestions: Array<{ id: string }> } }; const partyBRedlineId = partyBView.agreement.suggestions[0]!.id;
+    const privatePartyBView = await app.request(`/v1/agreements/${created.id}`);
+    expect(await privatePartyBView.json()).toMatchObject({ suggestions: [] });
     expect((await app.request('/public/session/return-review', { method: 'POST', headers: externalHeaders, body: JSON.stringify({ message: 'Please shorten the term.' }) })).status).toBe(200);
 
     const prematureHandback = await app.request(`/v1/agreements/${created.id}/send-review`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ message: '' }) });
@@ -212,11 +214,17 @@ describe('contracts API vertical slice', () => {
     const partyBRedline = countered.suggestions.find((item) => item.id === partyBRedlineId)!; let partyACounter = countered.suggestions.find((item) => item.inResponseToSuggestionIds.includes(partyBRedlineId))!;
     expect(partyBRedline).toMatchObject({ status: 'countered', counteredBySuggestionId: partyACounter.id });
     expect(partyACounter).toMatchObject({ status: 'open', replacementText: 'eighteen months', inResponseToSuggestionIds: [partyBRedlineId] });
+    const partyACommentResponse = await app.request(`/v1/agreements/${created.id}/comments`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ body: 'Internal note before sending.' }) });
+    const partyAComment = (await partyACommentResponse.json() as { documentComments: Array<{ id: string }> }).documentComments[0]!;
+    const privatePartyAView = await app.request('/public/session', { headers: externalHeaders });
+    expect(await privatePartyAView.json()).toMatchObject({ agreement: { suggestions: [expect.objectContaining({ id: partyBRedlineId, status: 'open', replacementText: 'one year', counteredBySuggestionId: null })], documentComments: [] } });
     const removedCounter = await app.request(`/v1/agreements/${created.id}/suggestions/${partyACounter.id}`, { method: 'DELETE' });
     expect(await removedCounter.json()).toMatchObject({ suggestions: expect.arrayContaining([expect.objectContaining({ id: partyBRedlineId, status: 'open', counteredBySuggestionId: null })]) });
     const recreatedCounter = await app.request(`/v1/agreements/${created.id}/review-draft`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ content: created.content.replace('two years', 'eighteen months') }) });
     const recreated = await recreatedCounter.json() as { suggestions: Array<{ id: string; status: string; replacementText: string; inResponseToSuggestionIds: string[]; counteredBySuggestionId: string | null }> }; partyACounter = recreated.suggestions.find((item) => item.inResponseToSuggestionIds.includes(partyBRedlineId))!;
     expect((await app.request(`/v1/agreements/${created.id}/send-review`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ message: 'We can agree to eighteen months.' }) })).status).toBe(200);
+    const submittedPartyAView = await app.request('/public/session', { headers: externalHeaders });
+    expect(await submittedPartyAView.json()).toMatchObject({ agreement: { suggestions: expect.arrayContaining([expect.objectContaining({ id: partyACounter.id, status: 'open', replacementText: 'eighteen months' })]), documentComments: [expect.objectContaining({ id: partyAComment.id, body: 'Internal note before sending.' })] } });
 
     const unresolvedReturn = await app.request('/public/session/return-review', { method: 'POST', headers: externalHeaders, body: JSON.stringify({ message: '' }) });
     expect(unresolvedReturn.status).toBe(409);
