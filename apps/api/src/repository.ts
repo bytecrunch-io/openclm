@@ -17,6 +17,7 @@ import {
   AgreementAccessSchema,
   AccessChallengeSchema,
   EntityMemberInvitationSchema,
+  RecipientLoginChallengeSchema,
   type Agreement,
   type CreateAgreement,
   type CreateTemplate,
@@ -35,6 +36,7 @@ import {
   type AgreementAccess,
   type AccessChallenge,
   type EntityMemberInvitation,
+  type RecipientLoginChallenge,
 } from '@bytecrunch/contracts-domain';
 
 export interface WebhookEndpoint {
@@ -78,6 +80,7 @@ export interface Repository {
   saveOutbox(item: NotificationOutbox): Promise<void>;
   findOrCreateAccountByIdentity(provider: 'dev' | 'oidc', issuer: string, subject: string, email: string, displayName: string): Promise<Account>;
   findOrCreateAccountByEmail(email: string, displayName: string): Promise<Account>;
+  findAccountByEmail(email: string): Promise<Account | undefined>;
   getAccount(id: string): Promise<Account | undefined>;
   getCustomerEntity(id: string): Promise<CustomerEntity | undefined>;
   createCustomerEntity(input: Omit<CustomerEntity, 'id' | 'createdAt'> & { id?: string }): Promise<CustomerEntity>;
@@ -87,6 +90,7 @@ export interface Repository {
   getAgreementAccess(id: string): Promise<AgreementAccess | undefined>;
   findAgreementAccess(accountId: string, agreementId: string, participantId: string): Promise<AgreementAccess | undefined>;
   saveAgreementAccess(access: AgreementAccess): Promise<void>;
+  listAgreementAccesses(accountId: string): Promise<AgreementAccess[]>;
   createAccessChallenge(challenge: AccessChallenge): Promise<void>;
   getAccessChallengeByTokenHash(tokenHash: string): Promise<AccessChallenge | undefined>;
   saveAccessChallenge(challenge: AccessChallenge): Promise<void>;
@@ -97,6 +101,10 @@ export interface Repository {
   getEntityMemberInvitationByTokenHash(tokenHash: string): Promise<EntityMemberInvitation | undefined>;
   listEntityMemberInvitations(entityId: string): Promise<EntityMemberInvitation[]>;
   saveEntityMemberInvitation(invitation: EntityMemberInvitation): Promise<void>;
+  createRecipientLoginChallenge(challenge: RecipientLoginChallenge): Promise<void>;
+  getRecipientLoginChallenge(id: string): Promise<RecipientLoginChallenge | undefined>;
+  listRecipientLoginChallenges(email: string): Promise<RecipientLoginChallenge[]>;
+  saveRecipientLoginChallenge(challenge: RecipientLoginChallenge): Promise<void>;
 }
 
 function now(): string { return new Date().toISOString(); }
@@ -121,6 +129,7 @@ export class MemoryRepository implements Repository {
   protected agreementAccess: AgreementAccess[] = [];
   protected accessChallenges: AccessChallenge[] = [];
   protected entityMemberInvitations: EntityMemberInvitation[] = [];
+  protected recipientLoginChallenges: RecipientLoginChallenge[] = [];
 
   async init(): Promise<void> {
     if (!this.customerEntities.some((entity) => entity.id === 'bytecrunch')) {
@@ -247,6 +256,7 @@ export class MemoryRepository implements Repository {
     if (existing) return structuredClone(existing);
     const account = AccountSchema.parse({ id: `acct_${randomUUID()}`, email: normalized, displayName, createdAt: now() }); this.accounts.push(account); return structuredClone(account);
   }
+  async findAccountByEmail(email: string) { const value = this.accounts.find((item) => item.email === email.toLowerCase()); return value ? structuredClone(value) : undefined; }
   async getAccount(id: string) { const value = this.accounts.find((item) => item.id === id); return value ? structuredClone(value) : undefined; }
   async getCustomerEntity(id: string) { const value = this.customerEntities.find((item) => item.id === id); return value ? structuredClone(value) : undefined; }
   async createCustomerEntity(input: Omit<CustomerEntity, 'id' | 'createdAt'> & { id?: string }) {
@@ -263,6 +273,7 @@ export class MemoryRepository implements Repository {
   async getAgreementAccess(id: string) { const value = this.agreementAccess.find((item) => item.id === id); return value ? structuredClone(value) : undefined; }
   async findAgreementAccess(accountId: string, agreementId: string, participantId: string) { const value = this.agreementAccess.find((item) => item.accountId === accountId && item.agreementId === agreementId && item.participantId === participantId); return value ? structuredClone(value) : undefined; }
   async saveAgreementAccess(access: AgreementAccess) { const index = this.agreementAccess.findIndex((item) => item.id === access.id); if (index < 0) throw new Error('Agreement access not found.'); this.agreementAccess[index] = AgreementAccessSchema.parse(access); }
+  async listAgreementAccesses(accountId: string) { return this.agreementAccess.filter((item) => item.accountId === accountId && item.status === 'active').map((item) => structuredClone(item)); }
   async createAccessChallenge(challenge: AccessChallenge) { this.accessChallenges.push(AccessChallengeSchema.parse(challenge)); }
   async getAccessChallengeByTokenHash(tokenHash: string) { const value = this.accessChallenges.find((item) => item.tokenHash === tokenHash); return value ? structuredClone(value) : undefined; }
   async saveAccessChallenge(challenge: AccessChallenge) { const index = this.accessChallenges.findIndex((item) => item.id === challenge.id); if (index < 0) throw new Error('Access challenge not found.'); this.accessChallenges[index] = AccessChallengeSchema.parse(challenge); }
@@ -273,6 +284,10 @@ export class MemoryRepository implements Repository {
   async getEntityMemberInvitationByTokenHash(tokenHash: string) { const value = this.entityMemberInvitations.find((item) => item.tokenHash === tokenHash); return value ? structuredClone(value) : undefined; }
   async listEntityMemberInvitations(entityId: string) { return this.entityMemberInvitations.filter((item) => item.entityId === entityId).map((item) => structuredClone(item)); }
   async saveEntityMemberInvitation(invitation: EntityMemberInvitation) { const index = this.entityMemberInvitations.findIndex((item) => item.id === invitation.id); if (index < 0) throw new Error('Entity member invitation not found.'); this.entityMemberInvitations[index] = EntityMemberInvitationSchema.parse(invitation); }
+  async createRecipientLoginChallenge(challenge: RecipientLoginChallenge) { this.recipientLoginChallenges.push(RecipientLoginChallengeSchema.parse(challenge)); }
+  async getRecipientLoginChallenge(id: string) { const value = this.recipientLoginChallenges.find((item) => item.id === id); return value ? structuredClone(value) : undefined; }
+  async listRecipientLoginChallenges(email: string) { return this.recipientLoginChallenges.filter((item) => item.email === email.toLowerCase()).map((item) => structuredClone(item)); }
+  async saveRecipientLoginChallenge(challenge: RecipientLoginChallenge) { const index = this.recipientLoginChallenges.findIndex((item) => item.id === challenge.id); if (index < 0) throw new Error('Recipient login challenge not found.'); this.recipientLoginChallenges[index] = RecipientLoginChallengeSchema.parse(challenge); }
 }
 
 export class PostgresRepository extends MemoryRepository {
@@ -320,6 +335,8 @@ export class PostgresRepository extends MemoryRepository {
       CREATE TABLE IF NOT EXISTS access_challenges (id text PRIMARY KEY, token_hash text UNIQUE NOT NULL, payload jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
       CREATE TABLE IF NOT EXISTS entity_member_invitations (id text PRIMARY KEY, entity_id text NOT NULL, email text NOT NULL, token_hash text UNIQUE NOT NULL, payload jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
       CREATE INDEX IF NOT EXISTS entity_member_invitations_entity_idx ON entity_member_invitations (entity_id, created_at DESC);
+      CREATE TABLE IF NOT EXISTS recipient_login_challenges (id text PRIMARY KEY, email text NOT NULL, payload jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
+      CREATE INDEX IF NOT EXISTS recipient_login_challenges_email_idx ON recipient_login_challenges (email, created_at DESC);
     `);
     const platformEntity = CustomerEntitySchema.parse({ id: 'bytecrunch', slug: 'bytecrunch', legalName: 'ByteCrunch ApS', businessAddress: null, registrationNumber: null, jurisdiction: 'DK', createdAt: now() });
     await this.pool.query('INSERT INTO customer_entities (id,slug,payload) VALUES ($1,$2,$3) ON CONFLICT (id) DO NOTHING', [platformEntity.id, platformEntity.slug, JSON.stringify(platformEntity)]);
@@ -453,6 +470,7 @@ export class PostgresRepository extends MemoryRepository {
     await this.pool.query('INSERT INTO accounts (id,email,payload) VALUES ($1,$2,$3) ON CONFLICT (email) DO NOTHING', [account.id, account.email, JSON.stringify(account)]);
     const resolved = await this.pool.query('SELECT payload FROM accounts WHERE email=$1', [normalized]); return AccountSchema.parse(resolved.rows[0]?.payload ?? account);
   }
+  override async findAccountByEmail(email: string) { const result = await this.pool.query('SELECT payload FROM accounts WHERE email=$1', [email.toLowerCase()]); return result.rows[0] ? AccountSchema.parse(result.rows[0].payload) : undefined; }
   override async getAccount(id: string) { const result = await this.pool.query('SELECT payload FROM accounts WHERE id=$1', [id]); return result.rows[0] ? AccountSchema.parse(result.rows[0].payload) : undefined; }
   override async getCustomerEntity(id: string) { const result = await this.pool.query('SELECT payload FROM customer_entities WHERE id=$1', [id]); return result.rows[0] ? CustomerEntitySchema.parse(result.rows[0].payload) : undefined; }
   override async createCustomerEntity(input: Omit<CustomerEntity, 'id' | 'createdAt'> & { id?: string }) { const entity = CustomerEntitySchema.parse({ ...input, id: input.id ?? `org_${randomUUID()}`, createdAt: now() }); await this.pool.query('INSERT INTO customer_entities (id,slug,payload) VALUES ($1,$2,$3)', [entity.id, entity.slug, JSON.stringify(entity)]); return entity; }
@@ -465,6 +483,7 @@ export class PostgresRepository extends MemoryRepository {
   override async getAgreementAccess(id: string) { const result = await this.pool.query('SELECT payload FROM agreement_access WHERE id=$1', [id]); return result.rows[0] ? AgreementAccessSchema.parse(result.rows[0].payload) : undefined; }
   override async findAgreementAccess(accountId: string, agreementId: string, participantId: string) { const result = await this.pool.query('SELECT payload FROM agreement_access WHERE account_id=$1 AND agreement_id=$2 AND participant_id=$3', [accountId, agreementId, participantId]); return result.rows[0] ? AgreementAccessSchema.parse(result.rows[0].payload) : undefined; }
   override async saveAgreementAccess(access: AgreementAccess) { AgreementAccessSchema.parse(access); await this.pool.query('UPDATE agreement_access SET payload=$1 WHERE id=$2', [JSON.stringify(access), access.id]); }
+  override async listAgreementAccesses(accountId: string) { const result = await this.pool.query('SELECT payload FROM agreement_access WHERE account_id=$1', [accountId]); return result.rows.map((row) => AgreementAccessSchema.parse(row.payload)).filter((item) => item.status === 'active'); }
   override async createAccessChallenge(challenge: AccessChallenge) { AccessChallengeSchema.parse(challenge); await this.pool.query('INSERT INTO access_challenges (id,token_hash,payload) VALUES ($1,$2,$3)', [challenge.id, challenge.tokenHash, JSON.stringify(challenge)]); }
   override async getAccessChallengeByTokenHash(tokenHash: string) { const result = await this.pool.query('SELECT payload FROM access_challenges WHERE token_hash=$1', [tokenHash]); return result.rows[0] ? AccessChallengeSchema.parse(result.rows[0].payload) : undefined; }
   override async saveAccessChallenge(challenge: AccessChallenge) { AccessChallengeSchema.parse(challenge); await this.pool.query('UPDATE access_challenges SET payload=$1 WHERE id=$2', [JSON.stringify(challenge), challenge.id]); }
@@ -475,6 +494,10 @@ export class PostgresRepository extends MemoryRepository {
   override async getEntityMemberInvitationByTokenHash(tokenHash: string) { const result = await this.pool.query('SELECT payload FROM entity_member_invitations WHERE token_hash=$1', [tokenHash]); return result.rows[0] ? EntityMemberInvitationSchema.parse(result.rows[0].payload) : undefined; }
   override async listEntityMemberInvitations(entityId: string) { const result = await this.pool.query('SELECT payload FROM entity_member_invitations WHERE entity_id=$1 ORDER BY created_at DESC', [entityId]); return result.rows.map((row) => EntityMemberInvitationSchema.parse(row.payload)); }
   override async saveEntityMemberInvitation(invitation: EntityMemberInvitation) { EntityMemberInvitationSchema.parse(invitation); await this.pool.query('UPDATE entity_member_invitations SET payload=$1 WHERE id=$2', [JSON.stringify(invitation), invitation.id]); }
+  override async createRecipientLoginChallenge(challenge: RecipientLoginChallenge) { RecipientLoginChallengeSchema.parse(challenge); await this.pool.query('INSERT INTO recipient_login_challenges (id,email,payload) VALUES ($1,$2,$3)', [challenge.id, challenge.email, JSON.stringify(challenge)]); }
+  override async getRecipientLoginChallenge(id: string) { const result = await this.pool.query('SELECT payload FROM recipient_login_challenges WHERE id=$1', [id]); return result.rows[0] ? RecipientLoginChallengeSchema.parse(result.rows[0].payload) : undefined; }
+  override async listRecipientLoginChallenges(email: string) { const result = await this.pool.query('SELECT payload FROM recipient_login_challenges WHERE email=$1 ORDER BY created_at DESC', [email.toLowerCase()]); return result.rows.map((row) => RecipientLoginChallengeSchema.parse(row.payload)); }
+  override async saveRecipientLoginChallenge(challenge: RecipientLoginChallenge) { RecipientLoginChallengeSchema.parse(challenge); await this.pool.query('UPDATE recipient_login_challenges SET payload=$1 WHERE id=$2', [JSON.stringify(challenge), challenge.id]); }
 }
 
 function permissionsForRole(role: 'owner' | 'reviewer' | 'signatory') {

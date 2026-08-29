@@ -4,7 +4,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { secureHeaders } from 'hono/secure-headers';
-import { ZodError } from 'zod';
+import { z, ZodError } from 'zod';
 import {
   AgreementSchema,
   AddThreadMessageSchema,
@@ -18,6 +18,8 @@ import {
   CreateCustomerEntitySchema,
   AgreementAccessSchema,
   AccessChallengeSchema,
+  RecipientLoginChallengeSchema,
+  RecipientInboxItemSchema,
   EntityMemberInvitationSchema,
   InviteEntityMemberSchema,
   UpdateEntityMemberSchema,
@@ -44,14 +46,16 @@ import {
   type Suggestion,
   type EntityRole,
   type EntityPermission,
+  type RecipientInboxItem,
 } from '@bytecrunch/contracts-domain';
 import { authMiddleware, currentUser, registerAuthRoutes } from './auth.js';
 import { config } from './config.js';
-import { sendAccessEmail, sendInvitationEmail, sendMemberInvitationEmail } from './email.js';
+import { sendAccessEmail, sendInvitationEmail, sendMemberInvitationEmail, sendRecipientLoginCode } from './email.js';
 import { createInvitationToken, currentExternalSession, externalSessionMiddleware, hashInvitationToken, setExternalSession } from './external-auth.js';
 import { hashContent, type Repository } from './repository.js';
 import { emitAgreementEvent } from './webhooks.js';
 import { notifyParticipants } from './notifications.js';
+import { clearRecipientSession, createRecipientLoginCode, currentRecipientSession, recipientSessionMiddleware, setRecipientSession, verifyRecipientLoginCode } from './recipient-auth.js';
 
 function isoNow(): string { return new Date().toISOString(); }
 
@@ -269,12 +273,36 @@ export function createApp(repository: Repository): Hono {
     const entity = await repository.getCustomerEntity(invitation.entityId); if (!entity) return context.json({ error: 'not_found', message: 'The customer entity no longer exists.' }, 404);
     return context.json({ entityName: entity.legalName, emailHint: maskEmail(invitation.email), roles: invitation.roles, expiresAt: invitation.expiresAt });
   });
+  app.post('/public/recipient-auth/request', async (context) => {
+    const { email: rawEmail } = z.object({ email: z.string().email() }).parse(await context.req.json()); const email = rawEmail.toLowerCase(); const previous = await repository.listRecipientLoginChallenges(email); const recent = previous.find((item) => item.status === 'pending' && Date.now() - new Date(item.createdAt).getTime() < 60_000);
+    if (recent) return context.json({ accepted: true, requestId: recent.id, expiresAt: recent.expiresAt }, 202);
+    if (previous.filter((item) => Date.now() - new Date(item.createdAt).getTime() < 15 * 60_000).length >= 5) return context.json({ accepted: true, requestId: `recipient_request_${randomUUID()}`, expiresAt: new Date(Date.now() + 10 * 60_000).toISOString() }, 202);
+    await Promise.all(previous.filter((item) => item.status === 'pending').map(async (item) => { item.status = 'expired'; await repository.saveRecipientLoginChallenge(item); }));
+    const account = await repository.findAccountByEmail(email); const id = `recipient_login_${randomUUID()}`; const { code, codeHash } = createRecipientLoginCode(id); const challenge = RecipientLoginChallengeSchema.parse({ id, accountId: account?.id ?? null, email, codeHash, status: 'pending', attempts: 0, expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(), createdAt: isoNow(), acceptedAt: null }); await repository.createRecipientLoginChallenge(challenge);
+    if (account && (await repository.listAgreementAccesses(account.id)).length > 0) await sendRecipientLoginCode({ email, name: account.displayName, code });
+    return context.json({ accepted: true, requestId: id, expiresAt: challenge.expiresAt, ...(config.AUTH_MODE === 'dev' && account ? { developmentCode: code } : {}) }, 202);
+  });
+  app.post('/public/recipient-auth/verify', async (context) => {
+    const input = z.object({ requestId: z.string().min(1), code: z.string().regex(/^\d{6}$/) }).parse(await context.req.json()); const challenge = await repository.getRecipientLoginChallenge(input.requestId);
+    const invalid = () => context.json({ error: 'invalid_code', message: 'That code is invalid or has expired. Request a new code and try again.' }, 401);
+    if (!challenge || challenge.status !== 'pending') return invalid();
+    if (new Date(challenge.expiresAt).getTime() <= Date.now()) { challenge.status = 'expired'; await repository.saveRecipientLoginChallenge(challenge); return invalid(); }
+    challenge.attempts += 1;
+    if (!verifyRecipientLoginCode(challenge.id, input.code, challenge.codeHash) || !challenge.accountId) { if (challenge.attempts >= 5) challenge.status = 'locked'; await repository.saveRecipientLoginChallenge(challenge); return invalid(); }
+    const account = await repository.getAccount(challenge.accountId); if (!account) return invalid(); challenge.status = 'accepted'; challenge.acceptedAt = isoNow(); await repository.saveRecipientLoginChallenge(challenge); await setRecipientSession(context, { accountId: account.id, email: account.email }); return context.json({ accepted: true, account });
+  });
+  app.get('/public/recipient/inbox', recipientSessionMiddleware(), async (context) => context.json(await buildPersonalInbox(repository, currentRecipientSession(context).accountId, currentRecipientSession(context).email, true)));
+  app.post('/public/recipient/open', recipientSessionMiddleware(), async (context) => {
+    const { accessId } = z.object({ accessId: z.string().min(1) }).parse(await context.req.json()); const recipient = currentRecipientSession(context); const access = (await repository.listAgreementAccesses(recipient.accountId)).find((item) => item.id === accessId);
+    if (!access) return context.json({ error: 'not_found', message: 'That agreement assignment is no longer available.' }, 404); access.lastAccessedAt = isoNow(); await repository.saveAgreementAccess(access); await setExternalSession(context, { invitationId: 'recipient-inbox', agreementId: access.agreementId, participantId: access.participantId, tenantId: access.tenantId, accountId: access.accountId }); return context.json({ opened: true });
+  });
+  app.post('/public/recipient/logout', recipientSessionMiddleware(), (context) => { clearRecipientSession(context); return context.json({ ok: true }); });
   app.use('/v1/*', authMiddleware());
   app.use('/v1/*', async (context, next) => {
     const authenticated = currentUser(context);
     const account = await repository.findOrCreateAccountByIdentity(authenticated.authProvider, authenticated.authIssuer, authenticated.authSubjectId, authenticated.email, authenticated.name);
     context.set('user', { ...authenticated, id: account.id });
-    if (context.req.path === '/v1/entity-member-invitations/accept') return next();
+    if (context.req.path === '/v1/entity-member-invitations/accept' || context.req.path === '/v1/my-work') return next();
     let memberships = await repository.listEntityMemberships(account.id);
     if (memberships.length === 0 && (config.AUTH_MODE === 'dev' || authenticated.email.toLowerCase() === config.DEV_USER_EMAIL.toLowerCase())) {
       let defaultEntity = await repository.getCustomerEntity(authenticated.tenantId);
@@ -314,6 +342,7 @@ export function createApp(repository: Repository): Hono {
     }))).filter((item) => item !== undefined);
     return context.json({ id: user.id, email: user.email, name: user.name, activeEntityId: entities.some((item) => item?.entityId === user.tenantId) ? user.tenantId : entities[0]?.entityId ?? null, entities, scopes: user.scopes });
   });
+  app.get('/v1/my-work', async (context) => { const user = currentUser(context); return context.json(await buildPersonalInbox(repository, user.id, user.email, false)); });
 
   app.post('/v1/entities', async (context) => {
     const user = currentUser(context); const input = CreateCustomerEntitySchema.parse(await context.req.json());
@@ -919,6 +948,27 @@ function maskEmail(email: string): string {
 async function assertAnotherAdministrator(repository: Repository, membership: import('@bytecrunch/contracts-domain').EntityMembership) {
   const administrators = (await repository.listEntityMembers(membership.entityId)).filter((item) => item.id !== membership.id && item.status === 'active' && item.roles.includes('administrator'));
   if (administrators.length === 0) throw new Error('Assign another administrator before removing the final administrator role.');
+}
+
+async function buildPersonalInbox(repository: Repository, accountId: string, email: string, accessOnly: boolean): Promise<RecipientInboxItem[]> {
+  const accesses = await repository.listAgreementAccesses(accountId); const accessByAssignment = new Map(accesses.map((access) => [`${access.tenantId}:${access.agreementId}:${access.participantId}`, access]));
+  const candidates: Array<{ tenantId: string; agreement: Agreement; participant: Agreement['participants'][number]; accessId?: string }> = [];
+  for (const access of accesses) { const agreement = await repository.getAgreement(access.tenantId, access.agreementId); const participant = agreement?.participants.find((item) => item.id === access.participantId); if (agreement && participant) candidates.push({ tenantId: access.tenantId, agreement, participant, accessId: access.id }); }
+  if (!accessOnly) for (const membership of await repository.listEntityMemberships(accountId)) {
+    if (membership.status !== 'active') continue;
+    for (const agreement of await repository.listAgreements(membership.entityId)) for (const participant of agreement.participants.filter((item) => item.personId === accountId || item.email.toLowerCase() === email.toLowerCase())) {
+      const key = `${membership.entityId}:${agreement.id}:${participant.id}`; if (!candidates.some((item) => `${item.tenantId}:${item.agreement.id}:${item.participant.id}` === key)) candidates.push({ tenantId: membership.entityId, agreement, participant, ...(accessByAssignment.get(key) ? { accessId: accessByAssignment.get(key)!.id } : {}) });
+    }
+  }
+  const items = await Promise.all(candidates.map(async ({ tenantId, agreement, participant, accessId }) => {
+    const entity = await repository.getCustomerEntity(tenantId); const counterparty = agreement.parties.find((party) => party.role === 'counterparty'); const participantIsCounterparty = participant.partyId === counterparty?.id;
+    const action: RecipientInboxItem['action'] = agreement.status === 'executed' || participant.status === 'declined' ? 'complete'
+      : ['out_for_signature', 'partially_signed'].includes(agreement.status) && participant.role === 'signatory' && participant.status !== 'signed' ? 'sign'
+      : agreement.status === 'in_review' && agreement.reviewAssignedTo === 'counterparty' && participantIsCounterparty ? 'review'
+      : 'waiting';
+    return RecipientInboxItemSchema.parse({ accessId: accessId ?? `entity:${tenantId}:${agreement.id}`, tenantId, entityName: entity?.legalName ?? tenantId, agreementId: agreement.id, title: agreement.title, agreementStatus: agreement.status, participantId: participant.id, participantName: participant.name, participantRole: participant.role, participantStatus: participant.status, action, updatedAt: agreement.updatedAt });
+  }));
+  return items.sort((left, right) => { const priority = { sign: 0, review: 1, waiting: 2, complete: 3 }; return priority[left.action] - priority[right.action] || right.updatedAt.localeCompare(left.updatedAt); });
 }
 
 async function externalView(repository: Repository, session: { tenantId: string; agreementId: string; participantId: string; accountId?: string }) {

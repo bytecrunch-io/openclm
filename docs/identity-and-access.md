@@ -52,7 +52,9 @@ An entity invitation grants application access only. It does not prove that the 
 5. If the browser/session is lost, reopening the accepted invitation sends a fresh 15-minute access email.
 6. The fresh link is consumed once and restores access through the durable assignment.
 
-The current slice treats possession of the original emailed invitation as initial email verification. The next authentication slice should add a cross-agreement recipient inbox, non-enumerating email-code login, passkeys, optional organisation SSO, recovery/revocation controls, and recent-authentication requirements immediately before signing.
+Recipients can also open `/inbox` and request a six-digit email code. The request response does not reveal whether an account or assignment exists. Challenges expire after ten minutes, lock after five failed attempts, are throttled per address, and are stored as keyed hashes rather than plaintext codes. Successful verification creates an eight-hour account-level recipient session. Selecting an inbox item then creates the existing agreement-scoped participant session, preserving the narrow authorization boundary.
+
+The current slice treats possession of the original emailed invitation as initial email verification and supports email-code return access across assignments. Passkeys, optional organisation SSO, recovery/revocation controls, and recent-authentication requirements immediately before higher-assurance signing remain future work.
 
 ## Roles and permissions
 

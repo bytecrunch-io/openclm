@@ -1,19 +1,20 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import {
   ArrowRight, Bell, Check, ChevronRight, CircleUserRound, FileCheck2, FileClock, FilePenLine,
-  Building2, FilePlus2, Files, LayoutDashboard, Moon, Plus, Settings, ShieldCheck, Sun, UserPlus, UsersRound, Webhook, X,
+  Building2, FilePlus2, Files, Inbox, KeyRound, LayoutDashboard, LogOut, Mail, Moon, Plus, Settings, ShieldCheck, Sun, UserPlus, UsersRound, Webhook, X,
 } from 'lucide-react';
 import type { Agreement, CreateAgreement, Notification, Template } from '@bytecrunch/contracts-domain';
 import logo from './assets/logomark.svg';
-import { api, statusLabel, type EntityMemberList, type EntityRole, type User } from './api';
+import { api, statusLabel, type EntityMemberList, type EntityRole, type RecipientInboxItem, type User } from './api';
 import ExternalPortal from './ExternalPortal';
 import { BusyMark, DirectContractEditor, DocumentCommentCard, RedlineCard, SIGNATURE_BLOCKS_PLACEHOLDER, SelectableContract, type DraftSaveState, type TextSelection } from './ReviewWorkspace';
 import { NextActionBanner, SignatureBlocks, SignatureCeremony } from './SigningExperience';
 
-type View = 'dashboard' | 'agreements' | 'members' | 'settings';
+type View = 'dashboard' | 'my-work' | 'agreements' | 'members' | 'settings';
 
 function App() {
   if (window.location.pathname === '/invite') return <ExternalPortal />;
+  if (window.location.pathname === '/inbox') return <RecipientInboxPage />;
   if (window.location.pathname === '/membership') return <MembershipInvitationPage />;
   return <AdminApp />;
 }
@@ -64,6 +65,7 @@ function AdminApp() {
   function openAgreement(agreement: Agreement) {
     setSelected(agreement); setView('agreements');
   }
+  async function openPersonalWork(item: RecipientInboxItem) { try { setLoading(true); api.selectEntity(item.tenantId); const [nextUser, agreement] = await Promise.all([api.me(), api.agreement(item.agreementId)]); setUser(nextUser); setSelected(agreement); setView('agreements'); } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not open this agreement.'); } finally { setLoading(false); } }
 
   const counts = useMemo(() => ({
     active: agreements.filter((item) => !['executed', 'declined', 'voided', 'expired'].includes(item.status)).length,
@@ -84,6 +86,7 @@ function AdminApp() {
         </button>
         <nav className="side-nav" aria-label="Primary navigation">
           <NavButton icon={<LayoutDashboard />} active={view === 'dashboard'} onClick={() => { setView('dashboard'); setSelected(undefined); }}>Overview</NavButton>
+          <NavButton icon={<Inbox />} active={view === 'my-work'} onClick={() => { setView('my-work'); setSelected(undefined); }}>My work</NavButton>
           <NavButton icon={<Files />} active={view === 'agreements'} onClick={() => setView('agreements')}>Agreements</NavButton>
           {activeMembership?.permissions.includes('members.manage') && <NavButton icon={<UsersRound />} active={view === 'members'} onClick={() => { setView('members'); setSelected(undefined); }}>People</NavButton>}
           <NavButton icon={<Settings />} active={view === 'settings'} onClick={() => { setView('settings'); setSelected(undefined); }}>Integrations</NavButton>
@@ -108,6 +111,7 @@ function AdminApp() {
         {error && <div className="error-banner"><span>{error}</span><button onClick={() => setError(undefined)}><X /></button></div>}
         {loading && <div className="loading-line" />}
         {view === 'dashboard' && <Dashboard agreements={agreements} counts={counts} onOpen={openAgreement} onCreate={() => setCreating(true)} />}
+        {view === 'my-work' && <PersonalWork onOpen={(item) => void openPersonalWork(item)} onError={setError} />}
         {view === 'agreements' && (selected
           ? <AgreementDetail agreement={selected} user={user!} onBack={() => setSelected(undefined)} onUpdate={(agreement) => { setSelected(agreement); setAgreements((items) => items.map((item) => item.id === agreement.id ? agreement : item)); }} onError={setError} />
           : <AgreementList agreements={agreements} onOpen={openAgreement} />)}
@@ -129,7 +133,27 @@ function NavButton({ icon, active, onClick, children }: { icon: React.ReactNode;
 }
 
 function SignIn({ error }: { error?: string }) {
-  return <main className="signin"><div className="bc-bytewave" /><section><img src={logo} alt="Bytecrunch" /><span className="bc-eyebrow">// AGREEMENT INFRASTRUCTURE</span><h1>Contracts move faster when the workflow is clear.</h1><p>Review, redline, execute, and verify agreements from one auditable workspace.</p>{error && <div className="error-banner">{error}</div>}<a className="button button-accent" href={api.loginUrl}>Continue with SSO <ArrowRight /></a></section></main>;
+  return <main className="signin"><div className="bc-bytewave" /><section><img src={logo} alt="Bytecrunch" /><span className="bc-eyebrow">// AGREEMENT INFRASTRUCTURE</span><h1>Contracts move faster when the workflow is clear.</h1><p>Review, redline, execute, and verify agreements from one auditable workspace.</p>{error && <div className="error-banner">{error}</div>}<div className="signin-actions"><a className="button button-accent" href={api.loginUrl}>Continue with SSO <ArrowRight /></a><a className="button button-secondary" href="/inbox">Open invited agreements</a></div></section></main>;
+}
+
+function PersonalWork({ onOpen, onError }: { onOpen: (item: RecipientInboxItem) => void; onError: (message: string) => void }) {
+  const [items, setItems] = useState<RecipientInboxItem[]>(); useEffect(() => { void api.myWork().then(setItems).catch((cause) => onError(cause instanceof Error ? cause.message : 'Could not load your work.')); }, []);
+  return <div className="page"><div className="page-heading"><div><span className="bc-eyebrow bc-text-orange">// CROSS-ENTITY INBOX</span><h1>My work</h1><p>Reviews and signatures assigned to you, regardless of which customer entity is currently selected.</p></div></div>{!items ? <div className="member-loading"><BusyMark /> Loading assignments…</div> : <WorkItemList items={items} onOpen={onOpen} empty="Nothing needs your attention yet." />}</div>;
+}
+
+function RecipientInboxPage() {
+  const [items, setItems] = useState<RecipientInboxItem[]>(); const [email, setEmail] = useState(''); const [requestId, setRequestId] = useState<string>(); const [code, setCode] = useState(''); const [expiresAt, setExpiresAt] = useState<string>(); const [error, setError] = useState<string>(); const [busy, setBusy] = useState(false); const [checking, setChecking] = useState(true);
+  useEffect(() => { const stored = localStorage.getItem('bc-contracts-theme-choice'); document.documentElement.className = stored === 'dark' || stored === 'light' ? stored : window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'; void api.recipientInbox().then(setItems).catch(() => undefined).finally(() => setChecking(false)); }, []);
+  async function requestCode(event: FormEvent) { event.preventDefault(); try { setBusy(true); setError(undefined); const response = await api.requestRecipientCode(email); setRequestId(response.requestId); setExpiresAt(response.expiresAt); if (response.developmentCode) setCode(response.developmentCode); } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not request a code.'); } finally { setBusy(false); } }
+  async function verify(event: FormEvent) { event.preventDefault(); if (!requestId) return; try { setBusy(true); setError(undefined); await api.verifyRecipientCode(requestId, code); setItems(await api.recipientInbox()); } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not verify that code.'); } finally { setBusy(false); } }
+  async function open(item: RecipientInboxItem) { try { setBusy(true); await api.openRecipientAgreement(item.accessId); window.location.assign('/invite'); } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not open that agreement.'); setBusy(false); } }
+  if (checking) return <main className="recipient-inbox-page"><div className="portal-loading"><div className="loading-line" /></div></main>;
+  return <main className="recipient-inbox-page"><header><div><img src={logo} alt="" /><strong>BYTECRUNCH</strong><span>CONTRACTS</span></div>{items && <button className="button button-secondary button-small" onClick={() => void api.logoutRecipient().then(() => setItems(undefined))}><LogOut /> Sign out</button>}</header>{items ? <section className="recipient-inbox-content"><span className="bc-eyebrow bc-text-orange">// YOUR AGREEMENTS</span><h1>Welcome back.</h1><p>Every agreement assigned to this email address, across all senders.</p><WorkItemList items={items} onOpen={open} empty="There are no active agreement assignments for this address." />{error && <div className="inline-error">{error}</div>}</section> : <section className="recipient-login"><div><Mail /><span className="bc-eyebrow bc-text-orange">// SECURE RECIPIENT ACCESS</span><h1>Return to your agreements.</h1><p>Enter the email address that received an agreement invitation. We’ll send a six-digit code if active assignments exist.</p></div>{!requestId ? <form onSubmit={(event) => void requestCode(event)}><label>Email address<input required type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" /></label>{error && <div className="inline-error">{error}</div>}<button disabled={busy} className="button button-accent">{busy ? <><BusyMark /> Sending…</> : <>Email me a code <ArrowRight /></>}</button><small>For privacy, the response is the same whether or not an assignment exists.</small></form> : <form onSubmit={(event) => void verify(event)}><KeyRound /><label>Six-digit code<input required inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))} /></label>{error && <div className="inline-error">{error}</div>}<button disabled={busy || code.length !== 6} className="button button-accent">{busy ? <><BusyMark /> Verifying…</> : <>Open my inbox <ArrowRight /></>}</button><button type="button" className="text-button" onClick={() => { setRequestId(undefined); setCode(''); setError(undefined); }}>Use another email</button>{expiresAt && <small>Code expires {new Date(expiresAt).toLocaleTimeString()}.</small>}</form>}</section>}</main>;
+}
+
+function WorkItemList({ items, onOpen, empty }: { items: RecipientInboxItem[]; onOpen: (item: RecipientInboxItem) => void; empty: string }) {
+  if (items.length === 0) return <div className="work-empty"><Inbox /><p>{empty}</p></div>;
+  return <div className="work-list">{items.map((item) => <button key={`${item.tenantId}:${item.agreementId}:${item.participantId}`} onClick={() => onOpen(item)}><span className={`work-action ${item.action}`}>{item.action}</span><div><strong>{item.title}</strong><p>{item.entityName} · {statusLabel(item.agreementStatus)}</p></div><time>{new Date(item.updatedAt).toLocaleDateString()}</time><ChevronRight /></button>)}</div>;
 }
 
 function CustomerEntityOnboarding({ user, onCreated }: { user: User; onCreated: (entityId: string) => void }) {

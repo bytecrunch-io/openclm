@@ -25,6 +25,8 @@ Open-source agreement infrastructure for review, redlining, execution, and integ
 - Optional counterparty details with recipient confirmation and sender approval for material changes
 - One-time participant invitations that create durable account-to-agreement access
 - Safe return access: an accepted invitation sends a fresh, single-use 15-minute email link instead of becoming a dead end
+- Cross-entity **My work** inbox for staff and an account-level recipient inbox for invited parties
+- Non-enumerating six-digit recipient sign-in codes with short expiry, attempt limits, throttling, and narrow agreement-session handoff
 - External onboarding with title, signing capacity, and authority confirmation
 - External reviewer/signatory portal with signatory nomination
 - Agreement-status query and multi-requirement evaluation API
@@ -77,6 +79,7 @@ Everything runs locally. There is no required hosted database, identity provider
 10. In the administrator workspace, follow the prominent **Countersign required** action and sign the exact same revision.
 11. Verify that both signature blocks appear, the agreement becomes executed, and the agreement-status API returns `satisfied: true`.
 12. Close the participant browser, reopen the original invitation, then open the fresh return email in Mailpit. The new 15-minute link restores access without reusing the accepted invitation.
+13. Alternatively, open http://localhost:3000/inbox, enter the invited email, copy the six-digit code from Mailpit, and open any agreement assigned to that address.
 
 To exercise multi-entity membership, select **Add entity** next to **Acting for**. Creating and switching to it gives that customer entity its own template copy, agreements, sender identity, and data boundary.
 
@@ -90,7 +93,7 @@ An automated equivalent runs against the Docker services:
 npm run e2e:local
 ```
 
-The automated tests cover multi-entity selection and isolation, durable invite claiming, single-use return challenges, multiple participants without external IDs, entity onboarding, private draft editing, consolidated notifications, owner resolution, and document-bound signatures. The Docker flow additionally covers Mailpit delivery, OAuth2 client credentials, and integration-scoped handoff/status verification.
+The automated tests cover multi-entity selection and isolation, durable invite claiming, single-use return challenges, non-enumerating recipient code login, cross-entity inboxes, multiple participants without external IDs, entity onboarding, private draft editing, consolidated notifications, owner resolution, and document-bound signatures. The Docker flow additionally covers Mailpit delivery, OAuth2 client credentials, and integration-scoped handoff/status verification.
 
 ## Run application code directly
 
@@ -148,7 +151,7 @@ docker compose config
 
 ## Next production milestones
 
-1. Add a cross-entity personal agreement inbox plus passkey and non-enumerating email-code sign-in for recipients.
+1. Add passkeys as a phishing-resistant option for returning recipients and require recent authentication for sensitive signing profiles.
 2. Expand route-family authorization into resource-level policy tests and add invitation resend/revoke controls.
 3. Add recent-authentication checks, signing-capacity evidence, and an append-only signing/audit evidence package.
 4. Add a signing-provider interface and a self-hosted PAdES-capable provider.

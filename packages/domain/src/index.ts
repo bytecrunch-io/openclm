@@ -129,6 +129,19 @@ export const AccessChallengeSchema = z.object({
   expiresAt: z.string().datetime(), createdAt: z.string().datetime(), acceptedAt: z.string().datetime().nullable(),
 });
 export type AccessChallenge = z.infer<typeof AccessChallengeSchema>;
+export const RecipientLoginChallengeSchema = z.object({
+  id: z.string().min(1), accountId: z.string().min(1).nullable(), email: z.string().email(), codeHash: z.string().length(64),
+  status: z.enum(['pending', 'accepted', 'expired', 'locked']), attempts: z.number().int().nonnegative().max(5),
+  expiresAt: z.string().datetime(), createdAt: z.string().datetime(), acceptedAt: z.string().datetime().nullable(),
+});
+export type RecipientLoginChallenge = z.infer<typeof RecipientLoginChallengeSchema>;
+export const RecipientInboxItemSchema = z.object({
+  accessId: z.string().min(1), tenantId: z.string().min(1), entityName: z.string().min(1), agreementId: z.string().min(1),
+  title: z.string().min(1), agreementStatus: AgreementStatusSchema, participantId: z.string().min(1), participantName: z.string().min(1),
+  participantRole: ParticipantRoleSchema, participantStatus: ParticipantStatusSchema, action: z.enum(['review', 'sign', 'waiting', 'complete']),
+  updatedAt: z.string().datetime(),
+});
+export type RecipientInboxItem = z.infer<typeof RecipientInboxItemSchema>;
 
 export const AgreementPartySchema = z.object({
   id: z.string().min(1),

@@ -35,6 +35,15 @@ export async function sendAccessEmail(input: { email: string; name: string; agre
   });
 }
 
+export async function sendRecipientLoginCode(input: { email: string; name: string; code: string }): Promise<void> {
+  if (!config.SMTP_HOST) { console.log(`Recipient sign-in code for ${input.email}: ${input.code}`); return; }
+  const transport = nodemailer.createTransport({ host: config.SMTP_HOST, port: config.SMTP_PORT, secure: false });
+  await transport.sendMail({ from: config.SMTP_FROM, to: input.email, subject: `${input.code} is your Bytecrunch Contracts code`,
+    text: `${input.name}, your Bytecrunch Contracts sign-in code is ${input.code}. It expires in 10 minutes and can be attempted five times.`,
+    html: `<div style="font-family:Arial,sans-serif;background:#0e0e0e;color:#f4f1ea;padding:32px"><p style="color:#f06b38;font-family:monospace">// SECURE SIGN IN</p><h1 style="font-size:28px">Your agreement inbox</h1><p>Hi ${escapeHtml(input.name)}, enter this one-time code to view agreements assigned to you:</p><div style="margin:28px 0;padding:18px;border:1px solid #343434;font:32px monospace;letter-spacing:10px;text-align:center">${input.code}</div><p style="color:#aaa">The code expires in 10 minutes and can be attempted five times. If you did not request it, you can ignore this email.</p></div>`,
+  });
+}
+
 export async function sendMemberInvitationEmail(input: { email: string; inviterName: string; entityName: string; invitationUrl: string }): Promise<void> {
   if (!config.SMTP_HOST) { console.log(`Entity invitation for ${input.email}: ${input.invitationUrl}`); return; }
   const transport = nodemailer.createTransport({ host: config.SMTP_HOST, port: config.SMTP_PORT, secure: false });

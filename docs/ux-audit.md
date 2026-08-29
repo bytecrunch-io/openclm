@@ -24,7 +24,7 @@ This pass adds an explicit next-action layer, touch-friendly typed/drawn signing
 | Production signing assurance | Not production-ready | No signing provider, sealed PDF/PAdES, immutable evidence ledger, identity assurance policy, or downloadable completion certificate. |
 | Mobile | Good baseline | Review and touch signing reflow to one column; long-document navigation still needs a mobile progress pattern. |
 | Accessibility | Fair | Typed signing provides a keyboard alternative, but focus trapping, modal announcements, document semantics, and a full screen-reader pass remain. |
-| Multi-entity identity | Good foundation | Global accounts, explicit customer-entity context, isolated data, durable recipient access, and permission-aware member administration are implemented; a cross-entity personal inbox remains. |
+| Multi-entity identity | Good | Global accounts, explicit customer-entity context, isolated data, durable recipient access, member administration, and cross-entity personal inboxes are implemented. |
 
 ## Changes completed in this pass
 
@@ -48,6 +48,7 @@ This pass adds an explicit next-action layer, touch-friendly typed/drawn signing
 - Added a permission-aware **People** workspace for verified-email member invitations, multi-role assignment, and entity-scoped suspension.
 - Added non-consuming invitation previews, OIDC return-to handling, explicit acceptance, and final-administrator protection.
 - Added first-run onboarding for a verified SSO user with no memberships, clearly framing the new entity as an independent customer tenant.
+- Added a prioritized **My work** inbox across customer entities and a recipient inbox that can be recovered with a privacy-preserving email code.
 
 ## Prioritized findings
 
@@ -61,7 +62,7 @@ This pass adds an explicit next-action layer, touch-friendly typed/drawn signing
 
 ### P1 — highest UX value next
 
-1. Add a cross-entity personal action inbox and non-enumerating recipient sign-in with email code, passkey, and optional organisation SSO.
+1. Add passkey enrollment/sign-in and optional organisation SSO, with recent-authentication checks before higher-assurance signatures.
 2. Add resource-level authorization tests beyond the current route-family checks, plus invitation resend/revoke and membership audit history.
 3. Add a secure “continue on phone” handoff using a short-lived, one-time QR token. Do not encode the reusable invitation/session credential directly in the QR code.
 4. Add explicit signature-field placement to templates for agreements that need placement other than the standard closing signature section.

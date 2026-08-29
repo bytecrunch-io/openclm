@@ -13,6 +13,7 @@ import {
   EntityMemberInvitationSchema,
   AccountSchema,
   EntityRoleSchema,
+  RecipientInboxItemSchema,
   type Agreement,
   type CreateAgreement,
   type CreateSuggestion,
@@ -31,6 +32,7 @@ export type User = z.infer<typeof UserSchema>;
 export type ExternalView = z.infer<typeof ExternalViewSchema>;
 export type EntityMemberList = z.infer<typeof EntityMemberListSchema>;
 export type EntityRole = z.infer<typeof EntityRoleSchema>;
+export type RecipientInboxItem = z.infer<typeof RecipientInboxItemSchema>;
 
 async function request<T>(path: string, schema: z.ZodType<T>, init?: RequestInit): Promise<T> {
   const activeEntityId = localStorage.getItem('bc-contracts-active-entity');
@@ -51,6 +53,7 @@ export const api = {
   loginUrl: `${API_URL}/auth/login`,
   loginUrlFor: (returnTo: string) => `${API_URL}/auth/login?returnTo=${encodeURIComponent(returnTo)}`,
   me: () => request('/v1/me', UserSchema),
+  myWork: () => request('/v1/my-work', z.array(RecipientInboxItemSchema)),
   selectEntity: (entityId: string) => { localStorage.setItem('bc-contracts-active-entity', entityId); },
   createEntity: (input: { slug: string; legalName: string; businessAddress?: string; registrationNumber?: string; jurisdiction?: string }) => request('/v1/entities', CustomerEntitySchema, { method: 'POST', body: JSON.stringify(input) }),
   entityMembers: () => request('/v1/entity-members', EntityMemberListSchema),
@@ -59,6 +62,11 @@ export const api = {
   suspendEntityMember: (membershipId: string) => request(`/v1/entity-members/${membershipId}`, EntityMembershipSchema, { method: 'DELETE' }),
   previewEntityMemberInvitation: (token: string) => request(`/public/entity-member-invitations/preview?token=${encodeURIComponent(token)}`, z.object({ entityName: z.string(), emailHint: z.string(), roles: z.array(EntityRoleSchema), expiresAt: z.string() })),
   acceptEntityMemberInvitation: (token: string) => request('/v1/entity-member-invitations/accept', z.object({ membership: EntityMembershipSchema, entity: CustomerEntitySchema }), { method: 'POST', body: JSON.stringify({ token }) }),
+  requestRecipientCode: (email: string) => request('/public/recipient-auth/request', z.object({ accepted: z.literal(true), requestId: z.string(), expiresAt: z.string(), developmentCode: z.string().optional() }), { method: 'POST', body: JSON.stringify({ email }) }),
+  verifyRecipientCode: (requestId: string, code: string) => request('/public/recipient-auth/verify', z.object({ accepted: z.literal(true), account: AccountSchema }), { method: 'POST', body: JSON.stringify({ requestId, code }) }),
+  recipientInbox: () => request('/public/recipient/inbox', z.array(RecipientInboxItemSchema)),
+  openRecipientAgreement: (accessId: string) => request('/public/recipient/open', z.object({ opened: z.literal(true) }), { method: 'POST', body: JSON.stringify({ accessId }) }),
+  logoutRecipient: () => request('/public/recipient/logout', z.object({ ok: z.literal(true) }), { method: 'POST' }),
   templates: () => request('/v1/templates', z.array(TemplateSchema)),
   agreements: () => request('/v1/agreements', z.array(AgreementSchema)),
   agreement: (id: string) => request(`/v1/agreements/${id}`, AgreementSchema),

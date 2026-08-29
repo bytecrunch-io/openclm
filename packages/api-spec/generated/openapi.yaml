@@ -92,6 +92,105 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/ExchangeInvitation'
+  /public/recipient-auth/request:
+    post:
+      operationId: ExternalParticipantOperations_requestRecipientCode
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/RecipientCodeRequested'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequestRecipientCode'
+  /public/recipient-auth/verify:
+    post:
+      operationId: ExternalParticipantOperations_verifyRecipientCode
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/RecipientAuthenticated'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyRecipientCode'
+  /public/recipient/inbox:
+    get:
+      operationId: ExternalParticipantOperations_recipientInbox
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - type: array
+                    items:
+                      $ref: '#/components/schemas/RecipientInboxItem'
+                  - $ref: '#/components/schemas/ErrorResponse'
+  /public/recipient/logout:
+    post:
+      operationId: ExternalParticipantOperations_logoutRecipient
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - type: object
+                    properties:
+                      ok:
+                        type: boolean
+                        enum:
+                          - true
+                    required:
+                      - ok
+                  - $ref: '#/components/schemas/ErrorResponse'
+  /public/recipient/open:
+    post:
+      operationId: ExternalParticipantOperations_openRecipientAgreement
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - type: object
+                    properties:
+                      opened:
+                        type: boolean
+                        enum:
+                          - true
+                    required:
+                      - opened
+                  - $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpenRecipientAgreement'
   /public/session:
     get:
       operationId: ExternalParticipantOperations_session
@@ -1388,6 +1487,28 @@ paths:
               schema:
                 anyOf:
                   - $ref: '#/components/schemas/CurrentAccount'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+  /v1/my-work:
+    get:
+      operationId: PersonalWorkOperations_list
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - type: array
+                    items:
+                      $ref: '#/components/schemas/RecipientInboxItem'
                   - $ref: '#/components/schemas/ErrorResponse'
       security:
         - ContractsOAuth2:
@@ -2693,6 +2814,13 @@ components:
               type: string
           required:
             - legalName
+    OpenRecipientAgreement:
+      type: object
+      required:
+        - accessId
+      properties:
+        accessId:
+          type: string
     Participant:
       type: object
       required:
@@ -2801,6 +2929,82 @@ components:
         - ready
         - signing
         - executed
+    RecipientAuthenticated:
+      type: object
+      required:
+        - accepted
+        - account
+      properties:
+        accepted:
+          type: boolean
+          enum:
+            - true
+        account:
+          $ref: '#/components/schemas/AccountSummary'
+    RecipientCodeRequested:
+      type: object
+      required:
+        - accepted
+        - requestId
+        - expiresAt
+      properties:
+        accepted:
+          type: boolean
+          enum:
+            - true
+        requestId:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+        developmentCode:
+          type: string
+    RecipientInboxItem:
+      type: object
+      required:
+        - accessId
+        - tenantId
+        - entityName
+        - agreementId
+        - title
+        - agreementStatus
+        - participantId
+        - participantName
+        - participantRole
+        - participantStatus
+        - action
+        - updatedAt
+      properties:
+        accessId:
+          type: string
+        tenantId:
+          type: string
+        entityName:
+          type: string
+        agreementId:
+          type: string
+        title:
+          type: string
+        agreementStatus:
+          $ref: '#/components/schemas/AgreementStatus'
+        participantId:
+          type: string
+        participantName:
+          type: string
+        participantRole:
+          $ref: '#/components/schemas/ParticipantRole'
+        participantStatus:
+          $ref: '#/components/schemas/ParticipantStatus'
+        action:
+          type: string
+          enum:
+            - review
+            - sign
+            - waiting
+            - complete
+        updatedAt:
+          type: string
+          format: date-time
     RecoveryRequired:
       type: object
       required:
@@ -2854,6 +3058,13 @@ components:
           type: string
           enum:
             - VOID_SIGNATURES_AND_REOPEN
+    RequestRecipientCode:
+      type: object
+      required:
+        - email
+      properties:
+        email:
+          type: string
     RequirementOperator:
       type: string
       enum:
@@ -3171,6 +3382,16 @@ components:
         replacementText:
           type: string
         comment:
+          type: string
+    VerifyRecipientCode:
+      type: object
+      required:
+        - requestId
+        - code
+      properties:
+        requestId:
+          type: string
+        code:
           type: string
     WebhookEndpoint:
       type: object

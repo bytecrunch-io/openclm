@@ -308,6 +308,12 @@ model EntityMemberList { members: EntityMember[]; invitations: EntityMemberInvit
 model InviteEntityMember { email: string; roles: EntityRole[]; }
 model UpdateEntityMember { roles: EntityRole[]; }
 model EntityMemberInvitationPreview { entityName: string; emailHint: string; roles: EntityRole[]; expiresAt: utcDateTime; }
+model RecipientInboxItem { accessId: string; tenantId: string; entityName: string; agreementId: string; title: string; agreementStatus: AgreementStatus; participantId: string; participantName: string; participantRole: ParticipantRole; participantStatus: ParticipantStatus; action: "review" | "sign" | "waiting" | "complete"; updatedAt: utcDateTime; }
+model RequestRecipientCode { email: string; }
+model RecipientCodeRequested { accepted: true; requestId: string; expiresAt: utcDateTime; developmentCode?: string; }
+model VerifyRecipientCode { requestId: string; code: string; }
+model RecipientAuthenticated { accepted: true; account: AccountSummary; }
+model OpenRecipientAgreement { accessId: string; }
 model OnboardParticipant {
   name: string;
   title: string;
@@ -357,6 +363,10 @@ interface HealthOperations {
 @route("/v1/me")
 @useAuth(ContractsOAuth2)
 interface AccountOperations { @get get(@header("x-bytecrunch-entity-id") entityId?: string): CurrentAccount | ErrorResponse; }
+
+@route("/v1/my-work")
+@useAuth(ContractsOAuth2)
+interface PersonalWorkOperations { @get list(): RecipientInboxItem[] | ErrorResponse; }
 
 @route("/v1/entities")
 @useAuth(ContractsOAuth2)
@@ -497,6 +507,21 @@ interface WebhookOperations {
 
 @route("/public")
 interface ExternalParticipantOperations {
+  @post @route("/recipient-auth/request")
+  requestRecipientCode(@body body: RequestRecipientCode): RecipientCodeRequested | ErrorResponse;
+
+  @post @route("/recipient-auth/verify")
+  verifyRecipientCode(@body body: VerifyRecipientCode): RecipientAuthenticated | ErrorResponse;
+
+  @get @route("/recipient/inbox")
+  recipientInbox(): RecipientInboxItem[] | ErrorResponse;
+
+  @post @route("/recipient/open")
+  openRecipientAgreement(@body body: OpenRecipientAgreement): { opened: true; } | ErrorResponse;
+
+  @post @route("/recipient/logout")
+  logoutRecipient(): { ok: true; } | ErrorResponse;
+
   @get @route("/entity-member-invitations/preview")
   previewEntityMemberInvitation(@query token: string): EntityMemberInvitationPreview | ErrorResponse;
 

@@ -56,6 +56,21 @@ describe('contracts API vertical slice', () => {
     expect((await app.request('/public/access/exchange', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: returnToken }) })).status).toBe(410);
   });
 
+  it('uses a non-enumerating email code to open a cross-entity recipient inbox', async () => {
+    const repository = new MemoryRepository(); await repository.init(); const app = createApp(repository);
+    const created = await (await app.request('/v1/agreements', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: 'Inbox NDA', templateKey: 'mutual-nda', participants: [], metadata: {}, parties: [{ role: 'counterparty', entity: {}, minimumSignatures: 1, participants: [{ email: 'inbox@example.com', name: 'Inbox Recipient', role: 'signatory', required: true }] }] }) })).json() as { id: string; createdByParticipantId: string; participants: Array<{ id: string }> };
+    const participant = created.participants.find((item) => item.id !== created.createdByParticipantId)!; const invited = await (await app.request(`/v1/agreements/${created.id}/participants/${participant.id}/invite`, { method: 'POST' })).json() as { invitationUrl: string }; const inviteToken = new URL(invited.invitationUrl).searchParams.get('token')!;
+    await app.request('/public/invitations/exchange', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: inviteToken }) });
+    const requested = await app.request('/public/recipient-auth/request', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'inbox@example.com' }) }); expect(requested.status).toBe(202); const challenge = await requested.json() as { requestId: string; developmentCode: string };
+    expect((await app.request('/public/recipient-auth/verify', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ requestId: challenge.requestId, code: '999999' }) })).status).toBe(401);
+    const verified = await app.request('/public/recipient-auth/verify', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ requestId: challenge.requestId, code: challenge.developmentCode }) }); expect(verified.status).toBe(200); const recipientCookie = verified.headers.get('set-cookie')!.split(';')[0]!;
+    const inbox = await app.request('/public/recipient/inbox', { headers: { cookie: recipientCookie } }); expect(await inbox.json()).toEqual([expect.objectContaining({ title: 'Inbox NDA', entityName: 'ByteCrunch ApS', participantName: 'Inbox Recipient' })]);
+    const listed = await app.request('/public/recipient/inbox', { headers: { cookie: recipientCookie } }); const accessId = ((await listed.json()) as Array<{ accessId: string }>)[0]!.accessId;
+    const opened = await app.request('/public/recipient/open', { method: 'POST', headers: { 'content-type': 'application/json', cookie: recipientCookie }, body: JSON.stringify({ accessId }) }); expect(opened.status).toBe(200); const externalCookie = opened.headers.get('set-cookie')!.split(';')[0]!; expect((await app.request('/public/session', { headers: { cookie: externalCookie } })).status).toBe(200);
+    const unknown = await app.request('/public/recipient-auth/request', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'unknown@example.com' }) }); expect(unknown.status).toBe(202); expect(await unknown.json()).toMatchObject({ accepted: true, requestId: expect.any(String), expiresAt: expect.any(String) });
+    const staffWork = await app.request('/v1/my-work'); expect(await staffWork.json()).toEqual(expect.arrayContaining([expect.objectContaining({ agreementId: created.id, participantName: 'Local Admin' })]));
+  });
+
   it('administers entity members without allowing the last administrator to be removed', async () => {
     const repository = new MemoryRepository(); await repository.init(); const app = createApp(repository);
     const meResponse = await app.request('/v1/me'); const me = await meResponse.json() as { id: string };
