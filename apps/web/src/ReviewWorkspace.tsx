@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Check, MessageSquareText, Pencil, Trash2, X } from 'lucide-react';
+import { Check, MessageSquareText, Pencil, Redo2, Trash2, Undo2, X } from 'lucide-react';
 import type { Agreement, DocumentComment, Suggestion } from '@bytecrunch/contracts-domain';
 
 export interface TextSelection { text: string; start: number; end: number }
@@ -55,18 +55,34 @@ function DraftHighlightText({ original, draft, projection, activeRedlineId }: { 
 }
 
 export type DraftSaveState = 'saved' | 'pending' | 'saving' | 'error';
+type EditorSnapshot = { content: string; selectionStart: number; selectionEnd: number };
 
 export function DirectContractEditor({ agreement, busy, activeRedlineId, onOpenRedline, onSave, onStateChange }: { agreement: Agreement; busy: boolean; activeRedlineId?: string | undefined; onOpenRedline?: ((id: string) => void) | undefined; onSave: (content: string) => Promise<boolean>; onStateChange?: ((state: DraftSaveState) => void) | undefined }) {
   const projection = draftProjection(agreement); const hasSignatureBlocks = agreement.content.includes(SIGNATURE_BLOCKS_PLACEHOLDER); const projected = visibleDocumentContent(projection.content); const original = visibleDocumentContent(agreement.content); const [content, setContent] = useState(projected); const [saveState, setSaveState] = useState<DraftSaveState>('saved'); const [retry, setRetry] = useState(0);
   const contentRef = useRef(projected); const projectedRef = useRef(projected); const submittedRef = useRef(projected); const onSaveRef = useRef(onSave); const retryTimer = useRef<number | undefined>(undefined);
   const editorRef = useRef<HTMLTextAreaElement>(null);
+  const undoStack = useRef<EditorSnapshot[]>([]); const redoStack = useRef<EditorSnapshot[]>([]); const selectionRef = useRef({ start: projected.length, end: projected.length }); const lastEdit = useRef<{ at: number; inputType: string; selectionEnd: number } | undefined>(undefined);
+  const snapshot = (): EditorSnapshot => ({ content: contentRef.current, selectionStart: selectionRef.current.start, selectionEnd: selectionRef.current.end });
+  const restore = (next: EditorSnapshot) => {
+    lastEdit.current = undefined; contentRef.current = next.content; selectionRef.current = { start: next.selectionStart, end: next.selectionEnd }; setContent(next.content); setSaveState('pending');
+    window.requestAnimationFrame(() => { editorRef.current?.focus(); editorRef.current?.setSelectionRange(next.selectionStart, next.selectionEnd); });
+  };
+  const undo = () => { const previous = undoStack.current.pop(); if (!previous) return; redoStack.current.push(snapshot()); restore(previous); };
+  const redo = () => { const next = redoStack.current.pop(); if (!next) return; undoStack.current.push(snapshot()); restore(next); };
+  const rememberEdit = (inputType: string) => {
+    const now = Date.now(); const prior = lastEdit.current; const selection = selectionRef.current; const continuous = Boolean(prior && now - prior.at < 800 && prior.inputType === inputType && selection.start === selection.end && selection.start === prior.selectionEnd && /^(insertText|insertCompositionText|deleteContent)/.test(inputType));
+    if (!continuous) { undoStack.current.push(snapshot()); if (undoStack.current.length > 100) undoStack.current.shift(); }
+    redoStack.current = []; lastEdit.current = { at: now, inputType, selectionEnd: selection.end };
+  };
   useEffect(() => { onSaveRef.current = onSave; }, [onSave]);
   useEffect(() => { onStateChange?.(saveState); }, [onStateChange, saveState]);
   useEffect(() => {
     if (projected === projectedRef.current) return;
     projectedRef.current = projected;
     if (contentRef.current === submittedRef.current || contentRef.current === projected) {
+      const replacedLocalContent = contentRef.current !== projected;
       contentRef.current = projected; submittedRef.current = projected; setContent(projected); setSaveState('saved');
+      if (replacedLocalContent) { undoStack.current = []; redoStack.current = []; lastEdit.current = undefined; selectionRef.current = { start: projected.length, end: projected.length }; }
     }
   }, [projected, agreement.revision]);
   useEffect(() => { const range = projection.ranges.find((item) => item.id === activeRedlineId); if (!range || !editorRef.current) return; editorRef.current.focus(); editorRef.current.setSelectionRange(range.start, range.end); }, [activeRedlineId, projected]);
@@ -88,7 +104,7 @@ export function DirectContractEditor({ agreement, busy, activeRedlineId, onOpenR
   }, [busy, content, projected, retry]);
   useEffect(() => () => window.clearTimeout(retryTimer.current), []);
   const status = saveState === 'saving' ? <><BusyMark /> Saving tracked changes…</> : saveState === 'pending' ? <><i className="draft-status-dot" /> Tracking your edits…</> : saveState === 'error' ? <><i className="draft-status-dot error" /> Couldn’t save · retrying…</> : <><Check /> Saved automatically</>;
-  return <div className="direct-editor-wrap"><div className="direct-editor-toolbar"><div><span className="bc-eyebrow bc-text-blue">// TRACK CHANGES</span><small>Returned wording is highlighted. Accept or keep it explicitly, or edit it directly to counter.</small></div><span className={`draft-save-status ${saveState}`} role="status" aria-live="polite">{status}</span></div><div className="document-editor-surface"><DraftHighlightText original={original} draft={content} projection={projection} activeRedlineId={activeRedlineId} /><textarea ref={editorRef} aria-label="Edit agreement text with tracked changes" className="document-editor" value={content} onClick={(event) => { const position = event.currentTarget.selectionStart; const range = projection.ranges.find((item) => position >= item.start && position <= item.end); if (range) onOpenRedline?.(range.id); }} onChange={(event) => { contentRef.current = event.target.value; setContent(event.target.value); setSaveState('pending'); }} spellCheck /></div></div>;
+  return <div className="direct-editor-wrap"><div className="direct-editor-toolbar"><div className="direct-editor-copy"><span className="bc-eyebrow bc-text-blue">// TRACK CHANGES</span><small>Returned wording is highlighted. Accept or keep it explicitly, or edit it directly to counter.</small></div><div className="direct-editor-actions"><div className="history-controls"><button type="button" disabled={undoStack.current.length === 0} onClick={undo} aria-label="Undo edit" title="Undo (⌘/Ctrl+Z)"><Undo2 /></button><button type="button" disabled={redoStack.current.length === 0} onClick={redo} aria-label="Redo edit" title="Redo (⌘/Ctrl+Shift+Z)"><Redo2 /></button></div><span className={`draft-save-status ${saveState}`} role="status" aria-live="polite">{status}</span></div></div><div className="document-editor-surface"><DraftHighlightText original={original} draft={content} projection={projection} activeRedlineId={activeRedlineId} /><textarea ref={editorRef} aria-label="Edit agreement text with tracked changes" className="document-editor" value={content} onBeforeInput={(event) => rememberEdit((event.nativeEvent as InputEvent).inputType || 'edit')} onKeyDown={(event) => { const modifier = event.metaKey || event.ctrlKey; const key = event.key.toLowerCase(); if (modifier && key === 'z') { event.preventDefault(); if (event.shiftKey) redo(); else undo(); } else if (event.ctrlKey && key === 'y') { event.preventDefault(); redo(); } }} onSelect={(event) => { selectionRef.current = { start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd }; }} onClick={(event) => { const position = event.currentTarget.selectionStart; const range = projection.ranges.find((item) => position >= item.start && position <= item.end); if (range) onOpenRedline?.(range.id); }} onChange={(event) => { contentRef.current = event.target.value; selectionRef.current = { start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd }; if (lastEdit.current) lastEdit.current.selectionEnd = event.currentTarget.selectionEnd; setContent(event.target.value); setSaveState('pending'); }} spellCheck /></div></div>;
 }
 
 function offsetWithin(root: HTMLElement, target: Node, offset: number): number {
