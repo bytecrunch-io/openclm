@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 430 90" role="img" aria-label="ByteCrunch">
+  <g transform="translate(2,2)">
+      <rect x="0" y="0" width="20" height="20" fill="#d3d3d3" stroke="#a3a3a3" stroke-width="0.8"></rect>
+      <rect x="22" y="0" width="20" height="20" fill="#ed650f" stroke="#a3a3a3" stroke-width="0.8"></rect>
+      <rect x="44" y="0" width="20" height="20" fill="#d3d3d3" stroke="#a3a3a3" stroke-width="0.8"></rect>
+      <rect x="66" y="0" width="20" height="20" fill="#d3d3d3" stroke="#a3a3a3" stroke-width="0.8"></rect>
+      <rect x="0" y="22" width="20" height="20" fill="#d3d3d3" stroke="#a3a3a3" stroke-width="0.8"></rect>
+      <rect x="22" y="22" width="20" height="20" fill="#d3d3d3" stroke="#a3a3a3" stroke-width="0.8"></rect>
+      <rect x="44" y="22" width="20" height="20" fill="#ed650f" stroke="#a3a3a3" stroke-width="0.8"></rect>
+      <rect x="66" y="22" width="20" height="20" fill="#d3d3d3" stroke="#a3a3a3" stroke-width="0.8"></rect>
+      <rect x="0" y="44" width="20" height="20" fill="#d3d3d3" stroke="#a3a3a3" stroke-width="0.8"></rect>
+      <rect x="22" y="44" width="20" height="20" fill="#05a9ef" stroke="#a3a3a3" stroke-width="0.8"></rect>
+      <rect x="44" y="44" width="20" height="20" fill="#d3d3d3" stroke="#a3a3a3" stroke-width="0.8"></rect>
+      <rect x="66" y="44" width="20" height="20" fill="#d3d3d3" stroke="#a3a3a3" stroke-width="0.8"></rect>
+      <rect x="0" y="66" width="20" height="20" fill="#d3d3d3" stroke="#a3a3a3" stroke-width="0.8"></rect>
+      <rect x="22" y="66" width="20" height="20" fill="#d3d3d3" stroke="#a3a3a3" stroke-width="0.8"></rect>
+      <rect x="44" y="66" width="20" height="20" fill="#05a9ef" stroke="#a3a3a3" stroke-width="0.8"></rect>
+      <rect x="66" y="66" width="20" height="20" fill="#05a9ef" stroke="#a3a3a3" stroke-width="0.8"></rect>
+  </g>
+  <text x="108" y="58" font-family="&#39;Geist Mono&#39;, ui-monospace, monospace" font-size="44" font-weight="600" letter-spacing="-1" fill="#0a0a0a">bytecrunch</text>
+</svg>

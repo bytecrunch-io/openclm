@@ -1,0 +1,33 @@
+{
+  "name": "@bytecrunch/contracts",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run api:generate && npm run build -w @bytecrunch/contracts-domain && npm run build -w @bytecrunch/contracts-api && npm run build -w @bytecrunch/contracts-web",
+    "predev": "npm run build -w @bytecrunch/contracts-domain",
+    "dev": "concurrently -n api,web -c blue,magenta \"npm run dev -w @bytecrunch/contracts-api\" \"npm run dev -w @bytecrunch/contracts-web\"",
+    "precheck": "npm run build -w @bytecrunch/contracts-domain",
+    "check": "npm run api:generate && npm run check --workspaces --if-present",
+    "pretest": "npm run build -w @bytecrunch/contracts-domain",
+    "test": "npm run test --workspaces --if-present",
+    "api:generate": "tsp compile packages/api-spec/tsp --output-dir packages/api-spec/generated",
+    "api:watch": "tsp compile packages/api-spec/tsp --watch --output-dir packages/api-spec/generated"
+    ,"e2e:local": "node scripts/e2e-local.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "@typespec/compiler": "^1.4.0",
+    "@typespec/http": "^1.4.0",
+    "@typespec/openapi3": "^1.4.0",
+    "concurrently": "^9.2.1",
+    "typescript": "^5.9.2"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

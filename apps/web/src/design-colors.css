@@ -1,0 +1,121 @@
+/* ============================================================
+   ByteCrunch — Color tokens
+   Dark-first. Two brand hues encode the logo: B = byte (orange),
+   C = crunch (blue). Neutrals are true greys on near-black ink.
+   ============================================================ */
+
+:root {
+    /* ---- Brand ---- */
+    --bc-orange: #ed650f; /* "byte" — primary brand accent */
+    --bc-orange-600: #d3550a;
+    --bc-orange-300: #f59154;
+    --bc-blue: #05a9ef; /* "crunch" — secondary brand accent */
+    --bc-blue-600: #0490cc;
+    --bc-blue-300: #5cc6f5;
+
+    /* ---- Ink / neutral ramp (dark scale) ---- */
+    --bc-ink-950: #0a0a0a; /* page background */
+    --bc-ink-900: #121212;
+    --bc-ink-850: #1a1a1a; /* surface / muted */
+    --bc-ink-800: #222222;
+    --bc-ink-700: #2a2a2a; /* muted-2, hairline-strong */
+    --bc-ink-600: #3a3a3a; /* muted-3 */
+    --bc-ink-500: #4a4a4a; /* logo border (dark) */
+    --bc-grey-400: #6b7280;
+    --bc-grey-300: #9ca3af;
+    --bc-grey-200: #d3d3d3;
+    --bc-grey-100: #e3e3e3;
+    --bc-white: #ffffff;
+
+    /* ---- Semantic status ---- */
+    --bc-success: #1f9d57;
+    --bc-warning: #ed650f;
+    --bc-danger: #e5484d;
+    --bc-info: #05a9ef;
+
+    /* ============================================================
+       Semantic aliases — DARK theme is the default.
+       Components should reference these, not raw ramp values.
+       ============================================================ */
+    --bg: var(--bc-ink-950);
+    --fg: var(--bc-white);
+
+    --surface-1: var(--bc-ink-950); /* page */
+    --surface-2: var(--bc-ink-850); /* raised card / muted block */
+    --surface-3: var(--bc-ink-700); /* input / inset */
+    --surface-hover: rgba(255, 255, 255, 0.06);
+
+    --text-1: var(--bc-white); /* primary / headings */
+    --text-2: color-mix(in oklab, var(--fg) 88%, var(--bg) 12%); /* body */
+    --text-3: color-mix(in oklab, var(--fg) 66%, var(--bg) 34%); /* muted / captions */
+    --text-on-accent: var(--bc-white);
+
+    --border-1: rgba(255, 255, 255, 0.10); /* hairline — default card border */
+    --border-2: rgba(255, 255, 255, 0.18); /* hover / emphasized hairline */
+    --border-strong: var(--bc-ink-500);
+
+    --accent: var(--bc-orange);
+    --accent-2: var(--bc-blue);
+    --accent-text: var(--bc-orange-300);
+    --focus-ring: var(--bc-blue);
+
+    /* Logo render variables (consumed by the inline SVG mark) */
+    --background: var(--bc-ink-950);
+    --off: var(--bc-ink-850);
+    --b-color: var(--bc-orange);
+    --c-color: var(--bc-blue);
+    --border-color: var(--bc-ink-500);
+    --stroke-width: 0.5;
+
+    /* ---- ByteWave block field ----
+       Dedicated fill ramp for the 3D byte-grid. Kept separate from the
+       generic surface tokens so the field has real contrast against the page
+       in BOTH themes (surface tokens are near-white in light mode, which made
+       the blocks vanish). Fog fades distant blocks into the page background. */
+    --wave-fog: var(--bg);
+    --wave-block-1: #3a3a3a;
+    --wave-block-2: #4f4f4f;
+    --wave-block-3: #686868;
+    --wave-emissive-intensity: 0.16; /* @kind other */
+}
+
+/* ============================================================
+   LIGHT theme — opt-in via .light on a wrapper or <html>.
+   ============================================================ */
+.light,
+html.light {
+    --bg: var(--bc-white);
+    --fg: var(--bc-ink-950);
+
+    --surface-1: var(--bc-white);
+    --surface-2: #f5f5f5;
+    --surface-3: #ececec;
+    --surface-hover: rgba(10, 10, 10, 0.05);
+
+    --text-1: var(--bc-ink-950);
+    --text-2: color-mix(in oklab, var(--fg) 90%, var(--bg) 10%);
+    --text-3: color-mix(in oklab, var(--fg) 60%, var(--bg) 40%);
+
+    --border-1: rgba(10, 10, 10, 0.12);
+    --border-2: rgba(10, 10, 10, 0.20);
+    --border-strong: var(--bc-grey-200);
+
+    --accent-text: var(--bc-orange-600);
+
+    /* Logo render variables — light */
+    --background: var(--bc-grey-100);
+    --off: var(--bc-grey-200);
+    --b-color: var(--bc-orange);
+    --c-color: var(--bc-blue);
+    --border-color: #a3a3a3;
+    --stroke-width: 0.8;
+
+    /* ByteWave block field — light. Mid greys read clearly against white and
+       still fog out into the page; emissive self-glow is dropped so the blocks
+       don't wash out under the white-biased lighting. */
+    --wave-fog: var(--bg);
+    --wave-block-1: #b4b4b4;
+    --wave-block-2: #9c9c9c;
+    --wave-block-3: #868686;
+    --wave-emissive-intensity: 0; /* @kind other */
+}

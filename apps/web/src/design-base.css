@@ -1,0 +1,133 @@
+/* ============================================================
+   ByteCrunch — Base element styles & brand helpers
+   ============================================================ */
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+}
+
+body {
+    margin: 0;
+    font-family: var(--font-sans);
+    font-weight: var(--fw-regular);
+    font-size: var(--fs-body);
+    line-height: var(--lh-normal);
+    color: var(--text-2);
+    background: var(--bg);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+}
+
+h1, h2, h3, h4, h5, h6 {
+    margin: 0;
+    color: var(--text-1);
+    font-weight: var(--fw-light);
+    letter-spacing: var(--tracking-tight);
+    line-height: var(--lh-tight);
+    text-wrap: balance;
+}
+
+p { margin: 0; text-wrap: pretty; }
+
+a {
+    color: inherit;
+    text-decoration: none;
+    transition: opacity var(--dur-fast) var(--ease-standard);
+}
+
+::selection {
+    background: var(--bc-orange);
+    color: var(--bc-white);
+}
+
+:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+}
+
+/* Custom scrollbar (dark) */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+    background: var(--bc-ink-600);
+    border-radius: var(--radius-pill);
+}
+::-webkit-scrollbar-thumb:hover { background: var(--bc-ink-500); }
+
+/* ---- Type role utilities ---- */
+.bc-display {
+    font-size: var(--fs-display);
+    font-weight: var(--fw-light);
+    line-height: var(--lh-none);
+    letter-spacing: var(--tracking-tight);
+    color: var(--text-1);
+}
+.bc-h1 { font-size: var(--fs-h1); font-weight: var(--fw-light); letter-spacing: var(--tracking-tight); }
+.bc-h2 { font-size: var(--fs-h2); font-weight: var(--fw-light); letter-spacing: var(--tracking-tight); }
+.bc-h3 { font-size: var(--fs-h3); font-weight: var(--fw-regular); }
+.bc-lead { font-size: var(--fs-lg); font-weight: var(--fw-light); line-height: var(--lh-relaxed); color: var(--text-2); }
+.bc-body { font-size: var(--fs-body); color: var(--text-2); line-height: var(--lh-relaxed); }
+.bc-small { font-size: var(--fs-sm); color: var(--text-3); }
+
+/* The signature mono eyebrow: uppercase, wide-tracked, brandable */
+.bc-eyebrow {
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-regular);
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-eyebrow);
+    color: var(--text-3);
+}
+.bc-mono { font-family: var(--font-mono); }
+
+.bc-text-orange { color: var(--bc-orange); }
+.bc-text-blue { color: var(--bc-blue); }
+
+/* ============================================================
+   Brand logomark — the 4x4 ASCII grid encoding B (orange) + C (blue).
+   Render as an inline SVG via .bc-logomark, sized by font-size/width.
+   Colors come from the theme's --b-color / --c-color / --off vars.
+   ============================================================ */
+.bc-logomark {
+    display: inline-block;
+    width: 2.25em;
+    height: 2.25em;
+    flex: none;
+}
+.bc-logomark rect { shape-rendering: crispEdges; }
+
+/* ============================================================
+   Byte-wave background — the signature motif. A repeating grid of
+   square "bytes" that fades in from the page background. Drop a
+   <div class="bc-bytewave"></div> behind content (position it
+   absolutely). Pure CSS approximation of the WebGL hero grid.
+   ============================================================ */
+.bc-bytewave {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+        linear-gradient(var(--border-1) 1px, transparent 1px),
+        linear-gradient(90deg, var(--border-1) 1px, transparent 1px);
+    background-size: 44px 44px;
+    background-position: center;
+    -webkit-mask-image: radial-gradient(120% 90% at 70% 10%, #000 0%, transparent 70%);
+    mask-image: radial-gradient(120% 90% at 70% 10%, #000 0%, transparent 70%);
+    opacity: 0.6;
+}
+
+/* Layout helper */
+.bc-container {
+    width: 100%;
+    max-width: var(--container-xl);
+    margin-inline: auto;
+    padding-inline: var(--space-8);
+}

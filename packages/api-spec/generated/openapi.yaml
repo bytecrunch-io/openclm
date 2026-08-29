@@ -1,0 +1,2609 @@
+openapi: 3.1.0
+info:
+  title: Bytecrunch Contracts API
+  version: 0.0.0
+tags: []
+paths:
+  /health:
+    get:
+      operationId: HealthOperations_get
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /public/integration-sessions/exchange:
+    post:
+      operationId: ExternalParticipantOperations_exchangeIntegration
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/ExchangeIntegrationResult'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExchangeInvitation'
+  /public/invitations/exchange:
+    post:
+      operationId: ExternalParticipantOperations_exchange
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/ExchangeResult'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExchangeInvitation'
+  /public/session:
+    get:
+      operationId: ExternalParticipantOperations_session
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/ExternalView'
+                  - $ref: '#/components/schemas/ErrorResponse'
+  /public/session/approve-for-signature:
+    post:
+      operationId: ExternalParticipantOperations_approveForSignature
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/ExternalView'
+                  - $ref: '#/components/schemas/ErrorResponse'
+  /public/session/comments:
+    post:
+      operationId: ExternalParticipantOperations_comment
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/ExternalView'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ThreadMessageInput'
+  /public/session/comments/{commentId}:
+    patch:
+      operationId: ExternalParticipantOperations_updateComment
+      parameters:
+        - name: commentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/ExternalView'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateDocumentComment'
+    delete:
+      operationId: ExternalParticipantOperations_removeComment
+      parameters:
+        - name: commentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/ExternalView'
+                  - $ref: '#/components/schemas/ErrorResponse'
+  /public/session/nominate:
+    post:
+      operationId: ExternalParticipantOperations_nominate
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/ExternalView'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NominateSignatory'
+  /public/session/onboarding:
+    post:
+      operationId: ExternalParticipantOperations_onboard
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/ExternalView'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OnboardParticipant'
+  /public/session/reopen-review:
+    post:
+      operationId: ExternalParticipantOperations_reopenReview
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/ExternalView'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReopenReview'
+  /public/session/return-review:
+    post:
+      operationId: ExternalParticipantOperations_returnReview
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/ExternalView'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendReview'
+  /public/session/review-draft:
+    put:
+      operationId: ExternalParticipantOperations_saveReviewDraft
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/ExternalView'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateReviewDraft'
+  /public/session/sign:
+    post:
+      operationId: ExternalParticipantOperations_sign
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/ExternalView'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                intentConfirmed:
+                  type: boolean
+                  enum:
+                    - true
+                signature:
+                  $ref: '#/components/schemas/SignatureInput'
+              required:
+                - intentConfirmed
+  /public/session/suggestions:
+    post:
+      operationId: ExternalParticipantOperations_suggest
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/ExternalView'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExternalSuggestion'
+  /public/session/suggestions/{suggestionId}:
+    patch:
+      operationId: ExternalParticipantOperations_updateSuggestion
+      parameters:
+        - name: suggestionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/ExternalView'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSuggestion'
+    delete:
+      operationId: ExternalParticipantOperations_removeSuggestion
+      parameters:
+        - name: suggestionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/ExternalView'
+                  - $ref: '#/components/schemas/ErrorResponse'
+  /public/session/suggestions/{suggestionId}/messages:
+    post:
+      operationId: ExternalParticipantOperations_replySuggestion
+      parameters:
+        - name: suggestionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/ExternalView'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ThreadMessageInput'
+  /v1/agreement-status:
+    get:
+      operationId: StatusOperations_get
+      parameters:
+        - name: externalSubjectId
+          in: query
+          required: true
+          schema:
+            type: string
+          explode: false
+        - name: templateKey
+          in: query
+          required: true
+          schema:
+            type: string
+          explode: false
+        - name: minimumVersion
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+          explode: false
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequirementResult'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+  /v1/agreement-status/evaluate:
+    post:
+      operationId: StatusOperations_evaluate
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/EvaluationResult'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EvaluateAgreementStatus'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+  /v1/agreements:
+    get:
+      operationId: AgreementOperations_list
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Agreement'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+    post:
+      operationId: AgreementOperations_create
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/Agreement'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAgreement'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+  /v1/agreements/{agreementId}:
+    get:
+      operationId: AgreementOperations_get
+      parameters:
+        - name: agreementId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/Agreement'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+  /v1/agreements/{agreementId}/comments:
+    post:
+      operationId: AgreementOperations_comment
+      parameters:
+        - name: agreementId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/Agreement'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ThreadMessageInput'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+  /v1/agreements/{agreementId}/comments/{commentId}:
+    patch:
+      operationId: AgreementOperations_updateComment
+      parameters:
+        - name: agreementId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: commentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/Agreement'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateDocumentComment'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+    delete:
+      operationId: AgreementOperations_removeComment
+      parameters:
+        - name: agreementId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: commentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/Agreement'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+  /v1/agreements/{agreementId}/comments/{commentId}/resolve:
+    post:
+      operationId: AgreementOperations_resolveComment
+      parameters:
+        - name: agreementId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: commentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/Agreement'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+  /v1/agreements/{agreementId}/invitations:
+    get:
+      operationId: AgreementOperations_listInvitations
+      parameters:
+        - name: agreementId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Invitation'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+  /v1/agreements/{agreementId}/participants/{participantId}/invite:
+    post:
+      operationId: AgreementOperations_invite
+      parameters:
+        - name: agreementId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: participantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/Invitation'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+  /v1/agreements/{agreementId}/parties/{partyId}/accept-entity:
+    post:
+      operationId: AgreementOperations_acceptEntity
+      parameters:
+        - name: agreementId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: partyId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/Agreement'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+  /v1/agreements/{agreementId}/prepare-for-signature:
+    post:
+      operationId: AgreementOperations_prepareForSignature
+      parameters:
+        - name: agreementId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/Agreement'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+  /v1/agreements/{agreementId}/review:
+    post:
+      operationId: AgreementOperations_startReview
+      parameters:
+        - name: agreementId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/Agreement'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+  /v1/agreements/{agreementId}/review-draft:
+    put:
+      operationId: AgreementOperations_saveReviewDraft
+      parameters:
+        - name: agreementId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/Agreement'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateReviewDraft'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+  /v1/agreements/{agreementId}/send-for-signature:
+    post:
+      operationId: AgreementOperations_sendForSignature
+      parameters:
+        - name: agreementId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/Agreement'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+  /v1/agreements/{agreementId}/send-review:
+    post:
+      operationId: AgreementOperations_sendReview
+      parameters:
+        - name: agreementId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/Agreement'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendReview'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+  /v1/agreements/{agreementId}/sign:
+    post:
+      operationId: AgreementOperations_sign
+      parameters:
+        - name: agreementId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/Agreement'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignAgreement'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+  /v1/agreements/{agreementId}/suggestions:
+    post:
+      operationId: AgreementOperations_suggest
+      parameters:
+        - name: agreementId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/Agreement'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSuggestion'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+  /v1/agreements/{agreementId}/suggestions/{suggestionId}:
+    patch:
+      operationId: AgreementOperations_updateSuggestion
+      parameters:
+        - name: agreementId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: suggestionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/Agreement'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSuggestion'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+    delete:
+      operationId: AgreementOperations_removeSuggestion
+      parameters:
+        - name: agreementId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: suggestionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/Agreement'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+  /v1/agreements/{agreementId}/suggestions/{suggestionId}/messages:
+    post:
+      operationId: AgreementOperations_replySuggestion
+      parameters:
+        - name: agreementId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: suggestionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/Agreement'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ThreadMessageInput'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+  /v1/agreements/{agreementId}/suggestions/{suggestionId}/resolve:
+    post:
+      operationId: AgreementOperations_resolveSuggestion
+      parameters:
+        - name: agreementId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: suggestionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/Agreement'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResolveSuggestion'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+  /v1/integration-sessions:
+    post:
+      operationId: IntegrationSessionOperations_create
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/IntegrationSessionResult'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateIntegrationSession'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+  /v1/integration-status:
+    get:
+      operationId: IntegrationStatusOperations_get
+      parameters:
+        - name: integrationKey
+          in: query
+          required: true
+          schema:
+            type: string
+          explode: false
+        - name: subject
+          in: query
+          required: true
+          schema:
+            type: string
+          explode: false
+        - name: templateKey
+          in: query
+          required: true
+          schema:
+            type: string
+          explode: false
+        - name: minimumVersion
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+          explode: false
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequirementResult'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+  /v1/integrations:
+    get:
+      operationId: IntegrationOperations_list
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Integration'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+    post:
+      operationId: IntegrationOperations_create
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/Integration'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateIntegration'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+  /v1/notifications:
+    get:
+      operationId: NotificationOperations_list
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Notification'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+  /v1/notifications/read-all:
+    post:
+      operationId: NotificationOperations_readAll
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  updated:
+                    type: integer
+                    format: int32
+                required:
+                  - updated
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+  /v1/notifications/{notificationId}/read:
+    post:
+      operationId: NotificationOperations_read
+      parameters:
+        - name: notificationId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/Notification'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+  /v1/templates:
+    get:
+      operationId: TemplateOperations_list
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Template'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+    post:
+      operationId: TemplateOperations_create
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/Template'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTemplate'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+  /v1/webhooks:
+    get:
+      operationId: WebhookOperations_list
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WebhookEndpoint'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+    post:
+      operationId: WebhookOperations_create
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/WebhookEndpoint'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWebhook'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+components:
+  schemas:
+    Agreement:
+      type: object
+      required:
+        - id
+        - tenantId
+        - externalId
+        - title
+        - templateKey
+        - templateVersion
+        - status
+        - revision
+        - content
+        - contentSha256
+        - participants
+        - parties
+        - suggestions
+        - documentComments
+        - reviewRound
+        - reviewAssignedTo
+        - reviewHistory
+        - createdByParticipantId
+        - integrationContext
+        - metadata
+        - createdAt
+        - updatedAt
+        - executedAt
+        - signatureNotificationsSentAt
+        - invalidatedSignatures
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        externalId:
+          anyOf:
+            - type: string
+            - type: 'null'
+        title:
+          type: string
+        templateKey:
+          type: string
+        templateVersion:
+          type: integer
+          format: int32
+        status:
+          $ref: '#/components/schemas/AgreementStatus'
+        revision:
+          type: integer
+          format: int32
+        content:
+          type: string
+        contentSha256:
+          type: string
+        participants:
+          type: array
+          items:
+            $ref: '#/components/schemas/Participant'
+        parties:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgreementParty'
+        suggestions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Suggestion'
+        documentComments:
+          type: array
+          items:
+            $ref: '#/components/schemas/DocumentComment'
+        reviewRound:
+          type: integer
+          format: int32
+        reviewAssignedTo:
+          anyOf:
+            - $ref: '#/components/schemas/ReviewAssignee'
+            - type: 'null'
+        reviewHistory:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReviewTurn'
+        createdByParticipantId:
+          anyOf:
+            - type: string
+            - type: 'null'
+        integrationContext:
+          anyOf:
+            - $ref: '#/components/schemas/IntegrationContext'
+            - type: 'null'
+        metadata:
+          type: object
+          unevaluatedProperties:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        executedAt:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+        signatureNotificationsSentAt:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+        invalidatedSignatures:
+          type: array
+          items:
+            $ref: '#/components/schemas/InvalidatedSignature'
+    AgreementParty:
+      type: object
+      required:
+        - id
+        - role
+        - entity
+        - status
+        - minimumSignatures
+      properties:
+        id:
+          type: string
+        role:
+          $ref: '#/components/schemas/PartyRole'
+        entity:
+          $ref: '#/components/schemas/LegalEntity'
+        status:
+          $ref: '#/components/schemas/PartyStatus'
+        minimumSignatures:
+          type: integer
+          format: int32
+    AgreementRequirement:
+      type: object
+      required:
+        - templateKey
+      properties:
+        templateKey:
+          type: string
+        minimumVersion:
+          type: integer
+          format: int32
+    AgreementStatus:
+      type: string
+      enum:
+        - draft
+        - in_review
+        - ready_for_signature
+        - out_for_signature
+        - partially_signed
+        - executed
+        - declined
+        - voided
+        - expired
+    CreateAgreement:
+      type: object
+      required:
+        - title
+        - templateKey
+      properties:
+        title:
+          type: string
+        templateKey:
+          type: string
+        externalId:
+          type: string
+        participants:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreateParticipant'
+        parties:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreateAgreementParty'
+        metadata:
+          type: object
+          unevaluatedProperties:
+            type: string
+    CreateAgreementParty:
+      type: object
+      required:
+        - role
+        - entity
+        - participants
+      properties:
+        role:
+          $ref: '#/components/schemas/PartyRole'
+        entity:
+          $ref: '#/components/schemas/CreateLegalEntity'
+        minimumSignatures:
+          type: integer
+          format: int32
+        participants:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreateParticipant'
+    CreateIntegration:
+      type: object
+      required:
+        - key
+        - name
+        - mappingStrategy
+        - allowedRedirectUris
+      properties:
+        key:
+          type: string
+        name:
+          type: string
+        mappingStrategy:
+          type: string
+          enum:
+            - host_asserted
+            - shared_oidc
+            - account_linking
+        allowedRedirectUris:
+          type: array
+          items:
+            type: string
+            format: uri
+        allowedOrigins:
+          type: array
+          items:
+            type: string
+            format: uri
+    CreateIntegrationSession:
+      type: object
+      required:
+        - integrationKey
+        - subject
+        - email
+        - templateKey
+        - returnUrl
+      properties:
+        integrationKey:
+          type: string
+        subject:
+          type: string
+        email:
+          type: string
+        displayName:
+          type: string
+        templateKey:
+          type: string
+        title:
+          type: string
+        returnUrl:
+          type: string
+          format: uri
+        metadata:
+          type: object
+          unevaluatedProperties:
+            type: string
+    CreateLegalEntity:
+      type: object
+      properties:
+        externalId:
+          type: string
+        legalName:
+          type: string
+        businessAddress:
+          type: string
+        registrationNumber:
+          type: string
+        jurisdiction:
+          type: string
+    CreateParticipant:
+      type: object
+      required:
+        - email
+        - role
+        - required
+      properties:
+        email:
+          type: string
+        name:
+          type: string
+        role:
+          $ref: '#/components/schemas/ParticipantRole'
+        required:
+          type: boolean
+        title:
+          type: string
+        permissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ParticipantPermission'
+    CreateSuggestion:
+      type: object
+      required:
+        - authorSubjectId
+        - originalText
+        - replacementText
+      properties:
+        authorSubjectId:
+          type: string
+        originalText:
+          type: string
+        replacementText:
+          type: string
+        comment:
+          type: string
+        anchor:
+          type: object
+          properties:
+            start:
+              type: integer
+              format: int32
+            end:
+              type: integer
+              format: int32
+          required:
+            - start
+            - end
+    CreateTemplate:
+      type: object
+      required:
+        - key
+        - name
+        - content
+      properties:
+        key:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        content:
+          type: string
+    CreateWebhook:
+      type: object
+      required:
+        - url
+        - events
+      properties:
+        url:
+          type: string
+          format: uri
+        events:
+          type: array
+          items:
+            type: string
+    DocumentComment:
+      type: object
+      required:
+        - id
+        - authorId
+        - authorName
+        - body
+        - status
+        - messages
+        - mentions
+        - reviewRound
+        - createdAt
+        - resolvedAt
+      properties:
+        id:
+          type: string
+        authorId:
+          type: string
+        authorName:
+          type: string
+        body:
+          type: string
+        status:
+          type: string
+          enum:
+            - open
+            - resolved
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/ThreadMessage'
+        mentions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Mention'
+        reviewRound:
+          type: integer
+          format: int32
+        createdAt:
+          type: string
+          format: date-time
+        resolvedAt:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+    EntityDetails:
+      type: object
+      required:
+        - legalName
+        - businessAddress
+        - registrationNumber
+        - jurisdiction
+      properties:
+        legalName:
+          type: string
+        businessAddress:
+          anyOf:
+            - type: string
+            - type: 'null'
+        registrationNumber:
+          anyOf:
+            - type: string
+            - type: 'null'
+        jurisdiction:
+          anyOf:
+            - type: string
+            - type: 'null'
+    EntityVerificationStatus:
+      type: string
+      enum:
+        - unconfirmed
+        - confirmed
+        - change_pending
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        issues:
+          type: array
+          items:
+            type: string
+    EvaluateAgreementStatus:
+      type: object
+      required:
+        - externalSubjectId
+        - requirements
+      properties:
+        externalSubjectId:
+          type: string
+        requirements:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgreementRequirement'
+        operator:
+          $ref: '#/components/schemas/RequirementOperator'
+    EvaluationResult:
+      type: object
+      required:
+        - externalSubjectId
+        - satisfied
+        - operator
+        - requirements
+      properties:
+        externalSubjectId:
+          type: string
+        satisfied:
+          type: boolean
+        operator:
+          $ref: '#/components/schemas/RequirementOperator'
+        requirements:
+          type: array
+          items:
+            $ref: '#/components/schemas/RequirementResult'
+    ExchangeIntegrationResult:
+      type: object
+      required:
+        - accepted
+        - returnUrl
+      properties:
+        accepted:
+          type: boolean
+          enum:
+            - true
+        returnUrl:
+          type: string
+          format: uri
+    ExchangeInvitation:
+      type: object
+      required:
+        - token
+      properties:
+        token:
+          type: string
+    ExchangeResult:
+      type: object
+      required:
+        - accepted
+      properties:
+        accepted:
+          type: boolean
+          enum:
+            - true
+    ExternalSuggestion:
+      type: object
+      required:
+        - originalText
+        - replacementText
+      properties:
+        originalText:
+          type: string
+        replacementText:
+          type: string
+        comment:
+          type: string
+        anchor:
+          type: object
+          properties:
+            start:
+              type: integer
+              format: int32
+            end:
+              type: integer
+              format: int32
+          required:
+            - start
+            - end
+    ExternalView:
+      type: object
+      required:
+        - agreement
+        - participant
+        - party
+      properties:
+        agreement:
+          $ref: '#/components/schemas/Agreement'
+        participant:
+          $ref: '#/components/schemas/Participant'
+        party:
+          anyOf:
+            - $ref: '#/components/schemas/AgreementParty'
+            - type: 'null'
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - version
+        - storage
+      properties:
+        status:
+          type: string
+          enum:
+            - ok
+        version:
+          type: string
+        storage:
+          type: string
+          enum:
+            - memory
+            - postgres
+    Integration:
+      type: object
+      required:
+        - id
+        - tenantId
+        - key
+        - name
+        - mappingStrategy
+        - allowedRedirectUris
+        - allowedOrigins
+        - createdAt
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        key:
+          type: string
+        name:
+          type: string
+        mappingStrategy:
+          type: string
+          enum:
+            - host_asserted
+            - shared_oidc
+            - account_linking
+        allowedRedirectUris:
+          type: array
+          items:
+            type: string
+            format: uri
+        allowedOrigins:
+          type: array
+          items:
+            type: string
+            format: uri
+        createdAt:
+          type: string
+          format: date-time
+    IntegrationContext:
+      type: object
+      required:
+        - integrationId
+        - integrationKey
+        - externalSubject
+        - personId
+        - returnUrl
+      properties:
+        integrationId:
+          type: string
+        integrationKey:
+          type: string
+        externalSubject:
+          type: string
+        personId:
+          type: string
+        returnUrl:
+          type: string
+          format: uri
+    IntegrationSessionResult:
+      type: object
+      required:
+        - agreementId
+        - expiresAt
+        - handoffUrl
+      properties:
+        agreementId:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+        handoffUrl:
+          type: string
+          format: uri
+    InvalidatedSignature:
+      type: object
+      required:
+        - participantId
+        - participantName
+        - signature
+        - invalidatedAt
+        - invalidatedByParticipantId
+        - reason
+      properties:
+        participantId:
+          type: string
+        participantName:
+          type: string
+        signature:
+          $ref: '#/components/schemas/SignatureRecord'
+        invalidatedAt:
+          type: string
+          format: date-time
+        invalidatedByParticipantId:
+          type: string
+        reason:
+          type: string
+          enum:
+            - review_reopened
+    Invitation:
+      type: object
+      required:
+        - id
+        - tenantId
+        - agreementId
+        - participantId
+        - email
+        - status
+        - expiresAt
+        - createdAt
+        - acceptedAt
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        agreementId:
+          type: string
+        participantId:
+          type: string
+        email:
+          type: string
+        status:
+          type: string
+          enum:
+            - pending
+            - accepted
+            - revoked
+            - expired
+        expiresAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        acceptedAt:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+        invitationUrl:
+          type: string
+          format: uri
+    LegalEntity:
+      type: object
+      required:
+        - id
+        - externalId
+        - legalName
+        - businessAddress
+        - registrationNumber
+        - jurisdiction
+        - verificationStatus
+        - proposedDetails
+      properties:
+        id:
+          type: string
+        externalId:
+          anyOf:
+            - type: string
+            - type: 'null'
+        legalName:
+          anyOf:
+            - type: string
+            - type: 'null'
+        businessAddress:
+          anyOf:
+            - type: string
+            - type: 'null'
+        registrationNumber:
+          anyOf:
+            - type: string
+            - type: 'null'
+        jurisdiction:
+          anyOf:
+            - type: string
+            - type: 'null'
+        verificationStatus:
+          $ref: '#/components/schemas/EntityVerificationStatus'
+        proposedDetails:
+          anyOf:
+            - $ref: '#/components/schemas/EntityDetails'
+            - type: 'null'
+    Mention:
+      type: object
+      required:
+        - participantId
+        - displayName
+      properties:
+        participantId:
+          type: string
+        displayName:
+          type: string
+    NominateSignatory:
+      type: object
+      required:
+        - name
+        - email
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        title:
+          type: string
+    Notification:
+      type: object
+      required:
+        - id
+        - tenantId
+        - recipientPersonId
+        - recipientEmail
+        - type
+        - title
+        - body
+        - agreementId
+        - threadId
+        - actorName
+        - readAt
+        - createdAt
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        recipientPersonId:
+          type: string
+        recipientEmail:
+          type: string
+        type:
+          type: string
+        title:
+          type: string
+        body:
+          type: string
+        agreementId:
+          type: string
+        threadId:
+          anyOf:
+            - type: string
+            - type: 'null'
+        actorName:
+          type: string
+        readAt:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+        createdAt:
+          type: string
+          format: date-time
+    OnboardParticipant:
+      type: object
+      required:
+        - name
+        - title
+        - capacity
+        - authorityConfirmed
+        - entity
+      properties:
+        name:
+          type: string
+        title:
+          type: string
+        capacity:
+          $ref: '#/components/schemas/SigningCapacity'
+        authorityConfirmed:
+          type: boolean
+        entity:
+          type: object
+          properties:
+            legalName:
+              type: string
+            businessAddress:
+              type: string
+            registrationNumber:
+              type: string
+            jurisdiction:
+              type: string
+          required:
+            - legalName
+    Participant:
+      type: object
+      required:
+        - id
+        - personId
+        - externalSubjectId
+        - email
+        - name
+        - role
+        - required
+        - status
+        - signedAt
+        - signature
+        - partyId
+        - title
+        - capacity
+        - authorityConfirmed
+        - onboardingCompletedAt
+        - permissions
+      properties:
+        id:
+          type: string
+        personId:
+          anyOf:
+            - type: string
+            - type: 'null'
+        externalSubjectId:
+          anyOf:
+            - type: string
+            - type: 'null'
+        email:
+          type: string
+        name:
+          type: string
+        role:
+          $ref: '#/components/schemas/ParticipantRole'
+        required:
+          type: boolean
+        status:
+          $ref: '#/components/schemas/ParticipantStatus'
+        signedAt:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+        signature:
+          anyOf:
+            - $ref: '#/components/schemas/SignatureRecord'
+            - type: 'null'
+        partyId:
+          anyOf:
+            - type: string
+            - type: 'null'
+        title:
+          anyOf:
+            - type: string
+            - type: 'null'
+        capacity:
+          anyOf:
+            - $ref: '#/components/schemas/SigningCapacity'
+            - type: 'null'
+        authorityConfirmed:
+          type: boolean
+        onboardingCompletedAt:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+        permissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ParticipantPermission'
+    ParticipantPermission:
+      type: string
+      enum:
+        - read
+        - comment
+        - suggest
+        - sign
+        - nominate_signatory
+    ParticipantRole:
+      type: string
+      enum:
+        - owner
+        - reviewer
+        - signatory
+    ParticipantStatus:
+      type: string
+      enum:
+        - not_invited
+        - invited
+        - reviewed
+        - signed
+        - declined
+    PartyRole:
+      type: string
+      enum:
+        - sender
+        - counterparty
+    PartyStatus:
+      type: string
+      enum:
+        - invited
+        - onboarding
+        - reviewing
+        - ready
+        - signing
+        - executed
+    RedlineAnchor:
+      type: object
+      required:
+        - start
+        - end
+        - revision
+        - prefix
+        - suffix
+      properties:
+        start:
+          type: integer
+          format: int32
+        end:
+          type: integer
+          format: int32
+        revision:
+          type: integer
+          format: int32
+        prefix:
+          type: string
+        suffix:
+          type: string
+    ReopenReview:
+      type: object
+      required:
+        - invalidateSignatures
+        - confirmation
+      properties:
+        invalidateSignatures:
+          type: boolean
+          enum:
+            - true
+        confirmation:
+          type: string
+          enum:
+            - VOID_SIGNATURES_AND_REOPEN
+    RequirementOperator:
+      type: string
+      enum:
+        - all
+        - any
+    RequirementResult:
+      type: object
+      required:
+        - templateKey
+        - minimumVersion
+        - satisfied
+      properties:
+        templateKey:
+          type: string
+        minimumVersion:
+          type: integer
+          format: int32
+        satisfied:
+          type: boolean
+        status:
+          $ref: '#/components/schemas/AgreementStatus'
+        agreementId:
+          type: string
+        templateVersion:
+          type: integer
+          format: int32
+        executedAt:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+    ResolveSuggestion:
+      type: object
+      required:
+        - resolution
+      properties:
+        resolution:
+          type: string
+          enum:
+            - accepted
+            - rejected
+    ReviewAssignee:
+      type: string
+      enum:
+        - sender
+        - counterparty
+    ReviewTurn:
+      type: object
+      required:
+        - round
+        - assignedTo
+        - sentBy
+        - message
+        - sentAt
+        - returnedAt
+      properties:
+        round:
+          type: integer
+          format: int32
+        assignedTo:
+          $ref: '#/components/schemas/ReviewAssignee'
+        sentBy:
+          type: string
+        message:
+          type: string
+        sentAt:
+          type: string
+          format: date-time
+        returnedAt:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+    SendReview:
+      type: object
+      properties:
+        message:
+          type: string
+    SignAgreement:
+      type: object
+      required:
+        - intentConfirmed
+      properties:
+        participantId:
+          type: string
+        externalSubjectId:
+          type: string
+        intentConfirmed:
+          type: boolean
+          enum:
+            - true
+        signature:
+          $ref: '#/components/schemas/SignatureInput'
+    SignatureInput:
+      anyOf:
+        - type: object
+          properties:
+            method:
+              type: string
+              enum:
+                - typed
+            typedName:
+              type: string
+            imageDataUrl:
+              type: 'null'
+          required:
+            - method
+            - typedName
+            - imageDataUrl
+        - type: object
+          properties:
+            method:
+              type: string
+              enum:
+                - drawn
+            typedName:
+              type: string
+            imageDataUrl:
+              type: string
+          required:
+            - method
+            - typedName
+            - imageDataUrl
+    SignatureRecord:
+      type: object
+      required:
+        - method
+        - typedName
+        - imageDataUrl
+        - signedContentSha256
+        - signedAt
+      properties:
+        method:
+          type: string
+          enum:
+            - typed
+            - drawn
+        typedName:
+          type: string
+        imageDataUrl:
+          anyOf:
+            - type: string
+            - type: 'null'
+        signedContentSha256:
+          type: string
+        signedAt:
+          type: string
+          format: date-time
+    SigningCapacity:
+      type: string
+      enum:
+        - authorized_representative
+        - director
+        - officer
+        - personally
+        - other
+    Suggestion:
+      type: object
+      required:
+        - id
+        - agreementId
+        - authorSubjectId
+        - originalText
+        - replacementText
+        - comment
+        - anchor
+        - messages
+        - mentions
+        - reviewRound
+        - status
+        - createdAt
+        - resolvedAt
+      properties:
+        id:
+          type: string
+        agreementId:
+          type: string
+        authorSubjectId:
+          type: string
+        originalText:
+          type: string
+        replacementText:
+          type: string
+        comment:
+          type: string
+        anchor:
+          anyOf:
+            - $ref: '#/components/schemas/RedlineAnchor'
+            - type: 'null'
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/ThreadMessage'
+        mentions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Mention'
+        reviewRound:
+          type: integer
+          format: int32
+        status:
+          $ref: '#/components/schemas/SuggestionStatus'
+        createdAt:
+          type: string
+          format: date-time
+        resolvedAt:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+    SuggestionStatus:
+      type: string
+      enum:
+        - open
+        - accepted
+        - rejected
+    Template:
+      type: object
+      required:
+        - id
+        - key
+        - name
+        - version
+        - description
+        - content
+        - createdAt
+      properties:
+        id:
+          type: string
+        key:
+          type: string
+        name:
+          type: string
+        version:
+          type: integer
+          format: int32
+        description:
+          type: string
+        content:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    ThreadMessage:
+      type: object
+      required:
+        - id
+        - authorId
+        - authorName
+        - body
+        - mentions
+        - createdAt
+      properties:
+        id:
+          type: string
+        authorId:
+          type: string
+        authorName:
+          type: string
+        body:
+          type: string
+        mentions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Mention'
+        createdAt:
+          type: string
+          format: date-time
+    ThreadMessageInput:
+      type: object
+      required:
+        - body
+      properties:
+        body:
+          type: string
+    UpdateDocumentComment:
+      type: object
+      required:
+        - body
+      properties:
+        body:
+          type: string
+    UpdateReviewDraft:
+      type: object
+      required:
+        - content
+      properties:
+        content:
+          type: string
+    UpdateSuggestion:
+      type: object
+      required:
+        - replacementText
+      properties:
+        replacementText:
+          type: string
+        comment:
+          type: string
+    WebhookEndpoint:
+      type: object
+      required:
+        - id
+        - url
+        - events
+        - createdAt
+      properties:
+        id:
+          type: string
+        url:
+          type: string
+          format: uri
+        events:
+          type: array
+          items:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
+  securitySchemes:
+    ContractsOAuth2:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: http://localhost:8080/realms/bytecrunch/protocol/openid-connect/token
+          scopes:
+            agreements:read: ''
+            agreements:write: ''
+            templates:read: ''
+            templates:write: ''
+            webhooks:manage: ''
+servers:
+  - url: http://localhost:3001
+    description: Local development
+    variables: {}

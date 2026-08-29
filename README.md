@@ -1,0 +1,144 @@
+# Bytecrunch Contracts
+
+Open-source agreement infrastructure for review, redlining, execution, and integration. The standalone application is branded with the Bytecrunch design system while its API remains generic enough for data rooms, onboarding tools, marketplaces, and internal systems.
+
+## What works
+
+- Versioned contract templates
+- Agreement creation from representative emails; internal person IDs are assigned automatically
+- Draft, review, signing, and executed lifecycle states
+- Anchored, attributed redlines with word-level diffs, threaded replies, and accept/reject resolution
+- Document-level feedback plus editable, removable redline drafts during the active review turn
+- Consolidated hand-back notifications with unread state, deep links, and retrying email delivery through an outbox
+- Immutable revision counters and SHA-256 content hashes
+- Multiple required signatories
+- Prominent next-action guidance and a sender attention queue
+- Responsive typed/drawn signature ceremony with touch support and document-bound signature blocks
+- Legal entities, agreement parties, and per-party signature requirements
+- Optional counterparty details with recipient confirmation and sender approval for material changes
+- One-time participant invitations delivered through local SMTP/Mailpit
+- External onboarding with title, signing capacity, and authority confirmation
+- External reviewer/signatory portal with signatory nomination
+- Agreement-status query and multi-requirement evaluation API
+- Integration-scoped identity links, short-lived host-mediated handoffs, and status queries
+- HMAC-signed lifecycle webhooks
+- Generic OIDC SSO and OAuth2 bearer-token validation
+- Runtime validation with Zod at API and UI boundaries
+- TypeSpec source with generated OpenAPI 3.1
+- PostgreSQL and in-memory repositories
+- Dark/light Bytecrunch interface
+- Fully local Docker stack
+
+The current signing action is a clearly labeled development witness. It is not a certified electronic-signature implementation. See the [architecture](./docs/architecture.md) and [UX audit](./docs/ux-audit.md) before using this with real contracts.
+
+## Run the full local stack
+
+```bash
+docker compose up --build
+# On installations using the standalone Compose binary:
+docker-compose up --build
+```
+
+Then open:
+
+| Service | URL / credentials |
+| --- | --- |
+| Contracts | http://localhost:3000 |
+| API | http://localhost:3001 |
+| OpenAPI | http://localhost:3001/openapi.yaml |
+| Keycloak | http://localhost:8080 (`admin` / `admin`) |
+| Local user | `admin@bytecrunch.local` / `bytecrunch` |
+| Mailpit | http://localhost:8025 |
+| MinIO | http://localhost:9001 (`contracts` / `contracts-local-secret`) |
+
+Everything runs locally. There is no required hosted database, identity provider, object store, email service, font CDN, telemetry endpoint, or license server.
+
+## Test the two-party flow
+
+1. Open http://localhost:3000 and sign in as `admin@bytecrunch.local` / `bytecrunch`.
+2. Create an agreement with one or more counterparty representatives. The expected legal entity is optional; mix reviewers and signatories and choose the number of signatures required.
+3. Open the agreement and select **Send invite** next to the participant.
+4. Open http://localhost:8025 and select the invitation email.
+5. Open its **Review agreement** link in an incognito/private browser window.
+6. Confirm the recipient, legal entity, capacity, and signing authority. If the recipient changes prefilled entity details, approve the proposal in the administrator view.
+7. Select contract text, submit a redline, edit or remove it while it remains a private draft, and return the review turn.
+8. In the administrator browser, check the notification bell and Mailpit, reply or resolve the redline, then send the final revision for signature.
+9. Return to the external browser, open the signing ceremony, type or draw a signature, confirm intent, and sign.
+10. In the administrator workspace, follow the prominent **Countersign required** action and sign the exact same revision.
+11. Verify that both signature blocks appear, the agreement becomes executed, and the agreement-status API returns `satisfied: true`.
+
+An automated equivalent runs against the Docker services:
+
+```bash
+npm run e2e:local
+```
+
+The automated flow covers OAuth2 client credentials, multiple participants without external IDs, invitation delivery to Mailpit, one-time token exchange, entity onboarding, private draft editing, consolidated in-app and email notifications at review hand-back, owner resolution, document-bound counterparty and owner signatures, plus an integration-scoped handoff and execution-status verification.
+
+## Run application code directly
+
+This uses in-memory storage and a deterministic local development identity:
+
+```bash
+npm install
+npm run api:generate
+npm run dev
+```
+
+Copy `.env.example` to `.env` when you want to override defaults. The API uses PostgreSQL when `DATABASE_URL` is present and the in-memory repository otherwise.
+
+## API boundary
+
+The source contract lives at `packages/api-spec/tsp/main.tsp`.
+
+```bash
+npm run api:generate
+```
+
+Runtime schemas and lifecycle invariants live in `packages/domain`. Public handlers validate untrusted input with those schemas, and the browser validates responses again.
+
+For an embedded/data-room flow, first register an integration and have the host backend create a short-lived session. The `subject` is accepted only from the OAuth2-authenticated backend and is mapped to an internal person within that integration’s namespace:
+
+```http
+POST /v1/integration-sessions
+Authorization: Bearer <access-token>
+
+{
+  "integrationKey": "fiftysixty",
+  "subject": "user_01JXYZ",
+  "email": "visitor@example.com",
+  "templateKey": "mutual-nda",
+  "returnUrl": "https://fiftysixty.com/projects"
+}
+```
+
+After execution, the host can gate its data room with:
+
+```http
+GET /v1/integration-status?integrationKey=fiftysixty&subject=user_01JXYZ&templateKey=mutual-nda&minimumVersion=1
+Authorization: Bearer <access-token>
+```
+
+## Verification
+
+```bash
+npm run check
+npm test
+npm run build
+docker compose config
+# or: docker-compose config
+```
+
+## Next production milestones
+
+1. Add a signing-provider interface and a self-hosted PAdES-capable provider.
+2. Persist immutable revision and audit-event tables rather than aggregate snapshots alone.
+3. Add party-private review drafts and optional shared-OIDC/account-linking user experiences.
+4. Add webhook outbox persistence, retries, replay, and delivery inspection.
+5. Store original, rendered, and executed artifacts in the configured S3-compatible store.
+6. Add scoped client administration and enforce scopes per route.
+7. Add PDF rendering, malware scanning, retention controls, and backups.
+
+## License
+
+No license has been selected yet. Choose the server and SDK licensing strategy before accepting external contributions.

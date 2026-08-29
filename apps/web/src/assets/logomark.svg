@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 90 90" role="img" aria-label="ByteCrunch logomark">
+  <rect width="90" height="90" fill="none"></rect>
+  <g transform="translate(2,2)">
+    <rect x="0" y="0" width="20" height="20" fill="#1a1a1a" stroke="#4a4a4a" stroke-width="0.5"></rect>
+    <rect x="22" y="0" width="20" height="20" fill="#ed650f" stroke="#4a4a4a" stroke-width="0.5"></rect>
+    <rect x="44" y="0" width="20" height="20" fill="#1a1a1a" stroke="#4a4a4a" stroke-width="0.5"></rect>
+    <rect x="66" y="0" width="20" height="20" fill="#1a1a1a" stroke="#4a4a4a" stroke-width="0.5"></rect>
+    <rect x="0" y="22" width="20" height="20" fill="#1a1a1a" stroke="#4a4a4a" stroke-width="0.5"></rect>
+    <rect x="22" y="22" width="20" height="20" fill="#1a1a1a" stroke="#4a4a4a" stroke-width="0.5"></rect>
+    <rect x="44" y="22" width="20" height="20" fill="#ed650f" stroke="#4a4a4a" stroke-width="0.5"></rect>
+    <rect x="66" y="22" width="20" height="20" fill="#1a1a1a" stroke="#4a4a4a" stroke-width="0.5"></rect>
+    <rect x="0" y="44" width="20" height="20" fill="#1a1a1a" stroke="#4a4a4a" stroke-width="0.5"></rect>
+    <rect x="22" y="44" width="20" height="20" fill="#05a9ef" stroke="#4a4a4a" stroke-width="0.5"></rect>
+    <rect x="44" y="44" width="20" height="20" fill="#1a1a1a" stroke="#4a4a4a" stroke-width="0.5"></rect>
+    <rect x="66" y="44" width="20" height="20" fill="#1a1a1a" stroke="#4a4a4a" stroke-width="0.5"></rect>
+    <rect x="0" y="66" width="20" height="20" fill="#1a1a1a" stroke="#4a4a4a" stroke-width="0.5"></rect>
+    <rect x="22" y="66" width="20" height="20" fill="#1a1a1a" stroke="#4a4a4a" stroke-width="0.5"></rect>
+    <rect x="44" y="66" width="20" height="20" fill="#05a9ef" stroke="#4a4a4a" stroke-width="0.5"></rect>
+    <rect x="66" y="66" width="20" height="20" fill="#05a9ef" stroke="#4a4a4a" stroke-width="0.5"></rect>
+  </g>
+</svg>

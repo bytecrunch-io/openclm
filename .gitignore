@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.idea/
+*.tsbuildinfo
+.env
+.env.local
+coverage/
+*.log
+.DS_Store
+packages/api-spec/generated/@typespec/

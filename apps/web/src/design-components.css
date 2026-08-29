@@ -1,0 +1,184 @@
+/* ============================================================
+   ByteCrunch — Core component styles
+   Class-based so both React components and static markup share them.
+   ============================================================ */
+
+/* ---- Button ---- */
+.bc-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-3);
+    font-family: var(--font-sans);
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-medium);
+    letter-spacing: var(--tracking-wide);
+    line-height: 1;
+    border: 1px solid transparent;
+    border-radius: var(--radius-0);
+    padding: 0 var(--space-8);
+    height: 52px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background var(--dur-fast) var(--ease-standard),
+        color var(--dur-fast) var(--ease-standard),
+        border-color var(--dur-fast) var(--ease-standard),
+        filter var(--dur-fast) var(--ease-standard),
+        transform var(--dur-fast) var(--ease-standard);
+}
+.bc-btn:active { transform: translateY(1px); }
+.bc-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+.bc-btn svg { width: 16px; height: 16px; flex: none; }
+.bc-btn .bc-btn-arrow { transition: transform var(--dur-base) var(--ease-out); }
+.bc-btn:hover .bc-btn-arrow { transform: translateX(4px); }
+
+/* sizes */
+.bc-btn--sm { height: 40px; padding: 0 var(--space-5); font-size: var(--fs-xs); }
+.bc-btn--lg { height: 60px; padding: 0 var(--space-10); font-size: var(--fs-body); }
+
+/* variants */
+.bc-btn--primary { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.bc-btn--primary:hover:not(:disabled) { filter: brightness(0.88); }
+
+.bc-btn--accent { background: var(--bc-orange); color: #fff; border-color: var(--bc-orange); }
+.bc-btn--accent:hover:not(:disabled) { background: var(--bc-orange-600); border-color: var(--bc-orange-600); }
+
+.bc-btn--secondary { background: transparent; color: var(--fg); border-color: var(--border-2); }
+.bc-btn--secondary:hover:not(:disabled) { background: var(--surface-hover); border-color: var(--fg); }
+
+.bc-btn--ghost { background: transparent; color: var(--fg); border-color: transparent; }
+.bc-btn--ghost:hover:not(:disabled) { background: var(--surface-hover); }
+
+.bc-btn--link {
+    background: transparent; color: var(--fg); border: none; padding: 0; height: auto;
+    text-decoration: underline; text-underline-offset: 4px; letter-spacing: var(--tracking-wide);
+}
+.bc-btn--link:hover:not(:disabled) { text-decoration: none; }
+.bc-btn--link:active { transform: none; }
+
+/* ---- IconButton ---- */
+.bc-iconbtn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 40px; height: 40px; padding: 0;
+    color: var(--fg); background: transparent;
+    border: 1px solid transparent; border-radius: var(--radius-sm); cursor: pointer;
+    transition: background var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard);
+}
+.bc-iconbtn:hover:not(:disabled) { background: var(--surface-hover); }
+.bc-iconbtn--bordered { border-color: var(--border-2); }
+.bc-iconbtn:disabled { opacity: 0.4; cursor: not-allowed; }
+.bc-iconbtn svg { width: 18px; height: 18px; }
+
+/* ---- Eyebrow ---- */
+.bc-eyebrow-label {
+    font-family: var(--font-mono);
+    font-size: var(--fs-xs);
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-eyebrow);
+    color: var(--text-3);
+    display: inline-flex; align-items: center; gap: var(--space-2);
+}
+.bc-eyebrow-label--orange { color: var(--bc-orange); }
+.bc-eyebrow-label--blue { color: var(--bc-blue); }
+
+/* ---- Badge ---- */
+.bc-badge {
+    display: inline-flex; align-items: center; gap: var(--space-2);
+    font-family: var(--font-mono); font-size: var(--fs-2xs); font-weight: var(--fw-medium);
+    text-transform: uppercase; letter-spacing: var(--tracking-wide);
+    padding: 4px 8px; border: 1px solid var(--border-2); border-radius: var(--radius-0);
+    color: var(--text-2); background: transparent; line-height: 1;
+}
+.bc-badge--solid { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.bc-badge--orange { color: var(--bc-orange); border-color: color-mix(in oklab, var(--bc-orange) 50%, transparent); }
+.bc-badge--blue { color: var(--bc-blue); border-color: color-mix(in oklab, var(--bc-blue) 50%, transparent); }
+.bc-badge--success { color: var(--bc-success); border-color: color-mix(in oklab, var(--bc-success) 50%, transparent); }
+.bc-badge--danger { color: var(--bc-danger); border-color: color-mix(in oklab, var(--bc-danger) 50%, transparent); }
+.bc-badge__dot { width: 6px; height: 6px; border-radius: var(--radius-pill); background: currentColor; }
+
+/* ---- Tag (removable chip) ---- */
+.bc-tag {
+    display: inline-flex; align-items: center; gap: var(--space-2);
+    font-family: var(--font-mono); font-size: var(--fs-xs);
+    padding: 6px 10px; border: 1px solid var(--border-1); background: var(--surface-2);
+    color: var(--text-2); border-radius: var(--radius-0); line-height: 1;
+}
+.bc-tag__x { display: inline-flex; cursor: pointer; opacity: 0.6; }
+.bc-tag__x:hover { opacity: 1; }
+.bc-tag__x svg { width: 12px; height: 12px; }
+
+/* ---- Card ---- */
+.bc-card {
+    background: var(--surface-1);
+    border: 1px solid var(--border-1);
+    border-radius: var(--radius-0);
+    transition: border-color var(--dur-base) var(--ease-standard), background var(--dur-base) var(--ease-standard);
+}
+.bc-card--padded { padding: var(--space-8); }
+.bc-card--interactive { cursor: pointer; }
+.bc-card--interactive:hover { border-color: var(--border-2); background: var(--surface-2); }
+.bc-card--raised { background: var(--surface-2); }
+
+/* ---- Input & Textarea ---- */
+.bc-field { display: grid; gap: var(--space-2); }
+.bc-label { font-family: var(--font-mono); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: var(--tracking-wide); color: var(--text-3); }
+.bc-input, .bc-textarea, .bc-select {
+    font-family: var(--font-sans); font-size: var(--fs-body); color: var(--text-1);
+    background: var(--surface-2); border: 1px solid var(--border-1); border-radius: var(--radius-0);
+    padding: 0 var(--space-4); height: 52px; width: 100%;
+    transition: border-color var(--dur-fast) var(--ease-standard), background var(--dur-fast) var(--ease-standard);
+}
+.bc-textarea { height: auto; min-height: 120px; padding: var(--space-3) var(--space-4); resize: vertical; line-height: var(--lh-normal); }
+.bc-input::placeholder, .bc-textarea::placeholder { color: var(--text-3); }
+.bc-input:focus, .bc-textarea:focus, .bc-select:focus { outline: none; border-color: var(--bc-blue); background: var(--surface-3); }
+.bc-input:disabled, .bc-textarea:disabled { opacity: 0.5; cursor: not-allowed; }
+.bc-input--invalid, .bc-textarea--invalid { border-color: var(--bc-danger); }
+.bc-hint { font-size: var(--fs-xs); color: var(--text-3); }
+.bc-hint--error { color: var(--bc-danger); }
+.bc-select { appearance: none; cursor: pointer;
+    background-image: linear-gradient(45deg, transparent 50%, var(--text-3) 50%), linear-gradient(135deg, var(--text-3) 50%, transparent 50%);
+    background-position: calc(100% - 18px) center, calc(100% - 13px) center; background-size: 5px 5px, 5px 5px; background-repeat: no-repeat;
+    padding-right: var(--space-10); }
+
+/* ---- Switch ---- */
+.bc-switch { position: relative; display: inline-flex; width: 44px; height: 24px; cursor: pointer; flex: none; }
+.bc-switch input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+.bc-switch__track { position: absolute; inset: 0; background: var(--surface-3); border: 1px solid var(--border-2); border-radius: var(--radius-pill); transition: background var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard); }
+.bc-switch__thumb { position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; background: var(--text-2); border-radius: var(--radius-pill); transition: transform var(--dur-base) var(--ease-out), background var(--dur-fast) var(--ease-standard); }
+.bc-switch input:checked + .bc-switch__track { background: var(--bc-orange); border-color: var(--bc-orange); }
+.bc-switch input:checked + .bc-switch__track .bc-switch__thumb { transform: translateX(20px); background: #fff; }
+.bc-switch input:focus-visible + .bc-switch__track { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+
+/* ---- Avatar ---- */
+.bc-avatar {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 40px; height: 40px; border-radius: var(--radius-pill);
+    background: var(--surface-3); color: var(--text-1);
+    font-family: var(--font-mono); font-size: var(--fs-sm); font-weight: var(--fw-medium);
+    overflow: hidden; flex: none; border: 1px solid var(--border-1);
+}
+.bc-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.bc-avatar--sm { width: 28px; height: 28px; font-size: var(--fs-xs); }
+.bc-avatar--lg { width: 56px; height: 56px; font-size: var(--fs-body); }
+.bc-avatar--square { border-radius: var(--radius-0); }
+
+/* ---- Tabs ---- */
+.bc-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border-1); }
+.bc-tab {
+    font-family: var(--font-mono); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: var(--tracking-wide);
+    color: var(--text-3); background: transparent; border: none; cursor: pointer;
+    padding: var(--space-4) var(--space-5); margin-bottom: -1px; border-bottom: 2px solid transparent;
+    transition: color var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard);
+}
+.bc-tab:hover { color: var(--text-2); }
+.bc-tab--active { color: var(--text-1); border-bottom-color: var(--bc-orange); }
+
+/* ---- ServiceCard (signature numbered split card) ---- */
+.bc-service { display: grid; grid-template-columns: 2fr 3fr; border: 1px solid var(--border-1); }
+.bc-service__head { padding: var(--space-10); border-right: 1px solid var(--border-1); display: grid; gap: var(--space-6); align-content: start; }
+.bc-service__num { font-family: var(--font-mono); font-size: var(--fs-xs); letter-spacing: var(--tracking-eyebrow); color: var(--text-3); }
+.bc-service__body { padding: var(--space-10); }
+.bc-service__grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-6) var(--space-8); }
+.bc-service__item { font-size: var(--fs-sm); color: var(--text-2); }
+.bc-service__item .dash { color: var(--bc-orange); display: block; margin-bottom: var(--space-2); }
+@media (max-width: 640px) { .bc-service { grid-template-columns: 1fr; } .bc-service__head { border-right: none; border-bottom: 1px solid var(--border-1); } .bc-service__grid { grid-template-columns: 1fr; } }
