@@ -60,7 +60,7 @@ Optional organisation SSO, credential recovery/revocation history, and recent-au
 
 ## Roles and permissions
 
-Initial role bundles are administrator, template manager, contract manager, signatory, and viewer. Runtime permissions are explicit: entity/member management, template read/write, agreement read/write, and agreement signing. Entity-scoped route families enforce these membership permissions, and administrators can invite members and assign multiple bundles. Custom roles, invitation revoke/resend controls, recent-authentication policy, and finer resource-level authorization remain future milestones.
+Initial role bundles are administrator, template manager, contract manager, signatory, and viewer. Runtime permissions are explicit: entity/member management, template read/write, agreement read/write, and agreement signing. Entity-scoped route families enforce these membership permissions, and administrators can invite members and assign multiple bundles. A staff signature additionally requires the requested participant to be the agreement creator and to be linked to the authenticated account; entity-level signing permission cannot be used to sign as another participant. Custom roles, invitation revoke/resend controls, recent-authentication policy, and broader resource-level authorization coverage remain future milestones.
 
 ## Signing assurance
 

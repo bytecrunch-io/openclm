@@ -738,16 +738,18 @@ export function createApp(repository: Repository): Hono {
   app.post('/v1/agreements/:agreementId/sign', async (context) => {
     if (config.SIGNING_MODE === 'disabled') return context.json({ error: 'signing_unavailable', message: 'Electronic signing is not configured for this deployment.' }, 503);
     const input = SignAgreementSchema.parse(await context.req.json());
-    const agreement = await requiredAgreement(repository, currentUser(context).tenantId, context.req.param('agreementId'));
+    const user = currentUser(context);
+    const agreement = await requiredAgreement(repository, user.tenantId, context.req.param('agreementId'));
     if (!['out_for_signature', 'partially_signed'].includes(agreement.status)) throw new Error('This agreement is not open for signature.');
-    const participant = agreement.participants.find((item) => (input.participantId ? item.id === input.participantId : item.externalSubjectId === input.externalSubjectId) && item.role === 'signatory');
+    const participant = agreement.participants.find((item) => item.id === input.participantId && item.role === 'signatory');
     if (!participant) throw new Error('The subject is not a signatory on this agreement.');
     if (agreement.createdByParticipantId && participant.id !== agreement.createdByParticipantId) throw new Error('Only the agreement creator may sign from the owner workspace.');
+    if (participant.personId !== user.id) throw new Error('You may only sign for the participant record linked to your account.');
     if (participant.status === 'signed') throw new Error('This participant has already signed.');
     await ensureSigningSnapshot(repository, agreement);
     participant.status = 'signed';
     participant.signedAt = isoNow();
-    participant.signature = await signingProvider().sign({ agreement, participant, ...(input.signature ? { signature: input.signature } : {}), authenticationMethod: currentUser(context).authProvider === 'oidc' ? 'oidc' : 'development', signedAt: participant.signedAt });
+    participant.signature = await signingProvider().sign({ agreement, participant, ...(input.signature ? { signature: input.signature } : {}), authenticationMethod: user.authProvider === 'oidc' ? 'oidc' : 'development', signedAt: participant.signedAt });
     agreement.updatedAt = isoNow();
     if (isExecutionComplete(agreement)) {
       transition(agreement, 'executed');

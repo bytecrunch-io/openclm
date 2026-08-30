@@ -3547,11 +3547,10 @@ components:
     SignAgreement:
       type: object
       required:
+        - participantId
         - intentConfirmed
       properties:
         participantId:
-          type: string
-        externalSubjectId:
           type: string
         intentConfirmed:
           type: boolean

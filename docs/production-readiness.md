@@ -14,6 +14,7 @@ Bytecrunch Contracts now has a production-oriented application boundary, but it 
 - Webhook deliveries use a persistent outbox, exponential retry, delivery IDs, response/error history, administrative inspection, and manual replay.
 - Production webhook registration and delivery require HTTPS and reject hostnames or resolved addresses that point at local/private networks. Production infrastructure should additionally restrict API egress at the network layer.
 - Integration condition evaluation is scoped by customer entity, integration, and opaque subject. Unlinked subjects return unmet conditions without exposing agreement data.
+- Staff signing is bound to the authenticated account's own creator-participant record; external subject identifiers cannot be used at the staff signing boundary.
 
 ## Release gates still open
 

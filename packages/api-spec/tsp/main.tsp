@@ -245,8 +245,7 @@ model ResolveSuggestion {
 }
 
 model SignAgreement {
-  participantId?: string;
-  externalSubjectId?: string;
+  participantId: string;
   intentConfirmed: true;
   signature?: SignatureInput;
 }

@@ -167,26 +167,35 @@ describe('contracts API vertical slice', () => {
     const replayed = await app.request(`/v1/webhook-deliveries/${deliveries[0]!.id}/replay`, { method: 'POST' }); expect(replayed.status).toBe(200); expect(await replayed.json()).toMatchObject({ status: 'pending', lastError: null });
   });
 
-  it('creates, reviews, signs, and verifies an agreement', async () => {
-    const app = await testApp();
+  it('requires the staff signer participant ID instead of an external subject ID', async () => {
+    const repository = new MemoryRepository(); await repository.init(); const app = createApp(repository);
     const createResponse = await app.request('/v1/agreements', {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        title: 'Example NDA', templateKey: 'mutual-nda', externalId: 'deal_123',
-        participants: [{ externalSubjectId: 'user_123', email: 'signer@example.com', name: 'Signer', role: 'signatory', required: true }],
-        metadata: { resourceId: 'room_123' },
+        title: 'Example NDA', templateKey: 'mutual-nda', participants: [], metadata: {},
+        parties: [{ role: 'counterparty', entity: {}, minimumSignatures: 1, participants: [{ email: 'signer@example.com', name: 'Signer', role: 'signatory', required: true }] }],
       }),
     });
     expect(createResponse.status).toBe(201);
-    const agreement = await createResponse.json() as { id: string };
+    const agreement = await createResponse.json() as { id: string; createdByParticipantId: string };
 
-    expect((await app.request(`/v1/agreements/${agreement.id}/send-for-signature`, { method: 'POST' })).status).toBe(200);
-    const signed = await app.request(`/v1/agreements/${agreement.id}/sign`, {
+    const signingAgreement = (await repository.getAgreement('bytecrunch', agreement.id))!; signingAgreement.status = 'out_for_signature'; await repository.saveAgreement(signingAgreement);
+    const legacySubject = await app.request(`/v1/agreements/${agreement.id}/sign`, {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ externalSubjectId: 'user_123', intentConfirmed: true }),
     });
-    expect((await signed.json() as { status: string }).status).toBe('executed');
+    expect(legacySubject.status).toBe(400);
+    const signed = await app.request(`/v1/agreements/${agreement.id}/sign`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ participantId: agreement.createdByParticipantId, intentConfirmed: true }) });
+    expect(await signed.json()).toMatchObject({ status: 'partially_signed' });
+  });
 
+  it('refuses to sign a participant record linked to another account', async () => {
+    const repository = new MemoryRepository(); await repository.init(); const app = createApp(repository);
+    const created = await (await app.request('/v1/agreements', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: 'Account-bound NDA', templateKey: 'mutual-nda', participants: [], metadata: {}, parties: [{ role: 'counterparty', entity: {}, minimumSignatures: 1, participants: [{ email: 'bound@example.com', role: 'signatory', required: true }] }] }) })).json() as { id: string; createdByParticipantId: string };
+    const stored = (await repository.getAgreement('bytecrunch', created.id))!; stored.status = 'out_for_signature'; stored.participants.find((item) => item.id === created.createdByParticipantId)!.personId = 'acct_another_user'; await repository.saveAgreement(stored);
+    const response = await app.request(`/v1/agreements/${created.id}/sign`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ participantId: created.createdByParticipantId, intentConfirmed: true }) });
+    expect(response.status).toBe(409); expect(await response.json()).toMatchObject({ message: expect.stringContaining('linked to your account') });
+    expect(await repository.getAgreement('bytecrunch', created.id)).toMatchObject({ status: 'out_for_signature' });
   });
 
   it('accepts an attributed redline into a new revision', async () => {

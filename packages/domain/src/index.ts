@@ -424,11 +424,10 @@ export const AgreementArtifactSchema = z.object({
 export type AgreementArtifact = z.infer<typeof AgreementArtifactSchema>;
 
 export const SignAgreementSchema = z.object({
-  participantId: z.string().min(1).optional(),
-  externalSubjectId: z.string().min(1).optional(),
+  participantId: z.string().min(1),
   intentConfirmed: z.literal(true),
   signature: SignatureInputSchema.optional(),
-}).refine((value) => Boolean(value.participantId || value.externalSubjectId), { message: 'participantId is required.' });
+});
 export const ExternalSignAgreementSchema = z.object({ intentConfirmed: z.literal(true), signature: SignatureInputSchema.optional() });
 
 export const OnboardParticipantSchema = z.object({
