@@ -13,7 +13,7 @@ global account -> customer-entity membership -> TypeSpec API -> Zod validation -
                      |                        |                      |
                  PostgreSQL             object storage        signing provider
                      |
-                     +-> best-effort signed webhooks -> host system
+                     +-> durable signed webhook outbox -> host system
 ```
 
 ## Boundary rules
@@ -52,9 +52,9 @@ The current `sign` operation is a development witness used to exercise lifecycle
 
 ## Persistence roadmap
 
-The initial PostgreSQL repository stores validated aggregate snapshots in JSONB. This keeps the first vertical slice easy to evolve. Before high-volume production use, extract participants, immutable revisions, audit events, webhook delivery attempts, and signing envelopes into relational append-only tables.
+The initial PostgreSQL repository stores validated aggregate snapshots in JSONB. Lifecycle audit events and webhook delivery attempts now use separate append-only/persistent tables. Before high-volume production use, extract participants, immutable revisions, signing evidence, and signing envelopes into relational append-only tables.
 
-Webhook delivery is currently best-effort. A transactional outbox, retry scheduler, delivery history, and manual replay are required before production use.
+Webhook delivery has a persistent retry queue, delivery history, SSRF-oriented production URL checks, and manual replay. Agreement mutation, audit append, and webhook enqueue are not yet one database transaction; close that atomicity gap and add dead-letter operations before production use.
 
 ## Codebase boundaries
 

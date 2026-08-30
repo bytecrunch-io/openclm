@@ -20,6 +20,8 @@ import {
   RecipientLoginChallengeSchema,
   PasskeyCredentialSchema,
   PasskeyChallengeSchema,
+  WebhookDeliverySchema,
+  AgreementAuditEventSchema,
   type Agreement,
   type CreateAgreement,
   type CreateTemplate,
@@ -41,6 +43,8 @@ import {
   type RecipientLoginChallenge,
   type PasskeyCredential,
   type PasskeyChallenge,
+  type WebhookDelivery,
+  type AgreementAuditEvent,
 } from '@bytecrunch/contracts-domain';
 
 export interface WebhookEndpoint {
@@ -62,6 +66,13 @@ export interface Repository {
   saveAgreement(agreement: Agreement): Promise<void>;
   listWebhooks(tenantId: string): Promise<WebhookEndpoint[]>;
   createWebhook(tenantId: string, url: string, events: string[]): Promise<WebhookEndpoint>;
+  createWebhookDeliveries(deliveries: WebhookDelivery[]): Promise<void>;
+  listWebhookDeliveries(tenantId: string, limit: number): Promise<WebhookDelivery[]>;
+  getWebhookDelivery(tenantId: string, id: string): Promise<WebhookDelivery | undefined>;
+  listPendingWebhookDeliveries(limit: number): Promise<WebhookDelivery[]>;
+  saveWebhookDelivery(delivery: WebhookDelivery): Promise<void>;
+  appendAgreementAuditEvent(event: AgreementAuditEvent): Promise<void>;
+  listAgreementAuditEvents(tenantId: string, agreementId: string): Promise<AgreementAuditEvent[]>;
   createInvitation(invitation: Invitation): Promise<void>;
   getInvitationByTokenHash(tokenHash: string): Promise<Invitation | undefined>;
   getInvitation(id: string): Promise<Invitation | undefined>;
@@ -126,6 +137,8 @@ export class MemoryRepository implements Repository {
   protected templates: Template[] = [];
   protected agreements: Agreement[] = [];
   protected webhooks: WebhookEndpoint[] = [];
+  protected webhookDeliveries: WebhookDelivery[] = [];
+  protected agreementAuditEvents: AgreementAuditEvent[] = [];
   protected invitations: Invitation[] = [];
   protected people: Person[] = [];
   protected integrations: Integration[] = [];
@@ -237,6 +250,38 @@ export class MemoryRepository implements Repository {
     return structuredClone(endpoint);
   }
 
+  async createWebhookDeliveries(deliveries: WebhookDelivery[]): Promise<void> {
+    this.webhookDeliveries.push(...deliveries.map((item) => WebhookDeliverySchema.parse(item)));
+  }
+
+  async listWebhookDeliveries(tenantId: string, limit: number): Promise<WebhookDelivery[]> {
+    return this.webhookDeliveries.filter((item) => item.tenantId === tenantId).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, limit).map((item) => structuredClone(item));
+  }
+
+  async getWebhookDelivery(tenantId: string, id: string): Promise<WebhookDelivery | undefined> {
+    const value = this.webhookDeliveries.find((item) => item.tenantId === tenantId && item.id === id);
+    return value ? structuredClone(value) : undefined;
+  }
+
+  async listPendingWebhookDeliveries(limit: number): Promise<WebhookDelivery[]> {
+    return this.webhookDeliveries.filter((item) => ['pending', 'failed', 'sending'].includes(item.status) && item.nextAttemptAt <= now()).sort((a, b) => a.nextAttemptAt.localeCompare(b.nextAttemptAt)).slice(0, limit).map((item) => structuredClone(item));
+  }
+
+  async saveWebhookDelivery(delivery: WebhookDelivery): Promise<void> {
+    const index = this.webhookDeliveries.findIndex((item) => item.id === delivery.id);
+    if (index < 0) throw new Error('Webhook delivery not found.');
+    this.webhookDeliveries[index] = WebhookDeliverySchema.parse(delivery);
+  }
+
+  async appendAgreementAuditEvent(event: AgreementAuditEvent): Promise<void> {
+    if (this.agreementAuditEvents.some((item) => item.id === event.id)) return;
+    this.agreementAuditEvents.push(AgreementAuditEventSchema.parse(event));
+  }
+
+  async listAgreementAuditEvents(tenantId: string, agreementId: string): Promise<AgreementAuditEvent[]> {
+    return this.agreementAuditEvents.filter((item) => item.tenantId === tenantId && item.agreementId === agreementId).sort((a, b) => a.createdAt.localeCompare(b.createdAt)).map((item) => structuredClone(item));
+  }
+
   async createInvitation(invitation: Invitation): Promise<void> { this.invitations.push(InvitationSchema.parse(invitation)); }
   async getInvitationByTokenHash(tokenHash: string): Promise<Invitation | undefined> { const value = this.invitations.find((item) => item.tokenHash === tokenHash); return value ? structuredClone(value) : undefined; }
   async getInvitation(id: string): Promise<Invitation | undefined> { const value = this.invitations.find((item) => item.id === id); return value ? structuredClone(value) : undefined; }
@@ -333,6 +378,18 @@ export class PostgresRepository extends MemoryRepository {
       CREATE TABLE IF NOT EXISTS webhook_endpoints (
         id text PRIMARY KEY, tenant_id text NOT NULL, payload jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
       );
+      CREATE TABLE IF NOT EXISTS webhook_deliveries (
+        id text PRIMARY KEY, tenant_id text NOT NULL, endpoint_id text NOT NULL, event_id text NOT NULL,
+        status text NOT NULL, next_attempt_at timestamptz NOT NULL, payload jsonb NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now(), UNIQUE (endpoint_id, event_id)
+      );
+      CREATE INDEX IF NOT EXISTS webhook_deliveries_pending_idx ON webhook_deliveries (status, next_attempt_at);
+      CREATE INDEX IF NOT EXISTS webhook_deliveries_tenant_idx ON webhook_deliveries (tenant_id, created_at DESC);
+      CREATE TABLE IF NOT EXISTS agreement_audit_events (
+        id text PRIMARY KEY, tenant_id text NOT NULL, agreement_id text NOT NULL, event_type text NOT NULL,
+        payload jsonb NOT NULL, created_at timestamptz NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS agreement_audit_events_agreement_idx ON agreement_audit_events (tenant_id, agreement_id, created_at);
       CREATE TABLE IF NOT EXISTS invitations (
         id text PRIMARY KEY, tenant_id text NOT NULL, agreement_id text NOT NULL,
         token_hash text UNIQUE NOT NULL, payload jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
@@ -452,6 +509,54 @@ export class PostgresRepository extends MemoryRepository {
     const endpoint = { id: `wh_${randomUUID()}`, tenantId, url, events, createdAt: now() };
     await this.pool.query('INSERT INTO webhook_endpoints (id, tenant_id, payload) VALUES ($1, $2, $3)', [endpoint.id, tenantId, JSON.stringify(endpoint)]);
     return endpoint;
+  }
+
+  override async createWebhookDeliveries(deliveries: WebhookDelivery[]): Promise<void> {
+    if (deliveries.length === 0) return;
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      for (const delivery of deliveries) {
+        WebhookDeliverySchema.parse(delivery);
+        await client.query('INSERT INTO webhook_deliveries (id,tenant_id,endpoint_id,event_id,status,next_attempt_at,payload) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (endpoint_id,event_id) DO NOTHING', [delivery.id, delivery.tenantId, delivery.endpointId, delivery.eventId, delivery.status, delivery.nextAttemptAt, JSON.stringify(delivery)]);
+      }
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  override async listWebhookDeliveries(tenantId: string, limit: number): Promise<WebhookDelivery[]> {
+    const result = await this.pool.query('SELECT payload FROM webhook_deliveries WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT $2', [tenantId, limit]);
+    return result.rows.map((row) => WebhookDeliverySchema.parse(row.payload));
+  }
+
+  override async getWebhookDelivery(tenantId: string, id: string): Promise<WebhookDelivery | undefined> {
+    const result = await this.pool.query('SELECT payload FROM webhook_deliveries WHERE tenant_id=$1 AND id=$2', [tenantId, id]);
+    return result.rows[0] ? WebhookDeliverySchema.parse(result.rows[0].payload) : undefined;
+  }
+
+  override async listPendingWebhookDeliveries(limit: number): Promise<WebhookDelivery[]> {
+    const result = await this.pool.query("SELECT payload FROM webhook_deliveries WHERE status IN ('pending','failed','sending') AND next_attempt_at <= now() ORDER BY next_attempt_at LIMIT $1", [limit]);
+    return result.rows.map((row) => WebhookDeliverySchema.parse(row.payload));
+  }
+
+  override async saveWebhookDelivery(delivery: WebhookDelivery): Promise<void> {
+    WebhookDeliverySchema.parse(delivery);
+    await this.pool.query('UPDATE webhook_deliveries SET payload=$1,status=$2,next_attempt_at=$3 WHERE id=$4 AND tenant_id=$5', [JSON.stringify(delivery), delivery.status, delivery.nextAttemptAt, delivery.id, delivery.tenantId]);
+  }
+
+  override async appendAgreementAuditEvent(event: AgreementAuditEvent): Promise<void> {
+    AgreementAuditEventSchema.parse(event);
+    await this.pool.query('INSERT INTO agreement_audit_events (id,tenant_id,agreement_id,event_type,payload,created_at) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (id) DO NOTHING', [event.id, event.tenantId, event.agreementId, event.type, JSON.stringify(event), event.createdAt]);
+  }
+
+  override async listAgreementAuditEvents(tenantId: string, agreementId: string): Promise<AgreementAuditEvent[]> {
+    const result = await this.pool.query('SELECT payload FROM agreement_audit_events WHERE tenant_id=$1 AND agreement_id=$2 ORDER BY created_at', [tenantId, agreementId]);
+    return result.rows.map((row) => AgreementAuditEventSchema.parse(row.payload));
   }
 
   override async createInvitation(invitation: Invitation): Promise<void> {

@@ -56,6 +56,11 @@ model HealthResponse {
   storage: "memory" | "postgres";
 }
 
+model ReadinessResponse {
+  status: "ready" | "not_ready";
+  checks: { persistentStorage: boolean; oidc: boolean; productionSigning: boolean; };
+}
+
 model Template {
   id: string;
   key: string;
@@ -235,32 +240,43 @@ model SignAgreement {
   signature?: SignatureInput;
 }
 
-model AgreementRequirement {
+enum AgreementConditionKind {
+  subjectSigned: "subject_signed",
+  agreementExecuted: "agreement_executed",
+}
+
+model AgreementCondition {
+  kind: AgreementConditionKind;
   templateKey: string;
   minimumVersion?: int32;
 }
 
-model EvaluateAgreementStatus {
-  externalSubjectId: string;
-  requirements: AgreementRequirement[];
+model EvaluateConditions {
+  integrationKey: string;
+  subject: string;
+  conditions: AgreementCondition[];
   operator?: RequirementOperator;
 }
 
-model RequirementResult {
+model ConditionResult {
+  kind: AgreementConditionKind;
   templateKey: string;
   minimumVersion: int32;
-  satisfied: boolean;
+  met: boolean;
   status?: AgreementStatus;
   agreementId?: string;
   templateVersion?: int32;
+  signedAt?: utcDateTime | null;
   executedAt?: utcDateTime | null;
 }
 
-model EvaluationResult {
-  externalSubjectId: string;
-  satisfied: boolean;
+model ConditionEvaluation {
+  integrationKey: string;
+  subject: string;
+  met: boolean;
   operator: RequirementOperator;
-  requirements: RequirementResult[];
+  evaluatedAt: utcDateTime;
+  conditions: ConditionResult[];
 }
 
 model CreateWebhook {
@@ -272,6 +288,35 @@ model WebhookEndpoint {
   id: string;
   url: url;
   events: string[];
+  createdAt: utcDateTime;
+}
+
+model WebhookDelivery {
+  id: string;
+  tenantId: string;
+  endpointId: string;
+  eventId: string;
+  eventType: string;
+  url: url;
+  payload: string;
+  status: "pending" | "sending" | "delivered" | "failed";
+  attempts: int32;
+  nextAttemptAt: utcDateTime;
+  responseStatus: int32 | null;
+  lastError: string | null;
+  createdAt: utcDateTime;
+  deliveredAt: utcDateTime | null;
+}
+
+model AgreementAuditEvent {
+  id: string;
+  tenantId: string;
+  agreementId: string;
+  type: string;
+  revision: int32;
+  status: AgreementStatus;
+  contentSha256: string;
+  eventSha256: string;
   createdAt: utcDateTime;
 }
 
@@ -361,6 +406,7 @@ model ExternalView {
 @route("/health")
 interface HealthOperations {
   @get get(): HealthResponse;
+  @get @route("/ready") ready(): ReadinessResponse;
 }
 
 @route("/v1/me")
@@ -403,6 +449,9 @@ interface AgreementOperations {
 
   @get @route("/{agreementId}")
   get(...EntityContext, @path agreementId: string): Agreement | ErrorResponse;
+
+  @get @route("/{agreementId}/audit-events")
+  auditEvents(...EntityContext, @path agreementId: string): AgreementAuditEvent[] | ErrorResponse;
 
   @post @route("/{agreementId}/review")
   startReview(@path agreementId: string): Agreement | ErrorResponse;
@@ -474,10 +523,11 @@ interface IntegrationOperations {
 @useAuth(ContractsOAuth2)
 interface IntegrationSessionOperations { @post create(@body body: CreateIntegrationSession): IntegrationSessionResult | ErrorResponse; }
 
-@route("/v1/integration-status")
+@route("/v1/conditions")
 @useAuth(ContractsOAuth2)
-interface IntegrationStatusOperations {
-  @get get(@query integrationKey: string, @query subject: string, @query templateKey: string, @query minimumVersion?: int32): RequirementResult;
+interface ConditionOperations {
+  @post @route("/evaluate")
+  evaluate(@body body: EvaluateConditions): ConditionEvaluation | ErrorResponse;
 }
 
 @route("/v1/notifications")
@@ -488,24 +538,18 @@ interface NotificationOperations {
   @post @route("/read-all") readAll(): { updated: int32; };
 }
 
-@route("/v1/agreement-status")
-@useAuth(ContractsOAuth2)
-interface StatusOperations {
-  @get get(
-    @query externalSubjectId: string,
-    @query templateKey: string,
-    @query minimumVersion?: int32,
-  ): RequirementResult;
-
-  @post @route("/evaluate")
-  evaluate(@body body: EvaluateAgreementStatus): EvaluationResult | ErrorResponse;
-}
-
 @route("/v1/webhooks")
 @useAuth(ContractsOAuth2)
 interface WebhookOperations {
   @get list(): WebhookEndpoint[];
   @post create(@body body: CreateWebhook): WebhookEndpoint | ErrorResponse;
+}
+
+@route("/v1/webhook-deliveries")
+@useAuth(ContractsOAuth2)
+interface WebhookDeliveryOperations {
+  @get list(@query limit?: int32): WebhookDelivery[];
+  @post @route("/{deliveryId}/replay") replay(@path deliveryId: string): WebhookDelivery | ErrorResponse;
 }
 
 @route("/public")

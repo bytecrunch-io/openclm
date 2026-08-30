@@ -394,6 +394,22 @@ export const NotificationOutboxSchema = z.object({
 });
 export type NotificationOutbox = z.infer<typeof NotificationOutboxSchema>;
 
+export const WebhookDeliverySchema = z.object({
+  id: z.string().min(1), tenantId: z.string().min(1), endpointId: z.string().min(1),
+  eventId: z.string().min(1), eventType: z.string().min(1), url: z.string().url(), payload: z.string().min(1),
+  status: z.enum(['pending', 'sending', 'delivered', 'failed']), attempts: z.number().int().nonnegative(),
+  nextAttemptAt: z.string().datetime(), responseStatus: z.number().int().nullable(), lastError: z.string().nullable(),
+  createdAt: z.string().datetime(), deliveredAt: z.string().datetime().nullable(),
+});
+export type WebhookDelivery = z.infer<typeof WebhookDeliverySchema>;
+
+export const AgreementAuditEventSchema = z.object({
+  id: z.string().min(1), tenantId: z.string().min(1), agreementId: z.string().min(1), type: z.string().min(1),
+  revision: z.number().int().positive(), status: AgreementStatusSchema, contentSha256: z.string().length(64),
+  eventSha256: z.string().length(64), createdAt: z.string().datetime(),
+});
+export type AgreementAuditEvent = z.infer<typeof AgreementAuditEventSchema>;
+
 export const SignAgreementSchema = z.object({
   participantId: z.string().min(1).optional(),
   externalSubjectId: z.string().min(1).optional(),
@@ -438,17 +454,23 @@ export const InvitationSchema = z.object({
 });
 export type Invitation = z.infer<typeof InvitationSchema>;
 
-export const AgreementRequirementSchema = z.object({
+const AgreementRequirementSchema = z.object({
   templateKey: z.string().min(1),
   minimumVersion: z.number().int().positive().default(1),
 });
 
-export const EvaluateAgreementStatusSchema = z.object({
-  externalSubjectId: z.string().min(1),
-  requirements: z.array(AgreementRequirementSchema).min(1),
+export const AgreementConditionSchema = AgreementRequirementSchema.extend({
+  kind: z.enum(['subject_signed', 'agreement_executed']),
+});
+export type AgreementCondition = z.infer<typeof AgreementConditionSchema>;
+
+export const EvaluateConditionsSchema = z.object({
+  integrationKey: z.string().min(1).max(100),
+  subject: z.string().min(1).max(255),
+  conditions: z.array(AgreementConditionSchema).min(1).max(50),
   operator: z.enum(['all', 'any']).default('all'),
 });
-export type EvaluateAgreementStatus = z.infer<typeof EvaluateAgreementStatusSchema>;
+export type EvaluateConditions = z.infer<typeof EvaluateConditionsSchema>;
 
 export const CreateWebhookSchema = z.object({
   url: z.string().url(),
@@ -460,6 +482,7 @@ export const CreateWebhookSchema = z.object({
     'agreement.ready_for_signature',
     'agreement.partially_signed',
     'agreement.executed',
+    'agreement.signature_invalidated',
     'agreement.declined',
     'agreement.voided',
   ])).min(1),

@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createApp } from './app.js';
 import { MemoryRepository } from './repository.js';
 import { hashInvitationToken } from './external-auth.js';
+import { deliverWebhookOutbox } from './webhooks.js';
 
 async function testApp() {
   const repository = new MemoryRepository();
@@ -109,11 +110,11 @@ describe('contracts API vertical slice', () => {
     expect((await app.request('/v1/entity-member-invitations/accept', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token }) })).status).toBe(410);
   });
 
-  it('uses an integration-scoped identity link for a secure handoff and status lookup', async () => {
+  it('evaluates generic conditions through an integration-scoped identity link', async () => {
     const app = await testApp();
-    const integration = await app.request('/v1/integrations', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: 'fiftysixty', name: 'FiftySixty', mappingStrategy: 'host_asserted', allowedRedirectUris: ['https://fiftysixty.example/projects'], allowedOrigins: [] }) });
+    const integration = await app.request('/v1/integrations', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: 'customer-portal', name: 'Customer portal', mappingStrategy: 'host_asserted', allowedRedirectUris: ['https://portal.example/workflows'], allowedOrigins: [] }) });
     expect(integration.status).toBe(201);
-    const sessionResponse = await app.request('/v1/integration-sessions', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ integrationKey: 'fiftysixty', subject: 'fs-user-42', email: 'visitor@example.com', displayName: 'Visitor', templateKey: 'mutual-nda', returnUrl: 'https://fiftysixty.example/projects', metadata: { room: 'room-42' } }) });
+    const sessionResponse = await app.request('/v1/integration-sessions', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ integrationKey: 'customer-portal', subject: 'portal-user-42', email: 'visitor@example.com', displayName: 'Visitor', templateKey: 'mutual-nda', returnUrl: 'https://portal.example/workflows', metadata: { workflow: 'supplier-onboarding' } }) });
     expect(sessionResponse.status).toBe(201);
     const handoff = await sessionResponse.json() as { agreementId: string; handoffUrl: string };
     const token = new URL(handoff.handoffUrl).searchParams.get('integrationToken')!;
@@ -124,8 +125,22 @@ describe('contracts API vertical slice', () => {
     expect((await app.request(`/v1/agreements/${handoff.agreementId}/send-for-signature`, { method: 'POST' })).status).toBe(200);
     const signed = await app.request('/public/session/sign', { method: 'POST', headers: externalHeaders, body: JSON.stringify({ intentConfirmed: true }) });
     expect(await signed.json()).toMatchObject({ agreement: { status: 'executed' } });
-    const status = await app.request('/v1/integration-status?integrationKey=fiftysixty&subject=fs-user-42&templateKey=mutual-nda');
-    expect(await status.json()).toMatchObject({ satisfied: true, status: 'executed' });
+    const evaluation = await app.request('/v1/conditions/evaluate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ integrationKey: 'customer-portal', subject: 'portal-user-42', operator: 'all', conditions: [{ kind: 'subject_signed', templateKey: 'mutual-nda', minimumVersion: 1 }, { kind: 'agreement_executed', templateKey: 'mutual-nda', minimumVersion: 1 }] }) });
+    expect(await evaluation.json()).toMatchObject({ integrationKey: 'customer-portal', subject: 'portal-user-42', met: true, operator: 'all', conditions: [{ kind: 'subject_signed', met: true }, { kind: 'agreement_executed', met: true }] });
+    const unknown = await app.request('/v1/conditions/evaluate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ integrationKey: 'customer-portal', subject: 'unknown-subject', conditions: [{ kind: 'agreement_executed', templateKey: 'mutual-nda' }] }) }); expect(await unknown.json()).toMatchObject({ met: false, conditions: [{ met: false }] });
+    expect((await app.request('/v1/integration-status?integrationKey=customer-portal&subject=portal-user-42&templateKey=mutual-nda')).status).toBe(404);
+  });
+
+  it('persists webhook deliveries and allows a failed delivery to be replayed', async () => {
+    const repository = new MemoryRepository(); await repository.init(); const app = createApp(repository);
+    expect((await app.request('/v1/webhooks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url: 'https://events.example/contracts', events: ['agreement.created'] }) })).status).toBe(201);
+    expect((await app.request('/v1/agreements', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: 'Auditable NDA', templateKey: 'mutual-nda', participants: [], metadata: {}, parties: [{ role: 'counterparty', entity: {}, minimumSignatures: 1, participants: [{ email: 'audit@example.com', role: 'signatory', required: true }] }] }) })).status).toBe(201);
+    const deliveries = await repository.listWebhookDeliveries('bytecrunch', 10); expect(deliveries).toHaveLength(1); expect(deliveries[0]).toMatchObject({ eventType: 'agreement.created', status: 'pending', attempts: 0 });
+    const eventPayload = JSON.parse(deliveries[0]!.payload) as { data: { agreementId: string } }; const audit = await repository.listAgreementAuditEvents('bytecrunch', eventPayload.data.agreementId); expect(audit).toEqual([expect.objectContaining({ type: 'agreement.created', revision: 1, eventSha256: expect.stringMatching(/^[a-f0-9]{64}$/) })]);
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 204 })); expect(await deliverWebhookOutbox(repository)).toBe(1); expect(fetchMock).toHaveBeenCalledWith('https://events.example/contracts', expect.objectContaining({ headers: expect.objectContaining({ 'x-bytecrunch-delivery': deliveries[0]!.id, 'x-bytecrunch-signature': expect.stringMatching(/^v1=[a-f0-9]{64}$/) }) })); fetchMock.mockRestore();
+    const delivered = (await repository.listWebhookDeliveries('bytecrunch', 10))[0]!; expect(delivered).toMatchObject({ status: 'delivered', attempts: 1, responseStatus: 204 });
+    delivered.status = 'failed'; delivered.lastError = 'Test failure'; await repository.saveWebhookDelivery(delivered);
+    const replayed = await app.request(`/v1/webhook-deliveries/${deliveries[0]!.id}/replay`, { method: 'POST' }); expect(replayed.status).toBe(200); expect(await replayed.json()).toMatchObject({ status: 'pending', lastError: null });
   });
 
   it('creates, reviews, signs, and verifies an agreement', async () => {
@@ -148,8 +163,6 @@ describe('contracts API vertical slice', () => {
     });
     expect((await signed.json() as { status: string }).status).toBe('executed');
 
-    const status = await app.request('/v1/agreement-status?externalSubjectId=user_123&templateKey=mutual-nda');
-    expect(await status.json()).toMatchObject({ satisfied: true, status: 'executed' });
   });
 
   it('accepts an attributed redline into a new revision', async () => {
@@ -264,8 +277,6 @@ describe('contracts API vertical slice', () => {
     const ownerSigned = await app.request(`/v1/agreements/${created.id}/sign`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ participantId: ownerAgreement.createdByParticipantId, intentConfirmed: true, signature: { method: 'typed', typedName: 'Local Admin', imageDataUrl: null } }) });
     expect(await ownerSigned.json()).toMatchObject({ status: 'executed', participants: expect.arrayContaining([expect.objectContaining({ id: ownerAgreement.createdByParticipantId, signature: expect.objectContaining({ method: 'typed', signedContentSha256: expect.any(String) }) })]) });
 
-    const status = await app.request('/v1/agreement-status?externalSubjectId=person_alice&templateKey=mutual-nda');
-    expect(await status.json()).toMatchObject({ satisfied: true, status: 'executed' });
   });
 
   it('turns an inline edit of an incoming redline into a counterproposal that the other party must decide', async () => {

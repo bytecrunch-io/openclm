@@ -4,7 +4,7 @@ import {
   CreateIntegrationSchema,
   CreateIntegrationSessionSchema,
   CreateWebhookSchema,
-  EvaluateAgreementStatusSchema,
+  EvaluateConditionsSchema,
   IdentityLinkSchema,
   IntegrationSessionSchema,
   type Agreement,
@@ -14,31 +14,31 @@ import { currentUser } from "../auth.js";
 import { config } from "../config.js";
 import { createInvitationToken } from "../external-auth.js";
 import type { Repository } from "../repository.js";
+import { assertWebhookUrlAllowed, replayWebhookDelivery } from "../webhooks.js";
 
-type RequirementResult = {
-  satisfied: boolean;
-  agreementId?: string;
-  status?: AgreementStatus;
+type ConditionResult = {
+  kind: "subject_signed" | "agreement_executed";
   templateKey: string;
-  templateVersion?: number;
   minimumVersion: number;
+  met: boolean;
+  status?: AgreementStatus;
+  agreementId?: string;
+  templateVersion?: number;
+  signedAt?: string | null;
   executedAt?: string | null;
 };
 type PlatformRouteServices = {
   now: () => string;
   transition: (agreement: Agreement, status: AgreementStatus) => void;
-  requirementBySubject: (
-    agreements: Agreement[],
-    subject: string,
-    templateKey: string,
-    minimumVersion: number,
-  ) => RequirementResult;
-  requirementByPerson: (
+  conditionByPerson: (
     agreements: Agreement[],
     personId: string,
-    templateKey: string,
-    minimumVersion: number,
-  ) => RequirementResult;
+    condition: {
+      kind: "subject_signed" | "agreement_executed";
+      templateKey: string;
+      minimumVersion: number;
+    },
+  ) => ConditionResult;
 };
 
 export function registerPlatformRoutes(
@@ -235,98 +235,42 @@ export function registerPlatformRoutes(
     );
   });
 
-  app.get("/v1/integration-status", async (context) => {
+  app.post("/v1/conditions/evaluate", async (context) => {
     const user = currentUser(context);
-    const integrationKey = context.req.query("integrationKey");
-    const subject = context.req.query("subject");
-    const templateKey = context.req.query("templateKey");
-    const minimumVersion = Number(context.req.query("minimumVersion") ?? "1");
-    if (
-      !integrationKey ||
-      !subject ||
-      !templateKey ||
-      !Number.isInteger(minimumVersion) ||
-      minimumVersion < 1
-    )
-      return context.json(
-        {
-          error: "invalid_query",
-          message: "integrationKey, subject and templateKey are required.",
-        },
-        400,
-      );
+    const input = EvaluateConditionsSchema.parse(await context.req.json());
     const integration = await repository.findIntegration(
       user.tenantId,
-      integrationKey,
+      input.integrationKey,
     );
-    if (!integration)
-      return context.json({ satisfied: false, templateKey, minimumVersion });
+    if (!integration) {
+      return context.json(
+        { error: "integration_not_found", message: "Integration not found." },
+        404,
+      );
+    }
     const link = await repository.findIdentityLink(
       user.tenantId,
       integration.id,
-      subject,
+      input.subject,
     );
-    if (!link)
-      return context.json({ satisfied: false, templateKey, minimumVersion });
-    return context.json(
-      services.requirementByPerson(
-        await repository.listAgreements(user.tenantId),
-        link.personId,
-        templateKey,
-        minimumVersion,
-      ),
-    );
-  });
-
-  app.get("/v1/agreement-status", async (context) => {
-    const externalSubjectId = context.req.query("externalSubjectId");
-    const templateKey = context.req.query("templateKey");
-    const minimumVersion = Number(context.req.query("minimumVersion") ?? "1");
-    if (
-      !externalSubjectId ||
-      !templateKey ||
-      !Number.isInteger(minimumVersion) ||
-      minimumVersion < 1
-    )
-      return context.json(
-        {
-          error: "invalid_query",
-          message:
-            "externalSubjectId, templateKey and a valid minimumVersion are required.",
-        },
-        400,
-      );
-    return context.json(
-      services.requirementBySubject(
-        await repository.listAgreements(currentUser(context).tenantId),
-        externalSubjectId,
-        templateKey,
-        minimumVersion,
-      ),
-    );
-  });
-
-  app.post("/v1/agreement-status/evaluate", async (context) => {
-    const input = EvaluateAgreementStatusSchema.parse(await context.req.json());
-    const agreements = await repository.listAgreements(
-      currentUser(context).tenantId,
-    );
-    const requirements = input.requirements.map((requirement) =>
-      services.requirementBySubject(
-        agreements,
-        input.externalSubjectId,
-        requirement.templateKey,
-        requirement.minimumVersion,
-      ),
+    const agreements = link
+      ? await repository.listAgreements(user.tenantId)
+      : [];
+    const conditions = input.conditions.map((condition) =>
+      link
+        ? services.conditionByPerson(agreements, link.personId, condition)
+        : { ...condition, met: false },
     );
     return context.json({
-      externalSubjectId: input.externalSubjectId,
+      integrationKey: integration.key,
+      subject: input.subject,
       operator: input.operator,
-      satisfied:
+      met:
         input.operator === "all"
-          ? requirements.every((item) => item.satisfied)
-          : requirements.some((item) => item.satisfied),
-      requirements,
+          ? conditions.every((item) => item.met)
+          : conditions.some((item) => item.met),
+      evaluatedAt: services.now(),
+      conditions,
     });
   });
 
@@ -335,6 +279,7 @@ export function registerPlatformRoutes(
   );
   app.post("/v1/webhooks", async (context) => {
     const input = CreateWebhookSchema.parse(await context.req.json());
+    await assertWebhookUrlAllowed(input.url);
     return context.json(
       await repository.createWebhook(
         currentUser(context).tenantId,
@@ -343,5 +288,38 @@ export function registerPlatformRoutes(
       ),
       201,
     );
+  });
+
+  app.get("/v1/webhook-deliveries", async (context) => {
+    const requestedLimit = Number(context.req.query("limit") ?? "50");
+    if (!Number.isInteger(requestedLimit) || requestedLimit < 1)
+      return context.json(
+        {
+          error: "invalid_query",
+          message: "limit must be a positive integer.",
+        },
+        400,
+      );
+    const limit = Math.min(200, requestedLimit);
+    return context.json(
+      await repository.listWebhookDeliveries(
+        currentUser(context).tenantId,
+        limit,
+      ),
+    );
+  });
+
+  app.post("/v1/webhook-deliveries/:deliveryId/replay", async (context) => {
+    const delivery = await replayWebhookDelivery(
+      repository,
+      currentUser(context).tenantId,
+      context.req.param("deliveryId"),
+    );
+    if (!delivery)
+      return context.json(
+        { error: "not_found", message: "Webhook delivery not found." },
+        404,
+      );
+    return context.json(delivery);
   });
 }

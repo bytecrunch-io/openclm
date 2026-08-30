@@ -3301,8 +3301,9 @@ function IntegrationSettings() {
           <span className="bc-eyebrow bc-text-blue">// INTEGRATIONS</span>
           <h1>Connect without coupling.</h1>
           <p>
-            OAuth2 clients create secure handoffs and query execution state.
-            External subjects stay scoped to their integration.
+            OAuth2 clients create secure handoffs and evaluate contract
+            conditions. External subjects stay scoped to their integration; the
+            calling system decides what a satisfied condition enables.
           </p>
         </div>
       </div>
@@ -3331,10 +3332,19 @@ function IntegrationSettings() {
       </div>
       <div className="api-call">
         <div>
-          <span className="method">GET</span>
-          <code>/v1/integration-status</code>
+          <span className="method">POST</span>
+          <code>/v1/conditions/evaluate</code>
         </div>
-        <pre>{`?integrationKey=fiftysixty\n&subject=user_01JXYZ\n&templateKey=mutual-nda\n&minimumVersion=1`}</pre>
+        <pre>{`{
+  "integrationKey": "customer-portal",
+  "subject": "user_01JXYZ",
+  "operator": "all",
+  "conditions": [{
+    "kind": "agreement_executed",
+    "templateKey": "mutual-nda",
+    "minimumVersion": 1
+  }]
+}`}</pre>
       </div>
     </div>
   );

@@ -34,12 +34,14 @@ It is designed to work as a standalone product first. Each customer legal entity
 - TypeSpec source with generated OpenAPI 3.1
 - Zod validation at domain, API-input, and browser-response boundaries
 - OAuth2 bearer authentication for backend integrations
-- Integration-scoped identity links, short-lived handoffs, status evaluation, and signed lifecycle webhooks
+- Integration-scoped identity links, short-lived handoffs, and signed lifecycle webhooks
+- Generic integration-scoped `subject_signed` and `agreement_executed` condition evaluation
+- Append-only lifecycle events and durable, retryable, replayable webhook deliveries
 - PostgreSQL and in-memory repository adapters
 - Local PostgreSQL, Keycloak, Mailpit, API, and web application through Docker Compose
 - System, light, and dark Bytecrunch themes
 
-More detail is available in [architecture](./docs/architecture.md), [identity and access](./docs/identity-and-access.md), the [design system](./docs/design-system.md), and the [UX audit](./docs/ux-audit.md).
+More detail is available in [architecture](./docs/architecture.md), [identity and access](./docs/identity-and-access.md), the [design system](./docs/design-system.md), the [UX audit](./docs/ux-audit.md), and the [production-readiness checklist](./docs/production-readiness.md).
 
 ## Architecture
 
@@ -111,9 +113,9 @@ npm run dev
 
 Without `DATABASE_URL`, the API uses in-memory persistence and a deterministic development identity. Copy `.env.example` to `.env` to override configuration. Do not use the example secrets outside local development.
 
-## API and embedding boundary
+## API and integration boundary
 
-The standalone app is the primary implementation target. The integration surface is intentionally backend-mediated: an embedding system authenticates with OAuth2, supplies its opaque subject within its own integration namespace, creates a short-lived handoff, and later evaluates the associated agreement requirements.
+The standalone app is the primary implementation target. The integration surface is intentionally backend-mediated: another system authenticates with OAuth2, supplies an opaque subject within its own integration namespace, optionally creates a short-lived contract handoff, and evaluates contract conditions. Bytecrunch Contracts reports facts; the integrating system owns every access rule, gate, or business decision.
 
 ```http
 POST /v1/integration-sessions
@@ -121,20 +123,31 @@ Authorization: Bearer <access-token>
 Content-Type: application/json
 
 {
-  "integrationKey": "example-data-room",
+  "integrationKey": "customer-portal",
   "subject": "user_01JXYZ",
   "email": "visitor@example.com",
   "templateKey": "mutual-nda",
-  "returnUrl": "https://example.com/projects"
+  "returnUrl": "https://portal.example/workflows"
 }
 ```
 
 ```http
-GET /v1/integration-status?integrationKey=example-data-room&subject=user_01JXYZ&templateKey=mutual-nda&minimumVersion=1
+POST /v1/conditions/evaluate
 Authorization: Bearer <access-token>
+Content-Type: application/json
+
+{
+  "integrationKey": "customer-portal",
+  "subject": "user_01JXYZ",
+  "operator": "all",
+  "conditions": [
+    { "kind": "subject_signed", "templateKey": "mutual-nda", "minimumVersion": 1 },
+    { "kind": "agreement_executed", "templateKey": "non-circumvention", "minimumVersion": 2 }
+  ]
+}
 ```
 
-The opaque subject is never collected in the normal standalone UI. Integration identity linking and product policy still require further design before this should gate a production data room.
+`subject_signed` means the linked person has a valid signature on the current content revision. `agreement_executed` means every required signature for a qualifying agreement has been collected. The opaque subject is never collected in the normal standalone UI, and an unlinked subject simply produces unmet conditions without exposing another person’s agreements.
 
 ## Repository layout
 
@@ -162,7 +175,7 @@ The CI workflow runs the same checks for pushes and pull requests. Read [CONTRIB
 
 ## Production gaps
 
-Before real contract execution, the project needs a signing-provider boundary and sealed PDF artifacts, append-only signing and audit evidence, persistent webhook delivery/replay, object storage, retention and privacy controls, backup/restore procedures, finer resource-level authorization tests, operational observability, and an external security review. See [SECURITY.md](./SECURITY.md).
+Production configuration now fails closed, lifecycle events are append-only, and webhook delivery is durable and replayable. Before real contract execution, the project still needs a signing-provider boundary, sealed PDF artifacts and certificates, normalized immutable signing evidence, atomic aggregate/event/outbox writes, object storage, retention and privacy controls, backup/restore procedures, finer resource-level authorization tests, operational observability, and an external security review. See [production readiness](./docs/production-readiness.md) and [SECURITY.md](./SECURITY.md).
 
 ## License
 

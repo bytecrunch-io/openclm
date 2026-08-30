@@ -15,6 +15,17 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HealthResponse'
+  /health/ready:
+    get:
+      operationId: HealthOperations_ready
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessResponse'
   /public/access/exchange:
     post:
       operationId: ExternalParticipantOperations_exchangeAccess
@@ -612,69 +623,6 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/ResolveSuggestion'
-  /v1/agreement-status:
-    get:
-      operationId: StatusOperations_get
-      parameters:
-        - name: externalSubjectId
-          in: query
-          required: true
-          schema:
-            type: string
-          explode: false
-        - name: templateKey
-          in: query
-          required: true
-          schema:
-            type: string
-          explode: false
-        - name: minimumVersion
-          in: query
-          required: false
-          schema:
-            type: integer
-            format: int32
-          explode: false
-      responses:
-        '200':
-          description: The request has succeeded.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RequirementResult'
-      security:
-        - ContractsOAuth2:
-            - agreements:read
-            - agreements:write
-            - templates:read
-            - templates:write
-            - webhooks:manage
-  /v1/agreement-status/evaluate:
-    post:
-      operationId: StatusOperations_evaluate
-      parameters: []
-      responses:
-        '200':
-          description: The request has succeeded.
-          content:
-            application/json:
-              schema:
-                anyOf:
-                  - $ref: '#/components/schemas/EvaluationResult'
-                  - $ref: '#/components/schemas/ErrorResponse'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/EvaluateAgreementStatus'
-      security:
-        - ContractsOAuth2:
-            - agreements:read
-            - agreements:write
-            - templates:read
-            - templates:write
-            - webhooks:manage
   /v1/agreements:
     get:
       operationId: AgreementOperations_list
@@ -740,6 +688,34 @@ paths:
               schema:
                 anyOf:
                   - $ref: '#/components/schemas/Agreement'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+  /v1/agreements/{agreementId}/audit-events:
+    get:
+      operationId: AgreementOperations_auditEvents
+      parameters:
+        - $ref: '#/components/parameters/EntityContext'
+        - name: agreementId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - type: array
+                    items:
+                      $ref: '#/components/schemas/AgreementAuditEvent'
                   - $ref: '#/components/schemas/ErrorResponse'
       security:
         - ContractsOAuth2:
@@ -1295,6 +1271,32 @@ paths:
             - templates:read
             - templates:write
             - webhooks:manage
+  /v1/conditions/evaluate:
+    post:
+      operationId: ConditionOperations_evaluate
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/ConditionEvaluation'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EvaluateConditions'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
   /v1/entities:
     post:
       operationId: EntityOperations_create
@@ -1479,49 +1481,6 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/CreateIntegrationSession'
-      security:
-        - ContractsOAuth2:
-            - agreements:read
-            - agreements:write
-            - templates:read
-            - templates:write
-            - webhooks:manage
-  /v1/integration-status:
-    get:
-      operationId: IntegrationStatusOperations_get
-      parameters:
-        - name: integrationKey
-          in: query
-          required: true
-          schema:
-            type: string
-          explode: false
-        - name: subject
-          in: query
-          required: true
-          schema:
-            type: string
-          explode: false
-        - name: templateKey
-          in: query
-          required: true
-          schema:
-            type: string
-          explode: false
-        - name: minimumVersion
-          in: query
-          required: false
-          schema:
-            type: integer
-            format: int32
-          explode: false
-      responses:
-        '200':
-          description: The request has succeeded.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RequirementResult'
       security:
         - ContractsOAuth2:
             - agreements:read
@@ -1737,6 +1696,58 @@ paths:
             - templates:read
             - templates:write
             - webhooks:manage
+  /v1/webhook-deliveries:
+    get:
+      operationId: WebhookDeliveryOperations_list
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+          explode: false
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WebhookDelivery'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+  /v1/webhook-deliveries/{deliveryId}/replay:
+    post:
+      operationId: WebhookDeliveryOperations_replay
+      parameters:
+        - name: deliveryId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/WebhookDelivery'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
   /v1/webhooks:
     get:
       operationId: WebhookOperations_list
@@ -1920,6 +1931,57 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/InvalidatedSignature'
+    AgreementAuditEvent:
+      type: object
+      required:
+        - id
+        - tenantId
+        - agreementId
+        - type
+        - revision
+        - status
+        - contentSha256
+        - eventSha256
+        - createdAt
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        agreementId:
+          type: string
+        type:
+          type: string
+        revision:
+          type: integer
+          format: int32
+        status:
+          $ref: '#/components/schemas/AgreementStatus'
+        contentSha256:
+          type: string
+        eventSha256:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    AgreementCondition:
+      type: object
+      required:
+        - kind
+        - templateKey
+      properties:
+        kind:
+          $ref: '#/components/schemas/AgreementConditionKind'
+        templateKey:
+          type: string
+        minimumVersion:
+          type: integer
+          format: int32
+    AgreementConditionKind:
+      type: string
+      enum:
+        - subject_signed
+        - agreement_executed
     AgreementParty:
       type: object
       required:
@@ -1940,16 +2002,6 @@ components:
         minimumSignatures:
           type: integer
           format: int32
-    AgreementRequirement:
-      type: object
-      required:
-        - templateKey
-      properties:
-        templateKey:
-          type: string
-        minimumVersion:
-          type: integer
-          format: int32
     AgreementStatus:
       type: string
       enum:
@@ -1962,6 +2014,65 @@ components:
         - declined
         - voided
         - expired
+    ConditionEvaluation:
+      type: object
+      required:
+        - integrationKey
+        - subject
+        - met
+        - operator
+        - evaluatedAt
+        - conditions
+      properties:
+        integrationKey:
+          type: string
+        subject:
+          type: string
+        met:
+          type: boolean
+        operator:
+          $ref: '#/components/schemas/RequirementOperator'
+        evaluatedAt:
+          type: string
+          format: date-time
+        conditions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConditionResult'
+    ConditionResult:
+      type: object
+      required:
+        - kind
+        - templateKey
+        - minimumVersion
+        - met
+      properties:
+        kind:
+          $ref: '#/components/schemas/AgreementConditionKind'
+        templateKey:
+          type: string
+        minimumVersion:
+          type: integer
+          format: int32
+        met:
+          type: boolean
+        status:
+          $ref: '#/components/schemas/AgreementStatus'
+        agreementId:
+          type: string
+        templateVersion:
+          type: integer
+          format: int32
+        signedAt:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+        executedAt:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: 'null'
     CreateAgreement:
       type: object
       required:
@@ -2496,38 +2607,23 @@ components:
           type: array
           items:
             type: string
-    EvaluateAgreementStatus:
+    EvaluateConditions:
       type: object
       required:
-        - externalSubjectId
-        - requirements
+        - integrationKey
+        - subject
+        - conditions
       properties:
-        externalSubjectId:
+        integrationKey:
           type: string
-        requirements:
+        subject:
+          type: string
+        conditions:
           type: array
           items:
-            $ref: '#/components/schemas/AgreementRequirement'
+            $ref: '#/components/schemas/AgreementCondition'
         operator:
           $ref: '#/components/schemas/RequirementOperator'
-    EvaluationResult:
-      type: object
-      required:
-        - externalSubjectId
-        - satisfied
-        - operator
-        - requirements
-      properties:
-        externalSubjectId:
-          type: string
-        satisfied:
-          type: boolean
-        operator:
-          $ref: '#/components/schemas/RequirementOperator'
-        requirements:
-          type: array
-          items:
-            $ref: '#/components/schemas/RequirementResult'
     ExchangeIntegrationResult:
       type: object
       required:
@@ -3085,6 +3181,30 @@ components:
         options:
           type: object
           unevaluatedProperties: {}
+    ReadinessResponse:
+      type: object
+      required:
+        - status
+        - checks
+      properties:
+        status:
+          type: string
+          enum:
+            - ready
+            - not_ready
+        checks:
+          type: object
+          properties:
+            persistentStorage:
+              type: boolean
+            oidc:
+              type: boolean
+            productionSigning:
+              type: boolean
+          required:
+            - persistentStorage
+            - oidc
+            - productionSigning
     RecipientAuthenticated:
       type: object
       required:
@@ -3226,32 +3346,6 @@ components:
       enum:
         - all
         - any
-    RequirementResult:
-      type: object
-      required:
-        - templateKey
-        - minimumVersion
-        - satisfied
-      properties:
-        templateKey:
-          type: string
-        minimumVersion:
-          type: integer
-          format: int32
-        satisfied:
-          type: boolean
-        status:
-          $ref: '#/components/schemas/AgreementStatus'
-        agreementId:
-          type: string
-        templateVersion:
-          type: integer
-          format: int32
-        executedAt:
-          anyOf:
-            - type: string
-              format: date-time
-            - type: 'null'
     ResolveSuggestion:
       type: object
       required:
@@ -3560,6 +3654,69 @@ components:
           type: string
         code:
           type: string
+    WebhookDelivery:
+      type: object
+      required:
+        - id
+        - tenantId
+        - endpointId
+        - eventId
+        - eventType
+        - url
+        - payload
+        - status
+        - attempts
+        - nextAttemptAt
+        - responseStatus
+        - lastError
+        - createdAt
+        - deliveredAt
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        endpointId:
+          type: string
+        eventId:
+          type: string
+        eventType:
+          type: string
+        url:
+          type: string
+          format: uri
+        payload:
+          type: string
+        status:
+          type: string
+          enum:
+            - pending
+            - sending
+            - delivered
+            - failed
+        attempts:
+          type: integer
+          format: int32
+        nextAttemptAt:
+          type: string
+          format: date-time
+        responseStatus:
+          anyOf:
+            - type: integer
+              format: int32
+            - type: 'null'
+        lastError:
+          anyOf:
+            - type: string
+            - type: 'null'
+        createdAt:
+          type: string
+          format: date-time
+        deliveredAt:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: 'null'
     WebhookEndpoint:
       type: object
       required:

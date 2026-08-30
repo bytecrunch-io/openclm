@@ -51,6 +51,7 @@ services:
       dockerfile: apps/api/Dockerfile
     environment:
       PORT: 3001
+      NODE_ENV: development
       WEB_URL: http://localhost:3000
       DATABASE_URL: postgresql://contracts:contracts@postgres:5432/contracts
       AUTH_MODE: oidc
@@ -63,6 +64,7 @@ services:
       OIDC_REDIRECT_URI: http://localhost:3001/auth/callback
       SESSION_SECRET: local-compose-session-secret-change-in-production
       WEBHOOK_SIGNING_SECRET: local-webhook-secret
+      SIGNING_MODE: development
       SMTP_HOST: mailpit
       SMTP_PORT: 1025
     ports:

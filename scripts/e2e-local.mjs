@@ -77,9 +77,9 @@ assert.equal(counterpartySigned.participant.signature.signedContentSha256, count
 const executed = await json(await fetch(`${apiUrl}/v1/agreements/${agreement.id}/sign`, { method: 'POST', headers: adminHeaders, body: JSON.stringify({ participantId: agreement.createdByParticipantId, intentConfirmed: true, signature: { method: 'typed', typedName: 'Local Admin', imageDataUrl: null } }) }));
 assert.equal(executed.status, 'executed');
 assert(executed.participants.find((item) => item.id === agreement.createdByParticipantId).signature);
-const integrationKey = `fiftysixty-${marker}`;
-await json(await fetch(`${apiUrl}/v1/integrations`, { method: 'POST', headers: adminHeaders, body: JSON.stringify({ key: integrationKey, name: 'FiftySixty local E2E', mappingStrategy: 'host_asserted', allowedRedirectUris: ['http://localhost:3000/projects'], allowedOrigins: ['http://localhost:3000'] }) }));
-const integrationSession = await json(await fetch(`${apiUrl}/v1/integration-sessions`, { method: 'POST', headers: adminHeaders, body: JSON.stringify({ integrationKey, subject: `website-user-${marker}`, email: `visitor-${marker}@example.test`, displayName: 'Website Visitor', templateKey: 'mutual-nda', returnUrl: 'http://localhost:3000/projects', metadata: { dataroom: `room-${marker}` } }) }));
+const integrationKey = `customer-portal-${marker}`;
+await json(await fetch(`${apiUrl}/v1/integrations`, { method: 'POST', headers: adminHeaders, body: JSON.stringify({ key: integrationKey, name: 'Customer portal local E2E', mappingStrategy: 'host_asserted', allowedRedirectUris: ['http://localhost:3000/workflows'], allowedOrigins: ['http://localhost:3000'] }) }));
+const integrationSession = await json(await fetch(`${apiUrl}/v1/integration-sessions`, { method: 'POST', headers: adminHeaders, body: JSON.stringify({ integrationKey, subject: `portal-user-${marker}`, email: `visitor-${marker}@example.test`, displayName: 'Portal User', templateKey: 'mutual-nda', returnUrl: 'http://localhost:3000/workflows', metadata: { workflow: `supplier-${marker}` } }) }));
 const integrationToken = new URL(integrationSession.handoffUrl).searchParams.get('integrationToken');
 assert(integrationToken);
 const integrationExchange = await fetch(`${apiUrl}/public/integration-sessions/exchange`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: integrationToken }) });
@@ -87,10 +87,10 @@ await json(integrationExchange);
 const integrationCookie = integrationExchange.headers.get('set-cookie')?.split(';')[0];
 assert(integrationCookie);
 const integrationExternalHeaders = { cookie: integrationCookie, 'content-type': 'application/json' };
-await json(await fetch(`${apiUrl}/public/session/onboarding`, { method: 'POST', headers: integrationExternalHeaders, body: JSON.stringify({ name: 'Website Visitor', title: 'Director', capacity: 'director', authorityConfirmed: true, entity: { legalName: 'Visitor Test ApS', jurisdiction: 'DK' } }) }));
+await json(await fetch(`${apiUrl}/public/session/onboarding`, { method: 'POST', headers: integrationExternalHeaders, body: JSON.stringify({ name: 'Portal User', title: 'Director', capacity: 'director', authorityConfirmed: true, entity: { legalName: 'Visitor Test ApS', jurisdiction: 'DK' } }) }));
 await json(await fetch(`${apiUrl}/v1/agreements/${integrationSession.agreementId}/send-for-signature`, { method: 'POST', headers: adminHeaders }));
-await json(await fetch(`${apiUrl}/public/session/sign`, { method: 'POST', headers: integrationExternalHeaders, body: JSON.stringify({ intentConfirmed: true, signature: { method: 'typed', typedName: 'Website Visitor', imageDataUrl: null } }) }));
-const status = await json(await fetch(`${apiUrl}/v1/integration-status?integrationKey=${integrationKey}&subject=website-user-${marker}&templateKey=mutual-nda`, { headers: adminHeaders }));
-assert.equal(status.satisfied, true);
+await json(await fetch(`${apiUrl}/public/session/sign`, { method: 'POST', headers: integrationExternalHeaders, body: JSON.stringify({ intentConfirmed: true, signature: { method: 'typed', typedName: 'Portal User', imageDataUrl: null } }) }));
+const conditionEvaluation = await json(await fetch(`${apiUrl}/v1/conditions/evaluate`, { method: 'POST', headers: adminHeaders, body: JSON.stringify({ integrationKey, subject: `portal-user-${marker}`, operator: 'all', conditions: [{ kind: 'subject_signed', templateKey: 'mutual-nda', minimumVersion: 1 }, { kind: 'agreement_executed', templateKey: 'mutual-nda', minimumVersion: 1 }] }) }));
+assert.equal(conditionEvaluation.met, true);
 
-console.log(JSON.stringify({ ok: true, agreementId: agreement.id, integrationAgreementId: integrationSession.agreementId, recipientEmail, participants: agreement.participants.length, notifications: notifications.length, revision: executed.revision, status: executed.status, integrationStatus: status.satisfied, mailpitDelivered: true, notificationEmailDelivered }, null, 2));
+console.log(JSON.stringify({ ok: true, agreementId: agreement.id, integrationAgreementId: integrationSession.agreementId, recipientEmail, participants: agreement.participants.length, notifications: notifications.length, revision: executed.revision, status: executed.status, conditionsMet: conditionEvaluation.met, mailpitDelivered: true, notificationEmailDelivered }, null, 2));

@@ -242,6 +242,11 @@ export function createApp(repository: Repository): Hono {
   app.use('*', cors({ origin: config.WEB_URL, credentials: true }));
 
   app.get('/health', (context) => context.json({ status: 'ok', version: '0.1.0', storage: repository.kind }));
+  app.get('/health/ready', (context) => {
+    const checks = { persistentStorage: repository.kind === 'postgres', oidc: config.AUTH_MODE === 'oidc', productionSigning: config.SIGNING_MODE !== 'development' };
+    const ready = Object.values(checks).every(Boolean);
+    return context.json({ status: ready ? 'ready' : 'not_ready', checks }, ready ? 200 : 503);
+  });
   app.get('/openapi.yaml', async (context) => {
     try {
       const document = await readFile(new URL('../../../packages/api-spec/generated/openapi.yaml', import.meta.url), 'utf8');
@@ -340,9 +345,9 @@ export function createApp(repository: Repository): Hono {
     const path = context.req.path; const method = context.req.method;
     const requiredPermission = path.startsWith('/v1/templates') ? (method === 'GET' ? 'templates.read' : 'templates.write')
       : path.startsWith('/v1/agreements') ? (method === 'GET' ? 'agreements.read' : path.endsWith('/sign') ? 'agreements.sign' : 'agreements.write')
-      : path.startsWith('/v1/notifications') || path.startsWith('/v1/agreement-status') || path.startsWith('/v1/integration-status') ? 'agreements.read'
+      : path.startsWith('/v1/notifications') || path.startsWith('/v1/conditions') ? 'agreements.read'
       : path.startsWith('/v1/integration-sessions') ? 'agreements.write'
-      : path.startsWith('/v1/integrations') || path.startsWith('/v1/webhooks') ? 'entity.manage'
+      : path.startsWith('/v1/integrations') || path.startsWith('/v1/webhooks') || path.startsWith('/v1/webhook-deliveries') ? 'entity.manage'
       : path.startsWith('/v1/entity-members') ? 'members.manage'
       : undefined;
     if (requiredPermission && !activeMembership.permissions.includes(requiredPermission)) return context.json({ error: 'forbidden', message: `Your role cannot perform '${requiredPermission}' for this customer entity.` }, 403);
@@ -492,12 +497,12 @@ export function createApp(repository: Repository): Hono {
     const input = ResolveSuggestionSchema.parse(await context.req.json()); const session = currentExternalSession(context); const agreement = await requiredAgreement(repository, session.tenantId, session.agreementId);
     assertActiveReviewSide(agreement, 'counterparty'); const suggestion = agreement.suggestions.find((item) => item.id === context.req.param('suggestionId'));
     if (!suggestion) return context.json({ error: 'not_found', message: 'Suggestion not found.' }, 404);
-    resolveSuggestionDecision(agreement, suggestion, input.resolution); await repository.saveAgreement(agreement); void emitAgreementEvent(repository, 'agreement.suggestion.resolved', agreement); return context.json(await externalView(repository, session));
+    resolveSuggestionDecision(agreement, suggestion, input.resolution); await repository.saveAgreement(agreement); await emitAgreementEvent(repository, 'agreement.suggestion.resolved', agreement); return context.json(await externalView(repository, session));
   });
 
   app.post('/public/session/return-review', externalSessionMiddleware(), async (context) => {
     const input = SendReviewSchema.parse(await context.req.json()); const session = currentExternalSession(context); const agreement = await requiredAgreement(repository, session.tenantId, session.agreementId); const participant = agreement.participants.find((item) => item.id === session.participantId);
-    if (!participant || agreement.reviewAssignedTo !== 'counterparty') throw new Error('This review is not assigned to you.'); assertIncomingSuggestionsResolved(agreement); const submittedRound = agreement.reviewRound; const redlineCount = agreement.suggestions.filter((item) => item.reviewRound === submittedRound).length; const commentCount = agreement.documentComments.filter((item) => item.reviewRound === submittedRound).length; assignReview(agreement, 'sender', participant.name, input.message); participant.status = 'reviewed'; await repository.saveAgreement(agreement); await notifyParticipants(repository, agreement, { type: 'review.returned', actorName: participant.name, actorParticipantId: participant.id, recipientParticipantIds: creatorRecipients(agreement), title: `Review returned: ${agreement.title}`, body: `${participant.name} returned their review with ${redlineCount} redline${redlineCount === 1 ? '' : 's'} and ${commentCount} general comment${commentCount === 1 ? '' : 's'}.${input.message ? ` ${input.message}` : ''}` }); return context.json(await externalView(repository, session));
+    if (!participant || agreement.reviewAssignedTo !== 'counterparty') throw new Error('This review is not assigned to you.'); assertIncomingSuggestionsResolved(agreement); const submittedRound = agreement.reviewRound; const redlineCount = agreement.suggestions.filter((item) => item.reviewRound === submittedRound).length; const commentCount = agreement.documentComments.filter((item) => item.reviewRound === submittedRound).length; assignReview(agreement, 'sender', participant.name, input.message); participant.status = 'reviewed'; await repository.saveAgreement(agreement); await notifyParticipants(repository, agreement, { type: 'review.returned', actorName: participant.name, actorParticipantId: participant.id, recipientParticipantIds: creatorRecipients(agreement), title: `Review returned: ${agreement.title}`, body: `${participant.name} returned their review with ${redlineCount} redline${redlineCount === 1 ? '' : 's'} and ${commentCount} general comment${commentCount === 1 ? '' : 's'}.${input.message ? ` ${input.message}` : ''}` }); await emitAgreementEvent(repository, 'agreement.sent_for_review', agreement); return context.json(await externalView(repository, session));
   });
 
   app.post('/public/session/approve-for-signature', externalSessionMiddleware(), async (context) => {
@@ -507,7 +512,7 @@ export function createApp(repository: Repository): Hono {
     if (agreement.reviewAssignedTo !== 'counterparty') throw new Error('This review is not assigned to you.');
     const actorId = participant.personId ?? participant.id; const hasDraftWork = agreement.suggestions.some((item) => item.status === 'open' && item.reviewRound === agreement.reviewRound && item.authorSubjectId === actorId) || agreement.documentComments.some((item) => item.status === 'open' && item.reviewRound === agreement.reviewRound && item.authorId === actorId);
     if (hasDraftWork) throw new Error('Send your changes for review before signing.');
-    openSigningRevision(agreement, 'counterparty'); await repository.saveAgreement(agreement); return context.json(await externalView(repository, session));
+    openSigningRevision(agreement, 'counterparty'); await repository.saveAgreement(agreement); await emitAgreementEvent(repository, 'agreement.ready_for_signature', agreement); return context.json(await externalView(repository, session));
   });
 
   app.post('/public/session/reopen-review', externalSessionMiddleware(), async (context) => {
@@ -523,10 +528,12 @@ export function createApp(repository: Repository): Hono {
     transition(agreement, 'in_review'); agreement.executedAt = null; agreement.signatureNotificationsSentAt = null; agreement.parties.forEach((party) => { party.status = party.role === 'counterparty' ? 'reviewing' : 'ready'; }); assignReview(agreement, 'counterparty', participant.name, 'Reopened signing revision to propose additional changes.');
     await repository.saveAgreement(agreement);
     await notifyParticipants(repository, agreement, { type: 'signature.invalidated', actorName: participant.name, actorParticipantId: participant.id, recipientParticipantIds: signed.map((item) => item.id).filter((id) => id !== participant.id), title: `Signature voided: ${agreement.title}`, body: `${participant.name} reopened the agreement for review. ${signed.length} signature${signed.length === 1 ? '' : 's'} were voided because the document may change.` });
+    await emitAgreementEvent(repository, 'agreement.signature_invalidated', agreement);
     return context.json(await externalView(repository, session));
   });
 
   app.post('/public/session/sign', externalSessionMiddleware(), async (context) => {
+    if (config.SIGNING_MODE === 'disabled') return context.json({ error: 'signing_unavailable', message: 'Electronic signing is not configured for this deployment.' }, 503);
     const session = currentExternalSession(context);
     const body = ExternalSignAgreementSchema.parse(await context.req.json());
     const agreement = await requiredAgreement(repository, session.tenantId, session.agreementId);
@@ -543,7 +550,7 @@ export function createApp(repository: Repository): Hono {
     const releaseSignatureRequests = agreement.status !== 'executed' && !agreement.signatureNotificationsSentAt; if (releaseSignatureRequests) agreement.signatureNotificationsSentAt = isoNow(); await repository.saveAgreement(agreement);
     const ownerStillNeedsToSign = agreement.createdByParticipantId !== null && agreement.participants.find((item) => item.id === agreement.createdByParticipantId)?.status !== 'signed';
     await notifyParticipants(repository, agreement, { type: agreement.status === 'executed' ? 'agreement.executed' : releaseSignatureRequests ? 'signature.requested' : 'signature.completed', actorName: participant.name, actorParticipantId: participant.id, recipientParticipantIds: agreement.status === 'executed' ? agreement.participants.map((item) => item.id) : creatorRecipients(agreement), title: agreement.status === 'executed' ? `Agreement executed: ${agreement.title}` : ownerStillNeedsToSign ? `Your signature is required: ${agreement.title}` : `${participant.name} signed ${agreement.title}`, body: agreement.status === 'executed' ? 'Every required signature has been collected.' : ownerStillNeedsToSign ? `${participant.name} signed. You can add your signature at any time while the remaining signatures are collected.` : `${participant.name} signed. Other required signatures are still outstanding.` });
-    void emitAgreementEvent(repository, agreement.status === 'executed' ? 'agreement.executed' : 'agreement.partially_signed', agreement);
+    await emitAgreementEvent(repository, agreement.status === 'executed' ? 'agreement.executed' : 'agreement.partially_signed', agreement);
     return context.json(await externalView(repository, session));
   });
 
@@ -584,7 +591,7 @@ export function createApp(repository: Repository): Hono {
       agreement.participants.push(creator); agreement.createdByParticipantId = creator.id; await repository.saveAgreement(agreement);
       materializePartyVariables(agreement); await repository.saveAgreement(agreement);
     }
-    void emitAgreementEvent(repository, 'agreement.created', agreement);
+    await emitAgreementEvent(repository, 'agreement.created', agreement);
     return context.json(agreement, 201);
   });
 
@@ -592,19 +599,23 @@ export function createApp(repository: Repository): Hono {
     const agreement = await repository.getAgreement(currentUser(context).tenantId, context.req.param('agreementId'));
     return agreement ? context.json(agreementForReviewSide(AgreementSchema.parse(agreement), 'sender')) : context.json({ error: 'not_found', message: 'Agreement not found.' }, 404);
   });
+  app.get('/v1/agreements/:agreementId/audit-events', async (context) => {
+    const user = currentUser(context); await requiredAgreement(repository, user.tenantId, context.req.param('agreementId'));
+    return context.json(await repository.listAgreementAuditEvents(user.tenantId, context.req.param('agreementId')));
+  });
 
   app.post('/v1/agreements/:agreementId/review', async (context) => {
     const agreement = await requiredAgreement(repository, currentUser(context).tenantId, context.req.param('agreementId'));
     assignReview(agreement, 'counterparty', currentUser(context).name);
     await repository.saveAgreement(agreement);
-    void emitAgreementEvent(repository, 'agreement.sent_for_review', agreement);
+    await emitAgreementEvent(repository, 'agreement.sent_for_review', agreement);
     return context.json(agreement);
   });
 
   app.post('/v1/agreements/:agreementId/send-review', async (context) => {
     const input = SendReviewSchema.parse(await context.req.json()); const user = currentUser(context); const agreement = await requiredAgreement(repository, user.tenantId, context.req.param('agreementId'));
     assertActiveReviewSide(agreement, 'sender'); assertIncomingSuggestionsResolved(agreement);
-    const redlineCount = agreement.suggestions.filter((item) => item.status === 'open').length; const commentCount = agreement.documentComments.filter((item) => item.status === 'open').length; assignReview(agreement, 'counterparty', user.name, input.message); await repository.saveAgreement(agreement); await notifyParticipants(repository, agreement, { type: 'review.assigned', actorName: user.name, actorParticipantId: agreement.createdByParticipantId ?? undefined, recipientParticipantIds: counterpartyRecipients(agreement), title: `Review ready: ${agreement.title}`, body: `${user.name} handed the agreement back for your next review. ${redlineCount} redline${redlineCount === 1 ? '' : 's'} and ${commentCount} general comment${commentCount === 1 ? '' : 's'} remain open.${input.message ? ` ${input.message}` : ''}` }); void emitAgreementEvent(repository, 'agreement.sent_for_review', agreement); return context.json(agreement);
+    const redlineCount = agreement.suggestions.filter((item) => item.status === 'open').length; const commentCount = agreement.documentComments.filter((item) => item.status === 'open').length; assignReview(agreement, 'counterparty', user.name, input.message); await repository.saveAgreement(agreement); await notifyParticipants(repository, agreement, { type: 'review.assigned', actorName: user.name, actorParticipantId: agreement.createdByParticipantId ?? undefined, recipientParticipantIds: counterpartyRecipients(agreement), title: `Review ready: ${agreement.title}`, body: `${user.name} handed the agreement back for your next review. ${redlineCount} redline${redlineCount === 1 ? '' : 's'} and ${commentCount} general comment${commentCount === 1 ? '' : 's'} remain open.${input.message ? ` ${input.message}` : ''}` }); await emitAgreementEvent(repository, 'agreement.sent_for_review', agreement); return context.json(agreement);
   });
 
   app.get('/v1/agreements/:agreementId/invitations', async (context) => {
@@ -619,7 +630,7 @@ export function createApp(repository: Repository): Hono {
     if (agreement.status === 'draft' || agreement.reviewAssignedTo === null) assignReview(agreement, 'counterparty', user.name);
     const result = await createAndSendInvitation(repository, agreement, context.req.param('participantId'), user.name);
     await repository.saveAgreement(agreement);
-    void emitAgreementEvent(repository, 'agreement.sent_for_review', agreement);
+    await emitAgreementEvent(repository, 'agreement.sent_for_review', agreement);
     return context.json(result, 201);
   });
 
@@ -677,7 +688,7 @@ export function createApp(repository: Repository): Hono {
     if (!suggestion) return context.json({ error: 'not_found', message: 'Suggestion not found.' }, 404);
     resolveSuggestionDecision(agreement, suggestion, input.resolution);
     await repository.saveAgreement(agreement);
-    void emitAgreementEvent(repository, 'agreement.suggestion.resolved', agreement);
+    await emitAgreementEvent(repository, 'agreement.suggestion.resolved', agreement);
     return context.json(agreement);
   });
 
@@ -693,7 +704,7 @@ export function createApp(repository: Repository): Hono {
     agreement.signatureNotificationsSentAt = isoNow();
     await repository.saveAgreement(agreement);
     await notifyParticipants(repository, agreement, { type: 'signature.requested', actorName: currentUser(context).name, actorParticipantId: agreement.createdByParticipantId ?? undefined, recipientParticipantIds: unsignedSignatoryRecipients(agreement, agreement.createdByParticipantId ?? undefined), title: `Signature requested: ${agreement.title}`, body: 'Review is complete. The final revision is ready for signature; required signatories may sign in any order.' });
-    void emitAgreementEvent(repository, 'agreement.ready_for_signature', agreement);
+    await emitAgreementEvent(repository, 'agreement.ready_for_signature', agreement);
     return context.json(agreement);
   });
 
@@ -711,6 +722,7 @@ export function createApp(repository: Repository): Hono {
   });
 
   app.post('/v1/agreements/:agreementId/sign', async (context) => {
+    if (config.SIGNING_MODE === 'disabled') return context.json({ error: 'signing_unavailable', message: 'Electronic signing is not configured for this deployment.' }, 503);
     const input = SignAgreementSchema.parse(await context.req.json());
     const agreement = await requiredAgreement(repository, currentUser(context).tenantId, context.req.param('agreementId'));
     if (!['out_for_signature', 'partially_signed'].includes(agreement.status)) throw new Error('This agreement is not open for signature.');
@@ -733,11 +745,11 @@ export function createApp(repository: Repository): Hono {
     const releaseSignatureRequests = agreement.status !== 'executed' && !agreement.signatureNotificationsSentAt; if (releaseSignatureRequests) agreement.signatureNotificationsSentAt = isoNow();
     await repository.saveAgreement(agreement);
     await notifyParticipants(repository, agreement, { type: agreement.status === 'executed' ? 'agreement.executed' : releaseSignatureRequests ? 'signature.requested' : 'signature.completed', actorName: participant.name, actorParticipantId: participant.id, recipientParticipantIds: agreement.status === 'executed' ? agreement.participants.map((item) => item.id) : unsignedSignatoryRecipients(agreement, participant.id), title: agreement.status === 'executed' ? `Agreement executed: ${agreement.title}` : releaseSignatureRequests ? `Signature requested: ${agreement.title}` : `${participant.name} signed ${agreement.title}`, body: agreement.status === 'executed' ? 'Every required signature has been collected.' : releaseSignatureRequests ? `${participant.name} signed the final revision. Your signature is now requested.` : 'Their signature is complete. Other required signatories may sign now.' });
-    void emitAgreementEvent(repository, agreement.status === 'executed' ? 'agreement.executed' : 'agreement.partially_signed', agreement);
+    await emitAgreementEvent(repository, agreement.status === 'executed' ? 'agreement.executed' : 'agreement.partially_signed', agreement);
     return context.json(agreement);
   });
 
-  registerPlatformRoutes(app, repository, { now: isoNow, transition, requirementBySubject: requirementResult, requirementByPerson: requirementResultByPerson });
+  registerPlatformRoutes(app, repository, { now: isoNow, transition, conditionByPerson: conditionResultByPerson });
 
   app.onError((error, context) => {
     if (error instanceof ZodError) {
@@ -762,22 +774,12 @@ async function requiredAgreement(repository: Repository, tenantId: string, id: s
   const parsed = AgreementSchema.parse(agreement); materializePartyVariables(parsed); return parsed;
 }
 
-function requirementResult(agreements: Agreement[], externalSubjectId: string, templateKey: string, minimumVersion: number) {
-  const candidates = agreements
-    .filter((agreement) => agreement.templateKey === templateKey && agreement.templateVersion >= minimumVersion && agreement.participants.some((participant) => participant.externalSubjectId === externalSubjectId))
-    .sort((a, b) => b.templateVersion - a.templateVersion || b.updatedAt.localeCompare(a.updatedAt));
-  const executed = candidates.find((agreement) => agreement.status === 'executed');
-  const agreement = executed ?? candidates[0];
-  return {
-    templateKey, minimumVersion, satisfied: Boolean(executed),
-    ...(agreement ? { status: agreement.status, agreementId: agreement.id, templateVersion: agreement.templateVersion, executedAt: agreement.executedAt } : {}),
-  };
-}
-
-function requirementResultByPerson(agreements: Agreement[], personId: string, templateKey: string, minimumVersion: number) {
-  const candidates = agreements.filter((agreement) => agreement.templateKey === templateKey && agreement.templateVersion >= minimumVersion && agreement.participants.some((participant) => participant.personId === personId)).sort((a, b) => b.templateVersion - a.templateVersion || b.updatedAt.localeCompare(a.updatedAt));
-  const executed = candidates.find((agreement) => agreement.status === 'executed'); const agreement = executed ?? candidates[0];
-  return { templateKey, minimumVersion, satisfied: Boolean(executed), ...(agreement ? { status: agreement.status, agreementId: agreement.id, templateVersion: agreement.templateVersion, executedAt: agreement.executedAt } : {}) };
+function conditionResultByPerson(agreements: Agreement[], personId: string, condition: { kind: 'subject_signed' | 'agreement_executed'; templateKey: string; minimumVersion: number }) {
+  const candidates = agreements.filter((agreement) => agreement.templateKey === condition.templateKey && agreement.templateVersion >= condition.minimumVersion && agreement.participants.some((participant) => participant.personId === personId)).sort((a, b) => b.templateVersion - a.templateVersion || b.updatedAt.localeCompare(a.updatedAt));
+  const matching = candidates.find((agreement) => condition.kind === 'agreement_executed' ? agreement.status === 'executed' : agreement.participants.some((participant) => participant.personId === personId && participant.status === 'signed' && participant.signature?.signedContentSha256 === agreement.contentSha256));
+  const agreement = matching ?? candidates[0];
+  const participant = agreement?.participants.find((item) => item.personId === personId);
+  return { kind: condition.kind, templateKey: condition.templateKey, minimumVersion: condition.minimumVersion, met: Boolean(matching), ...(agreement ? { status: agreement.status, agreementId: agreement.id, templateVersion: agreement.templateVersion, signedAt: participant?.signedAt ?? null, executedAt: agreement.executedAt } : {}) };
 }
 
 async function createAndSendInvitation(repository: Repository, agreement: Agreement, participantId: string, inviterName: string) {
