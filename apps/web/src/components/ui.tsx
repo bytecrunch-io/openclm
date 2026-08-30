@@ -1,5 +1,5 @@
 import { Monitor, Moon, Sun, X } from 'lucide-react';
-import { useEffect, useRef, type ButtonHTMLAttributes, type ReactNode } from 'react';
+import { useEffect, useId, useRef, type ButtonHTMLAttributes, type HTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react';
 import { useTheme, type ThemePreference } from '../theme';
 
 export function cx(...classes: Array<string | false | null | undefined>): string {
@@ -8,6 +8,39 @@ export function cx(...classes: Array<string | false | null | undefined>): string
 
 export function BusyMark() {
   return <span className="busy-mark" aria-hidden="true">{Array.from({ length: 16 }, (_, index) => <i key={index} />)}</span>;
+}
+
+export function Eyebrow({ color = 'default', className, ...props }: HTMLAttributes<HTMLSpanElement> & { color?: 'default' | 'orange' | 'blue' }) {
+  return <span className={cx('bc-eyebrow', color !== 'default' && `bc-text-${color}`, className)} {...props} />;
+}
+
+export function Badge({ tone = 'default', dot = false, className, children, ...props }: HTMLAttributes<HTMLSpanElement> & { tone?: 'default' | 'solid' | 'orange' | 'blue' | 'success' | 'danger'; dot?: boolean }) {
+  return <span className={cx('bc-badge', tone !== 'default' && `bc-badge--${tone}`, className)} {...props}>{dot && <i className="bc-badge__dot" aria-hidden="true" />}{children}</span>;
+}
+
+export function Card({ padded = true, raised = false, className, ...props }: HTMLAttributes<HTMLDivElement> & { padded?: boolean; raised?: boolean }) {
+  return <div className={cx('bc-card', padded && 'bc-card--padded', raised && 'bc-card--raised', className)} {...props} />;
+}
+
+type FieldChrome = { label?: string; hint?: string; error?: string };
+function FieldMessage({ id, hint, error }: { id: string; hint?: string; error?: string }) {
+  if (!hint && !error) return null;
+  return <span id={id} className={cx('bc-hint', error && 'bc-hint--error')} role={error ? 'alert' : undefined}>{error ?? hint}</span>;
+}
+
+export function Input({ label, hint, error, id, className, ...props }: InputHTMLAttributes<HTMLInputElement> & FieldChrome) {
+  const generatedId = useId(); const inputId = id ?? generatedId; const messageId = `${inputId}-message`;
+  return <div className="bc-field">{label && <label className="bc-label" htmlFor={inputId}>{label}</label>}<input id={inputId} className={cx('bc-input', error && 'bc-input--invalid', className)} aria-invalid={error ? true : undefined} aria-describedby={hint || error ? messageId : undefined} {...props} /><FieldMessage id={messageId} {...(hint ? { hint } : {})} {...(error ? { error } : {})} /></div>;
+}
+
+export function Textarea({ label, hint, error, id, className, ...props }: TextareaHTMLAttributes<HTMLTextAreaElement> & FieldChrome) {
+  const generatedId = useId(); const inputId = id ?? generatedId; const messageId = `${inputId}-message`;
+  return <div className="bc-field">{label && <label className="bc-label" htmlFor={inputId}>{label}</label>}<textarea id={inputId} className={cx('bc-textarea', error && 'bc-textarea--invalid', className)} aria-invalid={error ? true : undefined} aria-describedby={hint || error ? messageId : undefined} {...props} /><FieldMessage id={messageId} {...(hint ? { hint } : {})} {...(error ? { error } : {})} /></div>;
+}
+
+export function Select({ label, hint, error, id, className, children, ...props }: SelectHTMLAttributes<HTMLSelectElement> & FieldChrome) {
+  const generatedId = useId(); const inputId = id ?? generatedId; const messageId = `${inputId}-message`;
+  return <div className="bc-field">{label && <label className="bc-label" htmlFor={inputId}>{label}</label>}<select id={inputId} className={cx('bc-select', error && 'bc-input--invalid', className)} aria-invalid={error ? true : undefined} aria-describedby={hint || error ? messageId : undefined} {...props}>{children}</select><FieldMessage id={messageId} {...(hint ? { hint } : {})} {...(error ? { error } : {})} /></div>;
 }
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {

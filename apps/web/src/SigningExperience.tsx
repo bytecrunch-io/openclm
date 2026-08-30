@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowRight, Check, PenLine, RotateCcw, ShieldCheck, Smartphone, Type, X } from 'lucide-react';
 import type { Agreement, Participant, SignatureInput } from '@bytecrunch/contracts-domain';
-import { Button, Dialog, IconButton } from './components/ui';
+import { Button, Dialog, IconButton } from './components';
 
 export function SignatureCeremony({ agreement, signer, busy, onClose, onSign }: { agreement: Agreement; signer: Participant; busy: boolean; onClose: () => void; onSign: (signature: SignatureInput) => void }) {
   const [method, setMethod] = useState<'typed' | 'drawn'>('typed'); const [typedName, setTypedName] = useState(signer.name); const [intent, setIntent] = useState(false); const [hasDrawing, setHasDrawing] = useState(false); const canvas = useRef<HTMLCanvasElement>(null); const drawing = useRef(false);

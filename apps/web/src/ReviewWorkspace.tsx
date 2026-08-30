@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Check, MessageSquareText, Pencil, Redo2, Trash2, Undo2, X } from 'lucide-react';
 import type { Agreement, DocumentComment, Suggestion } from '@bytecrunch/contracts-domain';
-import { BusyMark } from './components/ui';
+import { BusyMark } from './components';
 
 export interface TextSelection { text: string; start: number; end: number }
 export const SIGNATURE_BLOCKS_PLACEHOLDER = '{{signature_blocks}}';

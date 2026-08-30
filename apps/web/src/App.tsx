@@ -11,7 +11,7 @@ import { api, statusLabel, type EntityMemberList, type EntityRole, type Passkey,
 import ExternalPortal from './ExternalPortal';
 import { DirectContractEditor, DocumentCommentCard, RedlineCard, SIGNATURE_BLOCKS_PLACEHOLDER, SelectableContract, type DraftSaveState, type TextSelection } from './ReviewWorkspace';
 import { NextActionBanner, SignatureBlocks, SignatureCeremony } from './SigningExperience';
-import { BusyMark, InlineAlert, ThemeToggle } from './components/ui';
+import { BusyMark, InlineAlert, ThemeToggle } from './components';
 
 type View = 'dashboard' | 'my-work' | 'agreements' | 'templates' | 'members' | 'settings';
 

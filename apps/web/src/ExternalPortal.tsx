@@ -4,7 +4,7 @@ import logo from './assets/logomark.svg';
 import { api, statusLabel, type ExternalView } from './api';
 import { DirectContractEditor, DocumentCommentCard, RedlineCard, SIGNATURE_BLOCKS_PLACEHOLDER, SelectableContract, type DraftSaveState, type TextSelection } from './ReviewWorkspace';
 import { NextActionBanner, SignatureBlocks, SignatureCeremony } from './SigningExperience';
-import { BusyMark } from './components/ui';
+import { BusyMark } from './components';
 
 export default function ExternalPortal() {
   const [view, setView] = useState<ExternalView>();
