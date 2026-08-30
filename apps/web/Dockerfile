@@ -7,7 +7,7 @@ COPY apps/api/package.json apps/api/package.json
 COPY apps/web/package.json apps/web/package.json
 COPY packages/domain/package.json packages/domain/package.json
 COPY packages/api-spec/package.json packages/api-spec/package.json
-RUN npm install
+RUN npm ci
 COPY apps/web apps/web
 COPY packages/domain packages/domain
 RUN npm run build -w @bytecrunch/contracts-domain && npm run build -w @bytecrunch/contracts-web

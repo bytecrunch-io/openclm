@@ -1,147 +1,152 @@
 # Bytecrunch Contracts
 
-Open-source agreement infrastructure for review, redlining, execution, and integration. The standalone application is branded with the Bytecrunch design system while its API remains generic enough for data rooms, onboarding tools, marketplaces, and internal systems.
+Bytecrunch Contracts is a self-hostable contract lifecycle management application for creating agreements, negotiating tracked changes, collecting signatures, and exposing agreement status to other systems.
 
-## What works
+It is designed to work as a standalone product first. Each customer legal entity is an independent tenant and contracting context; Bytecrunch operates the software and is never an implicit party to customer agreements. One account may represent several entities and explicitly chooses the entity it is acting for.
 
-- Entity-owned contract templates with an in-app library, document preview, supported-variable palette, and immutable version history
-- Agreement creation from representative emails; internal person IDs are assigned automatically
-- Draft, review, signing, and executed lifecycle states
-- Anchored, attributed redlines with word-level diffs, threaded replies, and accept/reject resolution
-- Inline counterproposals with linked attribution and symmetric approval across review rounds
-- Document-level feedback plus editable, removable redline drafts during the active review turn
-- Consolidated hand-back notifications with unread state, deep links, and retrying email delivery through an outbox
-- Immutable revision counters and SHA-256 content hashes
-- Multiple required signatories
-- Prominent next-action guidance and a sender attention queue
-- Responsive typed/drawn signature ceremony with touch support and document-bound signature blocks
-- Legal entities, agreement parties, and per-party signature requirements
-- Global human accounts with memberships in one or more customer entities
-- A visible “Acting for” entity switcher; templates, agreements, and sender details follow the selected customer entity
-- First-run onboarding that lets a verified SSO user establish an independent customer entity when they were not invited to one
-- Entity-scoped role and permission foundations for administrators, template managers, contract managers, signatories, and viewers
-- Customer-entity member administration with email invitations, multi-role assignment, suspension, and final-administrator protection
-- Invitation acceptance through the configured OIDC provider, restricted to the verified invited email
-- Optional counterparty details with recipient confirmation and sender approval for material changes
-- One-time participant invitations that create durable account-to-agreement access
-- Safe return access: an accepted invitation sends a fresh, single-use 15-minute email link instead of becoming a dead end
-- Cross-entity **My work** inbox for staff and an account-level recipient inbox for invited parties
-- Non-enumerating six-digit recipient sign-in codes with short expiry, attempt limits, throttling, and narrow agreement-session handoff
-- Discoverable WebAuthn passkeys with required user verification, checked RP/origin, signature-counter persistence, and local `localhost` support
-- External onboarding with title, signing capacity, and authority confirmation
-- External reviewer/signatory portal with signatory nomination
-- Agreement-status query and multi-requirement evaluation API
-- Integration-scoped identity links, short-lived host-mediated handoffs, and status queries
-- HMAC-signed lifecycle webhooks
-- Generic OIDC SSO and OAuth2 bearer-token validation
-- Runtime validation with Zod at API and UI boundaries
+> [!WARNING]
+> This is an early development release. The built-in signature flow is a development witness, not a certified electronic-signature implementation. No open-source license has been selected yet, so the source is visible but reuse and external contribution terms are not established.
+
+## Current capabilities
+
+### Agreements and negotiation
+
+- Entity-owned, immutable template versions with previews, variables, and history
+- Multiple counterparties, reviewers, and required signatories
+- Turn-based private review drafts with direct document editing
+- Anchored word-level redlines, counterproposals, comments, threads, and accept/reject decisions
+- Consolidated hand-back notifications instead of per-keystroke email noise
+- Unordered signing, countersigning, signature invalidation when negotiation reopens, and document-native signature blocks
+- Content revisions bound to SHA-256 fingerprints
+
+### Accounts and access
+
+- Global human accounts with memberships in multiple customer entities
+- Explicit **Acting for** context for templates, agreements, people, and sender details
+- Entity-scoped administrator, template manager, contract manager, signatory, and viewer roles
+- Generic OIDC Authorization Code + PKCE for staff SSO
+- Low-friction recipient invitations that become durable agreement access
+- Recipient return through short-lived email codes or discoverable WebAuthn passkeys
+- Cross-entity personal work inboxes
+
+### Integration and local operation
+
 - TypeSpec source with generated OpenAPI 3.1
-- PostgreSQL and in-memory repositories
-- Dark/light Bytecrunch interface
-- Fully local Docker stack
+- Zod validation at domain, API-input, and browser-response boundaries
+- OAuth2 bearer authentication for backend integrations
+- Integration-scoped identity links, short-lived handoffs, status evaluation, and signed lifecycle webhooks
+- PostgreSQL and in-memory repository adapters
+- Local PostgreSQL, Keycloak, Mailpit, API, and web application through Docker Compose
+- System, light, and dark Bytecrunch themes
 
-ByteCrunch is the platform operator, not a parent workspace or implicit contracting party. In the hosted product each customer legal entity is its own tenant; one account may be a member of several customer entities. See [identity and access](./docs/identity-and-access.md).
+More detail is available in [architecture](./docs/architecture.md), [identity and access](./docs/identity-and-access.md), the [design system](./docs/design-system.md), and the [UX audit](./docs/ux-audit.md).
 
-The current signing action is a clearly labeled development witness. It is not a certified electronic-signature implementation. See the [architecture](./docs/architecture.md) and [UX audit](./docs/ux-audit.md) before using this with real contracts.
+## Architecture
 
-## Run the full local stack
+```text
+browser / host backend
+        │
+        │ OIDC session or OAuth2 access token
+        ▼
+TypeSpec HTTP boundary → API orchestration → domain schemas and invariants
+                              │
+                              ├── repository → PostgreSQL / in-memory
+                              ├── email → SMTP / development console
+                              └── lifecycle webhooks
+```
+
+The API contract lives in `packages/api-spec/tsp/main.tsp`; generated OpenAPI is committed at `packages/api-spec/generated/openapi.yaml`. Runtime types and lifecycle policy live in `packages/domain`. See [architecture](./docs/architecture.md) for the boundary rules and known production gaps.
+
+## Run the complete local stack
+
+Requirements: Docker with Compose support. From the repository root:
 
 ```bash
 docker compose up --build
-# On installations using the standalone Compose binary:
+# Older standalone Compose installations can use:
 docker-compose up --build
 ```
 
-Then open:
-
-| Service | URL / credentials |
+| Service | Address or credentials |
 | --- | --- |
 | Contracts | http://localhost:3000 |
 | API | http://localhost:3001 |
 | OpenAPI | http://localhost:3001/openapi.yaml |
 | Keycloak | http://localhost:8080 (`admin` / `admin`) |
-| Local user | `admin@bytecrunch.local` / `bytecrunch` |
+| Test user | `admin@bytecrunch.local` / `bytecrunch` |
 | Mailpit | http://localhost:8025 |
-| MinIO | http://localhost:9001 (`contracts` / `contracts-local-secret`) |
 
-Everything runs locally. There is no required hosted database, identity provider, object store, email service, font CDN, telemetry endpoint, or license server.
+The stack has no required hosted identity, database, email, font, telemetry, or license service. Compose configuration is for local development and its credentials must not be reused in a deployment.
 
-## Test the two-party flow
+## Exercise the main workflow
 
-1. Open http://localhost:3000 and sign in as `admin@bytecrunch.local` / `bytecrunch`.
-2. Create an agreement with one or more counterparty representatives. The expected legal entity is optional; mix reviewers and signatories and choose the number of signatures required.
-3. Open the agreement and select **Send invite** next to the participant.
-4. Open http://localhost:8025 and select the invitation email.
-5. Open its **Review agreement** link in an incognito/private browser window.
-6. Confirm the recipient, legal entity, capacity, and signing authority. If the recipient changes prefilled entity details, approve the proposal in the administrator view.
-7. Select contract text, submit a redline, edit or remove it while it remains a private draft, and return the review turn.
-8. In the administrator browser, check the notification bell and Mailpit, reply or resolve the redline, then send the final revision for signature.
-9. Return to the external browser, open the signing ceremony, type or draw a signature, confirm intent, and sign.
-10. In the administrator workspace, follow the prominent **Countersign required** action and sign the exact same revision.
-11. Verify that both signature blocks appear, the agreement becomes executed, and the agreement-status API returns `satisfied: true`.
-12. Close the participant browser, reopen the original invitation, then open the fresh return email in Mailpit. The new 15-minute link restores access without reusing the accepted invitation.
-13. Alternatively, open http://localhost:3000/inbox, enter the invited email, copy the six-digit code from Mailpit, and open any agreement assigned to that address.
-14. From the recipient inbox, select **Add a passkey** and complete the browser prompt. Sign out and use **Use a passkey** to return without another email.
+1. Sign in at http://localhost:3000 with the test user.
+2. Choose the customer entity under **Acting for**. Open **Templates** to create or version an entity-owned agreement template.
+3. Create an agreement and add one or more counterparty representatives as reviewers or signatories.
+4. Open the agreement and send its participant invitation.
+5. Find the email in Mailpit and open **Review agreement** in a private browser window.
+6. Confirm the recipient’s identity, entity, capacity, and signing authority.
+7. Edit the document directly. Tracked changes remain private until the recipient sends the review.
+8. Resolve or counter the changes as the sender, then either return another review or move the agreed revision to signing.
+9. Sign from either side in either order. Verify that all required signature blocks appear and the agreement becomes executed.
+10. Close the recipient session and return through `/inbox` with a Mailpit code; optionally enroll a passkey and use it for the next return.
 
-To exercise multi-entity membership, select **Add entity** next to **Acting for**. Creating and switching to it gives that customer entity its own template copy, agreements, sender identity, and data boundary.
+Create another customer entity with **Add entity** to verify that templates, agreements, people, and sender identity change with the selected context. Open **People** to test member invitations and role assignment.
 
-To manage templates, choose the customer entity under **Acting for**, then open **Templates**. Administrators and template managers can create a template or publish an edited draft as its next immutable version. Existing agreements retain the exact template version they started with; new agreements use the latest version for the selected entity. Members with template read access can inspect the library and version history without changing it.
-
-In a non-development OIDC deployment, a verified user with no invitation or existing memberships sees first-run customer-entity onboarding after sign-in. Invited users skip that setup and accept only the entity and roles named in their invitation.
-
-To exercise entity administration, open **People**, invite a second Keycloak user, select one or more roles, and open the resulting email in Mailpit. The recipient can return through the same invitation after signing in with the verified invited address. Role changes and suspension apply only to the selected customer entity; the final active administrator cannot remove their own administrative access.
-
-An automated equivalent runs against the Docker services:
+An automated end-to-end equivalent runs against the Compose services:
 
 ```bash
 npm run e2e:local
 ```
 
-The automated tests cover multi-entity selection and isolation, entity-owned template versioning and agreement snapshots, durable invite claiming, single-use return challenges, non-enumerating recipient code login, cross-entity inboxes, multiple participants without external IDs, entity onboarding, private draft editing, consolidated notifications, owner resolution, and document-bound signatures. The Docker flow additionally covers Mailpit delivery, OAuth2 client credentials, and integration-scoped handoff/status verification.
+## Run application processes directly
 
-## Run application code directly
-
-This uses in-memory storage and a deterministic local development identity:
+Requirements: Node.js 22 or newer and npm.
 
 ```bash
-npm install
+npm ci
 npm run api:generate
 npm run dev
 ```
 
-Copy `.env.example` to `.env` when you want to override defaults. The API uses PostgreSQL when `DATABASE_URL` is present and the in-memory repository otherwise.
+Without `DATABASE_URL`, the API uses in-memory persistence and a deterministic development identity. Copy `.env.example` to `.env` to override configuration. Do not use the example secrets outside local development.
 
-## API boundary
+## API and embedding boundary
 
-The source contract lives at `packages/api-spec/tsp/main.tsp`.
-
-```bash
-npm run api:generate
-```
-
-Runtime schemas and lifecycle invariants live in `packages/domain`. Public handlers validate untrusted input with those schemas, and the browser validates responses again.
-
-For an embedded/data-room flow, first register an integration and have the host backend create a short-lived session. The `subject` is accepted only from the OAuth2-authenticated backend and is mapped to an internal person within that integration’s namespace:
+The standalone app is the primary implementation target. The integration surface is intentionally backend-mediated: an embedding system authenticates with OAuth2, supplies its opaque subject within its own integration namespace, creates a short-lived handoff, and later evaluates the associated agreement requirements.
 
 ```http
 POST /v1/integration-sessions
 Authorization: Bearer <access-token>
+Content-Type: application/json
 
 {
-  "integrationKey": "fiftysixty",
+  "integrationKey": "example-data-room",
   "subject": "user_01JXYZ",
   "email": "visitor@example.com",
   "templateKey": "mutual-nda",
-  "returnUrl": "https://fiftysixty.com/projects"
+  "returnUrl": "https://example.com/projects"
 }
 ```
 
-After execution, the host can gate its data room with:
-
 ```http
-GET /v1/integration-status?integrationKey=fiftysixty&subject=user_01JXYZ&templateKey=mutual-nda&minimumVersion=1
+GET /v1/integration-status?integrationKey=example-data-room&subject=user_01JXYZ&templateKey=mutual-nda&minimumVersion=1
 Authorization: Bearer <access-token>
 ```
+
+The opaque subject is never collected in the normal standalone UI. Integration identity linking and product policy still require further design before this should gate a production data room.
+
+## Repository layout
+
+| Path | Responsibility |
+| --- | --- |
+| `apps/web` | React standalone app, recipient portal, component library, and themes |
+| `apps/api` | Hono HTTP API, authentication, notifications, and repository adapters |
+| `packages/domain` | Zod schemas, role policy, and agreement lifecycle invariants |
+| `packages/api-spec` | TypeSpec source and generated OpenAPI document |
+| `infra` | Local PostgreSQL and Keycloak configuration |
+| `scripts` | Local end-to-end verification |
+| `docs` | Architecture, identity, design-system, and UX decisions |
 
 ## Verification
 
@@ -149,21 +154,16 @@ Authorization: Bearer <access-token>
 npm run check
 npm test
 npm run build
-docker compose config
-# or: docker-compose config
+docker compose config --quiet
+git diff --check
 ```
 
-## Next production milestones
+The CI workflow runs the same checks for pushes and pull requests. Read [CONTRIBUTING.md](./CONTRIBUTING.md) before changing API boundaries or shared UI.
 
-1. Require recent authentication for configurable signing-assurance profiles and record the authentication method in append-only signing evidence.
-2. Expand route-family authorization into resource-level policy tests and add invitation resend/revoke controls.
-3. Add recent-authentication checks, signing-capacity evidence, and an append-only signing/audit evidence package.
-4. Add a signing-provider interface and a self-hosted PAdES-capable provider.
-5. Persist immutable revision and audit-event tables rather than aggregate snapshots alone.
-6. Add webhook outbox persistence, retries, replay, and delivery inspection.
-7. Store original, rendered, and executed artifacts in the configured S3-compatible store.
-8. Add scoped client administration, PDF rendering, malware scanning, retention controls, and backups.
+## Production gaps
+
+Before real contract execution, the project needs a signing-provider boundary and sealed PDF artifacts, append-only signing and audit evidence, persistent webhook delivery/replay, object storage, retention and privacy controls, backup/restore procedures, finer resource-level authorization tests, operational observability, and an external security review. See [SECURITY.md](./SECURITY.md).
 
 ## License
 
-No license has been selected yet. Choose the server and SDK licensing strategy before accepting external contributions.
+No license has been selected. Choose the server and SDK licensing strategy before describing the project as generally available open source or accepting external contributions.

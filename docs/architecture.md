@@ -35,6 +35,7 @@ global account -> customer-entity membership -> TypeSpec API -> Zod validation -
 - `{{signature_blocks}}` is a structural template placeholder. The renderer replaces it with the agreement's live signature fields; the placeholder remains in the hashed agreement content while signature evidence is recorded separately against that hash.
 - Entity templates support `{{sender.legal_name}}`, `{{sender.business_address}}`, `{{counterparty.legal_name}}`, and `{{counterparty.business_address}}`. Unknown values remain as template variables until confirmed; the renderer never substitutes editorial text such as “details pending.”
 - A template key is stable inside one customer entity. Publishing an edit creates the next immutable version for that entity; it does not alter another entity's library or any agreement that already snapshots a template version. Agreement creation resolves the latest version of the selected key.
+- Role-to-permission bundles are domain policy and live in `packages/domain`; API authorization and membership creation consume the same policy rather than maintaining parallel permission lists.
 - Reopening a signing revision requires an explicit destructive confirmation from an unsigned reviewer. A participant who has already approved and signed cannot initiate reopening. Every attached signature is removed from the active document but retained in `invalidatedSignatures` with its original content hash, actor, time, and invalidation reason before a new review turn begins.
 
 ## Authentication
@@ -54,3 +55,9 @@ The current `sign` operation is a development witness used to exercise lifecycle
 The initial PostgreSQL repository stores validated aggregate snapshots in JSONB. This keeps the first vertical slice easy to evolve. Before high-volume production use, extract participants, immutable revisions, audit events, webhook delivery attempts, and signing envelopes into relational append-only tables.
 
 Webhook delivery is currently best-effort. A transactional outbox, retry scheduler, delivery history, and manual replay are required before production use.
+
+## Codebase boundaries
+
+The repository is a TypeScript npm workspace: `packages/domain` owns runtime schemas and state invariants, `packages/api-spec` owns the public HTTP description, `apps/api` owns authentication, authorization, transport, orchestration, and persistence adapters, and `apps/web` owns the standalone user experience. Shared UI behavior belongs in `apps/web/src/components`, while the token and component CSS layers are kept separate from product-specific layouts. See the [design system](./design-system.md).
+
+`apps/api/src/app.ts` is currently a vertical-slice composition root and has grown beyond the desired long-term size. New endpoint families should move into route modules with injected repository/services; lifecycle decisions should first move into domain services with unit tests. That refactor should preserve the TypeSpec boundary and avoid introducing a second source of domain truth.

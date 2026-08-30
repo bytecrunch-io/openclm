@@ -1,6 +1,6 @@
 # UX audit
 
-Audit date: 2026-08-29
+Audit date: 2026-08-30
 
 Scope: standalone sender and participant journeys across agreement creation, invitations, onboarding, turn-based review, redlining, signing, countersigning, completion, notifications, responsive behavior, accessibility, and recovery states.
 
@@ -24,7 +24,7 @@ This pass adds an explicit next-action layer, touch-friendly typed/drawn signing
 | Signing ceremony | Good for local development | Typed/drawn marks, touch input, intent confirmation, exact hash, and visible blocks are present. |
 | Production signing assurance | Not production-ready | No signing provider, sealed PDF/PAdES, immutable evidence ledger, identity assurance policy, or downloadable completion certificate. |
 | Mobile | Good baseline | Review and touch signing reflow to one column; long-document navigation still needs a mobile progress pattern. |
-| Accessibility | Fair | Typed signing provides a keyboard alternative, but focus trapping, modal announcements, document semantics, and a full screen-reader pass remain. |
+| Accessibility | Fair | Typed signing, global focus styling, reduced-motion support, and an accessible signing dialog are present; remaining overlays and document semantics still need a full screen-reader pass. |
 | Multi-entity identity | Good | Global accounts, explicit customer-entity context, isolated data, durable recipient access, member administration, and cross-entity personal inboxes are implemented. |
 
 ## Changes completed in this pass
@@ -53,6 +53,9 @@ This pass adds an explicit next-action layer, touch-friendly typed/drawn signing
 - Added passkey enrollment after verified recipient access and a prominent passkey return path, while retaining email code as recovery.
 - Added an entity-scoped **Templates** workspace with document previews, supported-variable insertion, and immutable version history.
 - Made agreement creation show only the latest version of each template while preserving the chosen version in existing agreements.
+- Centralized system/light/dark preference across staff, recipient, membership, and external-review routes.
+- Added reusable button, icon-button, alert, loading, and dialog primitives; the signing dialog now contains and restores focus, supports Escape, and locks background scrolling.
+- Added a global reduced-motion baseline and semantic theme tokens for scrolling and document-paper surfaces.
 
 ## Prioritized findings
 
@@ -83,7 +86,7 @@ This pass adds an explicit next-action layer, touch-friendly typed/drawn signing
 3. Separate “activity” from “needs action” in notifications and allow agreement-level notification preferences.
 4. Improve narrow-screen agreement tables into stacked rows instead of horizontal scrolling.
 5. Add empty states for no feedback, no redlines, and signatures not yet requested.
-6. Add focus trapping, Escape handling, focus restoration, and live-region announcements to overlays and async actions.
+6. Migrate the remaining legacy overlays to the shared dialog primitive and add live-region announcements to every async action.
 7. Run formal WCAG contrast, keyboard, screen-reader, zoom, reduced-motion, and touch-target testing.
 
 ## Next-action state model

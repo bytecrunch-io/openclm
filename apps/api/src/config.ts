@@ -1,5 +1,11 @@
 import { z } from 'zod';
 
+try {
+  process.loadEnvFile();
+} catch (error) {
+  if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') throw error;
+}
+
 const ConfigSchema = z.object({
   PORT: z.coerce.number().int().positive().default(3001),
   WEB_URL: z.string().url().default('http://localhost:3000'),
