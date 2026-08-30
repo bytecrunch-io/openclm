@@ -18,7 +18,8 @@
     "test": "npm run test --workspaces --if-present",
     "api:generate": "tsp compile packages/api-spec/tsp --output-dir packages/api-spec/generated",
     "api:watch": "tsp compile packages/api-spec/tsp --watch --output-dir packages/api-spec/generated",
-    "e2e:local": "node scripts/e2e-local.mjs"
+    "e2e:local": "node scripts/e2e-local.mjs",
+    "smoke:deployment": "node scripts/smoke-deployment.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",

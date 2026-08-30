@@ -45,6 +45,16 @@ export const InvalidatedSignatureSchema = z.object({
 });
 export type InvalidatedSignature = z.infer<typeof InvalidatedSignatureSchema>;
 
+export const SignatureEvidenceSchema = z.object({
+  id: z.string().min(1), tenantId: z.string().min(1), agreementId: z.string().min(1), participantId: z.string().min(1),
+  personId: z.string().min(1).nullable(), partyId: z.string().min(1).nullable(), revision: z.number().int().positive(),
+  contentSha256: z.string().length(64), status: z.enum(['active', 'invalidated']), signature: SignatureRecordSchema,
+  supersedesEvidenceId: z.string().min(1).nullable(),
+  invalidatedAt: z.string().datetime().nullable(), invalidatedByParticipantId: z.string().min(1).nullable(),
+  invalidationReason: z.enum(['review_reopened']).nullable(), createdAt: z.string().datetime(),
+});
+export type SignatureEvidence = z.infer<typeof SignatureEvidenceSchema>;
+
 export const ThreadMessageSchema = z.object({
   id: z.string().min(1), authorId: z.string().min(1), authorName: z.string().min(1).max(160),
   body: z.string().min(1).max(4000), createdAt: z.string().datetime(),

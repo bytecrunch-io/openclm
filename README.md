@@ -5,7 +5,7 @@ Bytecrunch Contracts is a self-hostable contract lifecycle management applicatio
 It is designed to work as a standalone product first. Each customer legal entity is an independent tenant and contracting context; Bytecrunch operates the software and is never an implicit party to customer agreements. One account may represent several entities and explicitly chooses the entity it is acting for.
 
 > [!WARNING]
-> This is an early development release. The built-in signature flow is a development witness, not a certified electronic-signature implementation. No open-source license has been selected yet, so the source is visible but reuse and external contribution terms are not established.
+> This is an early development release. The built-in signature flow is a development witness, not a certified electronic-signature implementation. The project is licensed under AGPL-3.0-only; review that choice before the first public release if a different open-source/commercial model is intended.
 
 ## Current capabilities
 
@@ -43,7 +43,7 @@ It is designed to work as a standalone product first. Each customer legal entity
 - Local PostgreSQL, Keycloak, Mailpit, API, and web application through Docker Compose
 - System, light, and dark Bytecrunch themes
 
-More detail is available in [architecture](./docs/architecture.md), [identity and access](./docs/identity-and-access.md), [artifact storage](./docs/artifact-storage.md), [operations](./docs/operations.md), the [design system](./docs/design-system.md), the [UX audit](./docs/ux-audit.md), and the [production-readiness checklist](./docs/production-readiness.md).
+More detail is available in [architecture](./docs/architecture.md), [identity and access](./docs/identity-and-access.md), [artifact storage](./docs/artifact-storage.md), the [deployment guide](./docs/deployment.md), [operations](./docs/operations.md), the [design system](./docs/design-system.md), the [UX audit](./docs/ux-audit.md), and the [production-readiness checklist](./docs/production-readiness.md).
 
 ## Architecture
 
@@ -177,7 +177,7 @@ The CI workflow runs the same checks for pushes and pull requests. Read [CONTRIB
 
 ## Production gaps
 
-Production configuration now fails closed, lifecycle events are append-only, lifecycle aggregate/event/webhook writes are atomic, signature orchestration has a provider boundary, execution creates immutable evidence manifests, and webhook delivery is durable and replayable. Before real contract execution, the project still needs a real signing-provider adapter, sealed PDF artifacts and certificates, normalized provider evidence, recovery for adjacent invitation/notification/artifact workflows, production object storage, retention and privacy controls, backup/restore procedures, finer resource-level authorization tests, operational observability, and an external security review. See [production readiness](./docs/production-readiness.md) and [SECURITY.md](./SECURITY.md).
+Deployed configuration now fails closed, lifecycle events are append-only, lifecycle aggregate/event/webhook/signature-evidence writes are atomic, signature orchestration has a provider boundary, execution creates immutable evidence manifests, delivery is durable and replayable, and artifacts use a provider-neutral integrity-checked store. Before real contract execution, the project still needs a real signing-provider adapter, sealed PDF artifacts and certificates, provider callback evidence, recovery for adjacent invitation/notification/artifact workflows, a deployment-specific durable storage and retention policy, backup/restore drills, finer resource-level authorization tests, authenticated DAST, legal/privacy review, penetration testing, and an external security review. See [production readiness](./docs/production-readiness.md) and [SECURITY.md](./SECURITY.md).
 
 ## License
 

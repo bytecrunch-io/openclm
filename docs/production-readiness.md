@@ -7,6 +7,7 @@ Bytecrunch Contracts now has a production-oriented application boundary, but it 
 - Production configuration fails closed unless PostgreSQL, OIDC, HTTPS URLs, SMTP, and non-development secrets are configured.
 - The local signature witness cannot be enabled with `NODE_ENV=production`. A deployment may run with `SIGNING_MODE=disabled` while a signing provider is being implemented.
 - Signature orchestration has a provider interface. Development signatures record a provider reference, authentication method, versioned consent, timestamp, and exact content hash.
+- Provider-attributed signature evidence is normalized independently from agreement JSON and committed in the same transaction as its lifecycle event; reopening review appends evidence that explicitly supersedes the active signature record.
 - Entering signing freezes an immutable, hashed JSON snapshot. Execution creates a downloadable completion manifest containing active and invalidated signature evidence.
 - `/health` reports liveness. `/health/ready` actively probes storage and reports whether persistent storage, OIDC, and a safe non-development signing configuration are present. Disabled signing is safe for review-only deployment; it is not labelled as production signing.
 - Agreement lifecycle events are written to an append-only table with their revision, status, content hash, timestamp, and event digest.
@@ -20,6 +21,7 @@ Bytecrunch Contracts now has a production-oriented application boundary, but it 
 - Artifact bytes use a provider-neutral, content-addressed storage capability with integrity verification. Production rejects inline database storage; the filesystem/PVC adapter is available for deployment testing.
 - Every new evidence artifact records a configurable earliest-disposal date (seven years by default) and legal-hold metadata; no automatic deletion path exists.
 - Prometheus request/latency/process metrics are bearer-protected, and delivery attempts become explicit dead letters after a configurable bound.
+- Replicated workers claim email and webhook records with PostgreSQL row locks; both delivery channels have entity-scoped inspection/replay APIs and queue depth/age metrics.
 - Dependency audit, CodeQL, secret/misconfiguration scanning, container scanning, and automated dependency updates are configured in GitHub Actions.
 - The operations runbook defines deployment modes, monitoring, secret rotation, backup/restore drills, and incident response.
 
@@ -33,7 +35,7 @@ The European Commission distinguishes simple, advanced, and qualified electronic
 
 ### Evidence and persistence
 
-- Move the provider-attributed signature evidence currently retained in agreement snapshots/manifests into normalized immutable relational records, including callback evidence and artifact references.
+- Extend normalized signature evidence with the selected provider's verified callback payload and sealed-artifact references.
 - Make initial agreement creation, invitation issuance, notification enqueue, and signing-artifact creation participate in explicit workflow transactions. Lifecycle aggregate updates, audit appends, and webhook enqueue are already atomic, but these adjacent records currently use separate transactions and require idempotent recovery.
 - Select and implement the deployment's durable storage adapter and infrastructure retention policy. The application boundary is provider-neutral; filesystem/PVC is built in, while GCS, OCI, S3-compatible object lock, or Arweave require provider-specific adapters and recovery tests.
 - Approve jurisdiction/customer-specific retention, deletion, legal-hold, export, and data-residency policies. The application records retention/hold metadata and supports evidence download, but final policy and controlled disposal require an accountable operator and the selected storage backend.
@@ -42,8 +44,8 @@ The European Commission distinguishes simple, advanced, and qualified electronic
 
 - Configure the deployment's managed secret store and execute the documented rotation procedures.
 - Execute and record PostgreSQL/artifact recovery drills in the selected infrastructure.
-- Add distributed tracing, queue-depth/age metrics, notification dead-letter administration, and production alert rules in the selected observability platform.
-- Run authenticated DAST against staging; CI already covers dependency, CodeQL, secret/misconfiguration, and container scanning.
+- Add distributed tracing and production alert rules in the selected observability platform.
+- Run the manual ZAP workflow against staging, then add and execute authenticated contexts for staff and recipient roles; CI already covers dependency, CodeQL, secret/misconfiguration, and container scanning.
 - Complete resource-level authorization tests, abuse/rate-limit controls, formal accessibility testing, privacy review, threat modelling, penetration testing, and an external security review.
 - Establish a private security contact with a disclosure SLA. The code is licensed AGPL-3.0-only.
 

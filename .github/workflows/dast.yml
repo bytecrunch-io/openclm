@@ -1,0 +1,46 @@
+name: Staging DAST
+
+on:
+  workflow_dispatch:
+    inputs:
+      web_url:
+        description: HTTPS origin of the isolated staging web application
+        required: true
+        type: string
+      api_url:
+        description: HTTPS origin of the isolated staging API
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  public-surface:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Validate staging targets
+        env:
+          WEB_TARGET: ${{ inputs.web_url }}
+          API_TARGET: ${{ inputs.api_url }}
+        run: |
+          [[ "$WEB_TARGET" == https://* ]]
+          [[ "$API_TARGET" == https://* ]]
+      - name: Create report directory
+        run: mkdir -p zap-output
+      - name: Scan browser surface
+        env:
+          WEB_TARGET: ${{ inputs.web_url }}
+        run: docker run --rm -v "$PWD/zap-output:/zap/wrk/:rw" -t ghcr.io/zaproxy/zaproxy:stable zap-baseline.py -t "$WEB_TARGET" -I -r web-report.html -J web-report.json -w web-report.md
+      - name: Scan OpenAPI surface
+        env:
+          API_TARGET: ${{ inputs.api_url }}
+        run: docker run --rm -v "$PWD/zap-output:/zap/wrk/:rw" -t ghcr.io/zaproxy/zaproxy:stable zap-api-scan.py -t "$API_TARGET/openapi.yaml" -f openapi -I -r api-report.html -J api-report.json -w api-report.md
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-staging-reports
+          path: zap-output
+          retention-days: 30

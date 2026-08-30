@@ -54,7 +54,7 @@ describe('contracts API vertical slice', () => {
 
   it('reports failed storage connectivity through readiness', async () => {
     const repository = new UnavailableRepository(); await repository.init(); const response = await createApp(repository).request('/health/ready');
-    expect(response.status).toBe(503); expect(await response.json()).toMatchObject({ status: 'not_ready', checks: { storageReachable: false, safeSigningConfiguration: false } });
+    expect(response.status).toBe(503); expect(await response.json()).toMatchObject({ status: 'not_ready', checks: { storageReachable: false, safeSigningConfiguration: true } });
   });
 
   it('rejects state-changing browser requests from an untrusted origin', async () => {
@@ -189,7 +189,7 @@ describe('contracts API vertical slice', () => {
     const signed = await app.request('/public/session/sign', { method: 'POST', headers: externalHeaders, body: JSON.stringify({ intentConfirmed: true }) });
     expect(await signed.json()).toMatchObject({ agreement: { status: 'executed' }, participant: { signature: { provider: 'development_witness', providerSignatureId: expect.stringMatching(/^devsig_/), authenticationMethod: 'integration_handoff', consentVersion: '2026-08-30' } } });
     const artifacts = await (await app.request(`/v1/agreements/${handoff.agreementId}/artifacts`)).json() as Array<{ id: string; kind: string; artifactSha256: string }>; expect(artifacts.map((item) => item.kind)).toEqual(['signing_snapshot', 'completion_manifest']); const manifest = artifacts.find((item) => item.kind === 'completion_manifest')!;
-    const downloaded = await app.request(`/v1/agreements/${handoff.agreementId}/artifacts/${manifest.id}/content`); const manifestContent = await downloaded.text(); expect(downloaded.headers.get('content-disposition')).toContain('completion-manifest.json'); expect(downloaded.headers.get('x-content-sha256')).toBe(createHash('sha256').update(manifestContent).digest('hex')); expect(JSON.parse(manifestContent)).toMatchObject({ schemaVersion: 1, signatures: [expect.objectContaining({ signature: expect.objectContaining({ authenticationMethod: 'integration_handoff' }) })] });
+    const downloaded = await app.request(`/v1/agreements/${handoff.agreementId}/artifacts/${manifest.id}/content`); const manifestContent = await downloaded.text(); expect(downloaded.headers.get('content-disposition')).toContain('completion-manifest.json'); expect(downloaded.headers.get('x-content-sha256')).toBe(createHash('sha256').update(manifestContent).digest('hex')); expect(JSON.parse(manifestContent)).toMatchObject({ schemaVersion: 2, signatures: [expect.objectContaining({ signature: expect.objectContaining({ authenticationMethod: 'integration_handoff' }) })], signatureEvidence: [expect.objectContaining({ status: 'active', signature: expect.objectContaining({ authenticationMethod: 'integration_handoff' }) })] });
     expect(await (await app.request('/public/session/artifacts', { headers: { cookie } })).json()).toEqual(expect.arrayContaining([expect.objectContaining({ id: manifest.id, kind: 'completion_manifest' })])); expect((await app.request(`/public/session/artifacts/${manifest.id}/content`, { headers: { cookie } })).status).toBe(200);
     const evaluation = await app.request('/v1/conditions/evaluate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ integrationKey: 'customer-portal', subject: 'portal-user-42', operator: 'all', conditions: [{ kind: 'subject_signed', templateKey: 'mutual-nda', minimumVersion: 1 }, { kind: 'agreement_executed', templateKey: 'mutual-nda', minimumVersion: 1 }] }) });
     expect(await evaluation.json()).toMatchObject({ integrationKey: 'customer-portal', subject: 'portal-user-42', met: true, operator: 'all', conditions: [{ kind: 'subject_signed', met: true }, { kind: 'agreement_executed', met: true }] });
@@ -403,7 +403,7 @@ describe('contracts API vertical slice', () => {
   });
 
   it('allows the sender to sign before the counterparty', async () => {
-    const app = await testApp();
+    const repository = new MemoryRepository(); await repository.init(); const app = createApp(repository);
     const createdResponse = await app.request('/v1/agreements', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: 'Unordered signatures', templateKey: 'mutual-nda', participants: [], metadata: {}, parties: [{ role: 'counterparty', minimumSignatures: 1, entity: { legalName: 'Other Co' }, participants: [{ email: 'other@example.com', name: 'Other Signer', role: 'signatory', required: true }] }] }) });
     const created = await createdResponse.json() as { id: string; createdByParticipantId: string; participants: Array<{ id: string }>; content: string };
     expect(created.content).toContain('ByteCrunch ApS and Other Co');
@@ -416,12 +416,14 @@ describe('contracts API vertical slice', () => {
     expect(await prepared.json()).toMatchObject({ status: 'out_for_signature', signatureNotificationsSentAt: null });
     const ownerSigned = await app.request(`/v1/agreements/${created.id}/sign`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ participantId: created.createdByParticipantId, intentConfirmed: true }) });
     expect(await ownerSigned.json()).toMatchObject({ status: 'partially_signed', signatureNotificationsSentAt: expect.any(String) });
+    expect(await repository.listSignatureEvidence('bytecrunch', created.id)).toMatchObject([{ participantId: created.createdByParticipantId, status: 'active', signature: { provider: 'development_witness' } }]);
     const completed = await app.request('/public/session/sign', { method: 'POST', headers: { 'content-type': 'application/json', cookie }, body: JSON.stringify({ intentConfirmed: true }) });
     expect(await completed.json()).toMatchObject({ agreement: { status: 'executed' } });
+    expect(await repository.listSignatureEvidence('bytecrunch', created.id)).toHaveLength(2);
   });
 
   it('voids existing signatures before an external party reopens negotiation', async () => {
-    const app = await testApp();
+    const repository = new MemoryRepository(); await repository.init(); const app = createApp(repository);
     const createdResponse = await app.request('/v1/agreements', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: 'Reopen signed revision', templateKey: 'mutual-nda', participants: [], metadata: {}, parties: [{ role: 'counterparty', minimumSignatures: 1, entity: { legalName: 'Reopen Co' }, participants: [{ email: 'reopen@example.com', name: 'Review Again', role: 'signatory', required: true }] }] }) });
     const created = await createdResponse.json() as { id: string; createdByParticipantId: string; content: string; participants: Array<{ id: string }> }; const external = created.participants.find((item) => item.id !== created.createdByParticipantId)!;
     const invitationResponse = await app.request(`/v1/agreements/${created.id}/participants/${external.id}/invite`, { method: 'POST' }); const invitation = await invitationResponse.json() as { invitationUrl: string }; const token = new URL(invitation.invitationUrl).searchParams.get('token')!;
@@ -434,6 +436,7 @@ describe('contracts API vertical slice', () => {
     expect(reopenedResponse.status).toBe(200); const reopened = await reopenedResponse.json() as { agreement: { content: string; status: string; reviewAssignedTo: string; participants: Array<{ id: string; signature: unknown; signedAt: unknown }>; invalidatedSignatures: Array<{ participantId: string; reason: string }> } };
     expect(reopened.agreement).toMatchObject({ status: 'in_review', reviewAssignedTo: 'counterparty', invalidatedSignatures: [expect.objectContaining({ participantId: created.createdByParticipantId, reason: 'review_reopened' })] });
     expect(reopened.agreement.participants.find((item) => item.id === created.createdByParticipantId)).toMatchObject({ signature: null, signedAt: null });
+    expect(await repository.listSignatureEvidence('bytecrunch', created.id)).toEqual(expect.arrayContaining([expect.objectContaining({ participantId: created.createdByParticipantId, status: 'active' }), expect.objectContaining({ participantId: created.createdByParticipantId, status: 'invalidated', invalidationReason: 'review_reopened', supersedesEvidenceId: expect.any(String) })]));
     const draft = await app.request('/public/session/review-draft', { method: 'PUT', headers, body: JSON.stringify({ content: reopened.agreement.content.replace('two years', 'three years') }) });
     expect(await draft.json()).toMatchObject({ agreement: { suggestions: [expect.objectContaining({ originalText: 'two', replacementText: 'three' })] } });
   });

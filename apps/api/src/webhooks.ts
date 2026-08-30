@@ -3,6 +3,7 @@ import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import {
   AgreementAuditEventSchema,
+  SignatureEvidenceSchema,
   WebhookDeliverySchema,
   type Agreement,
 } from "@bytecrunch/contracts-domain";
@@ -10,6 +11,33 @@ import { config } from "./config.js";
 import type { Repository } from "./repository.js";
 
 const now = () => new Date().toISOString();
+
+function evidenceId(providerSignatureId: string | null, participantId: string, signedAt: string, contentSha256: string, event: 'active' | 'invalidated'): string {
+  return `sigev_${createHash('sha256').update(`${providerSignatureId ?? 'unattributed'}:${participantId}:${signedAt}:${contentSha256}:${event}`).digest('hex')}`;
+}
+
+function signatureEvidence(agreement: Agreement) {
+  const records = agreement.participants.flatMap((participant) => participant.signature ? [SignatureEvidenceSchema.parse({
+    id: evidenceId(participant.signature.providerSignatureId, participant.id, participant.signature.signedAt, participant.signature.signedContentSha256, 'active'),
+    tenantId: agreement.tenantId, agreementId: agreement.id, participantId: participant.id, personId: participant.personId,
+    partyId: participant.partyId, revision: agreement.revision, contentSha256: participant.signature.signedContentSha256,
+    status: 'active', signature: participant.signature, supersedesEvidenceId: null, invalidatedAt: null, invalidatedByParticipantId: null,
+    invalidationReason: null, createdAt: participant.signature.signedAt,
+  })] : []);
+  for (const invalidated of agreement.invalidatedSignatures) {
+    const participant = agreement.participants.find((item) => item.id === invalidated.participantId);
+    records.push(SignatureEvidenceSchema.parse({
+      id: evidenceId(invalidated.signature.providerSignatureId, invalidated.participantId, invalidated.signature.signedAt, invalidated.signature.signedContentSha256, 'invalidated'),
+      tenantId: agreement.tenantId, agreementId: agreement.id, participantId: invalidated.participantId,
+      personId: participant?.personId ?? null, partyId: participant?.partyId ?? null, revision: agreement.revision,
+      contentSha256: invalidated.signature.signedContentSha256, status: 'invalidated', signature: invalidated.signature,
+      supersedesEvidenceId: evidenceId(invalidated.signature.providerSignatureId, invalidated.participantId, invalidated.signature.signedAt, invalidated.signature.signedContentSha256, 'active'),
+      invalidatedAt: invalidated.invalidatedAt, invalidatedByParticipantId: invalidated.invalidatedByParticipantId,
+      invalidationReason: invalidated.reason, createdAt: invalidated.signature.signedAt,
+    }));
+  }
+  return records;
+}
 
 function isPrivateAddress(address: string): boolean {
   if (isIP(address) === 4) {
@@ -121,7 +149,7 @@ export async function emitAgreementEvent(
         deliveredAt: null,
       }),
     );
-  await repository.commitAgreementEvent(agreement, auditEvent, deliveries);
+  await repository.commitAgreementEvent(agreement, auditEvent, deliveries, signatureEvidence(agreement));
 }
 
 export async function deliverWebhookOutbox(

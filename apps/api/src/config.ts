@@ -58,47 +58,43 @@ const ConfigSchema = z
     WEBAUTHN_ORIGIN: z.string().url().optional(),
   })
   .superRefine((value, context) => {
-    if (value.NODE_ENV !== "production") return;
+    if (value.NODE_ENV === "development" || value.NODE_ENV === "test") return;
     const require = (condition: boolean, path: string, message: string) => {
       if (!condition)
         context.addIssue({ code: "custom", path: [path], message });
     };
     require(Boolean(
       value.DATABASE_URL,
-    ), "DATABASE_URL", "Persistent PostgreSQL storage is required in production.");
+    ), "DATABASE_URL", "Persistent PostgreSQL storage is required in deployed environments.");
     require(value.AUTH_MODE ===
-      "oidc", "AUTH_MODE", "OIDC authentication is required in production.");
+      "oidc", "AUTH_MODE", "OIDC authentication is required in deployed environments.");
     require(value.WEB_URL.startsWith(
-      "https://",
-    ), "WEB_URL", "HTTPS is required in production.");
+      "https://"), "WEB_URL", "HTTPS is required in deployed environments.");
     require(value.OIDC_ISSUER_URL.startsWith(
-      "https://",
-    ), "OIDC_ISSUER_URL", "The public OIDC issuer must use HTTPS in production.");
+      "https://"), "OIDC_ISSUER_URL", "The public OIDC issuer must use HTTPS in deployed environments.");
     require(value.OIDC_REDIRECT_URI.startsWith(
-      "https://",
-    ), "OIDC_REDIRECT_URI", "The OIDC redirect URI must use HTTPS in production.");
+      "https://"), "OIDC_REDIRECT_URI", "The OIDC redirect URI must use HTTPS in deployed environments.");
     require(Boolean(
-      value.SMTP_HOST,
-    ), "SMTP_HOST", "An SMTP transport is required in production.");
+      value.SMTP_HOST), "SMTP_HOST", "An SMTP transport is required in deployed environments.");
     require(value.SESSION_SECRET.length >= 32 &&
       !value.SESSION_SECRET.includes("local-") &&
       !value.SESSION_SECRET.includes(
         "change-",
-      ), "SESSION_SECRET", "Use a unique production session secret of at least 32 characters.");
+      ), "SESSION_SECRET", "Use a unique deployed session secret of at least 32 characters.");
     require(value.WEBHOOK_SIGNING_SECRET.length >= 32 &&
       !value.WEBHOOK_SIGNING_SECRET.includes(
         "local-",
-      ), "WEBHOOK_SIGNING_SECRET", "Use a unique webhook signing secret of at least 32 characters.");
+      ), "WEBHOOK_SIGNING_SECRET", "Use a unique deployed webhook signing secret of at least 32 characters.");
     require(value.OIDC_CLIENT_SECRET !==
       "local-development-secret", "OIDC_CLIENT_SECRET", "Use the deployed OIDC client secret.");
-    require(value.SIGNING_MODE !==
-      "development", "SIGNING_MODE", "The development signature witness cannot run in production. Set signing to disabled until a certified provider is configured.");
     require(value.ARTIFACT_STORAGE_DRIVER !==
-      "database", "ARTIFACT_STORAGE_DRIVER", "Production artifacts must use a storage adapter outside the application database.");
+      "database", "ARTIFACT_STORAGE_DRIVER", "Deployed artifacts must use a storage adapter outside the application database.");
     require(!value.RATE_LIMIT_SECRET.includes(
       "local-") && !value.RATE_LIMIT_SECRET.includes("change-"), "RATE_LIMIT_SECRET", "Use a unique production rate-limit key secret.");
     require(!value.METRICS_TOKEN.includes(
       "local-") && !value.METRICS_TOKEN.includes("change-"), "METRICS_TOKEN", "Use a unique production metrics bearer token.");
+    if (value.NODE_ENV === "production") require(value.SIGNING_MODE !==
+      "development", "SIGNING_MODE", "The development signature witness cannot run in production. Set signing to disabled until a certified provider is configured.");
   });
 
 export function parseConfig(environment: NodeJS.ProcessEnv) {

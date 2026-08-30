@@ -113,13 +113,14 @@ export async function ensureCompletionManifest(
       item.contentSha256 === agreement.contentSha256,
   );
   if (existing) return existing;
+  const evidence = await repository.listSignatureEvidence(agreement.tenantId, agreement.id);
   return storeJsonArtifact(
     repository,
     agreement,
     "completion_manifest",
     `${safeName(agreement.title)}-completion-manifest.json`,
     {
-      schemaVersion: 1,
+      schemaVersion: 2,
       agreement: {
         id: agreement.id,
         title: agreement.title,
@@ -142,6 +143,7 @@ export async function ensureCompletionManifest(
           signature: item.signature,
         })),
       invalidatedSignatures: agreement.invalidatedSignatures,
+      signatureEvidence: evidence,
       completedAt: now(),
     },
   );

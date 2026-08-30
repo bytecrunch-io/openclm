@@ -23,6 +23,7 @@ import {
   WebhookDeliverySchema,
   AgreementAuditEventSchema,
   AgreementArtifactSchema,
+  SignatureEvidenceSchema,
   type Agreement,
   type CreateAgreement,
   type CreateTemplate,
@@ -47,6 +48,7 @@ import {
   type WebhookDelivery,
   type AgreementAuditEvent,
   type AgreementArtifact,
+  type SignatureEvidence,
 } from '@bytecrunch/contracts-domain';
 
 export interface WebhookEndpoint {
@@ -85,7 +87,8 @@ export interface Repository {
   createAgreementArtifact(artifact: AgreementArtifact): Promise<void>;
   listAgreementArtifacts(tenantId: string, agreementId: string): Promise<AgreementArtifact[]>;
   getAgreementArtifact(tenantId: string, agreementId: string, artifactId: string): Promise<AgreementArtifact | undefined>;
-  commitAgreementEvent(agreement: Agreement, event: AgreementAuditEvent, deliveries: WebhookDelivery[]): Promise<void>;
+  listSignatureEvidence(tenantId: string, agreementId: string): Promise<SignatureEvidence[]>;
+  commitAgreementEvent(agreement: Agreement, event: AgreementAuditEvent, deliveries: WebhookDelivery[], signatureEvidence?: SignatureEvidence[]): Promise<void>;
   createInvitation(invitation: Invitation): Promise<void>;
   getInvitationByTokenHash(tokenHash: string): Promise<Invitation | undefined>;
   getInvitation(id: string): Promise<Invitation | undefined>;
@@ -156,6 +159,7 @@ export class MemoryRepository implements Repository {
   protected webhookDeliveries: WebhookDelivery[] = [];
   protected agreementAuditEvents: AgreementAuditEvent[] = [];
   protected agreementArtifacts: AgreementArtifact[] = [];
+  protected signatureEvidence: SignatureEvidence[] = [];
   protected invitations: Invitation[] = [];
   protected people: Person[] = [];
   protected integrations: Integration[] = [];
@@ -323,15 +327,21 @@ export class MemoryRepository implements Repository {
     return value ? structuredClone(value) : undefined;
   }
 
-  async commitAgreementEvent(agreement: Agreement, event: AgreementAuditEvent, deliveries: WebhookDelivery[]): Promise<void> {
+  async listSignatureEvidence(tenantId: string, agreementId: string): Promise<SignatureEvidence[]> {
+    return this.signatureEvidence.filter((item) => item.tenantId === tenantId && item.agreementId === agreementId).sort((a, b) => a.createdAt.localeCompare(b.createdAt)).map((item) => structuredClone(item));
+  }
+
+  async commitAgreementEvent(agreement: Agreement, event: AgreementAuditEvent, deliveries: WebhookDelivery[], signatureEvidence: SignatureEvidence[] = []): Promise<void> {
     const parsedAgreement = AgreementSchema.parse(agreement);
     const parsedEvent = AgreementAuditEventSchema.parse(event);
     const parsedDeliveries = deliveries.map((item) => WebhookDeliverySchema.parse(item));
+    const parsedEvidence = signatureEvidence.map((item) => SignatureEvidenceSchema.parse(item));
     const agreementIndex = this.agreements.findIndex((item) => item.id === parsedAgreement.id && item.tenantId === parsedAgreement.tenantId);
     if (agreementIndex < 0) throw new Error('Agreement not found.');
     this.agreements[agreementIndex] = structuredClone(parsedAgreement);
     if (!this.agreementAuditEvents.some((item) => item.id === parsedEvent.id)) this.agreementAuditEvents.push(parsedEvent);
     this.webhookDeliveries.push(...parsedDeliveries);
+    for (const evidence of parsedEvidence) if (!this.signatureEvidence.some((item) => item.id === evidence.id)) this.signatureEvidence.push(evidence);
   }
 
   async createInvitation(invitation: Invitation): Promise<void> { this.invitations.push(InvitationSchema.parse(invitation)); }
@@ -460,6 +470,11 @@ export class PostgresRepository extends MemoryRepository {
         UNIQUE (agreement_id, artifact_kind, revision, content_sha256)
       );
       CREATE INDEX IF NOT EXISTS agreement_artifacts_agreement_idx ON agreement_artifacts (tenant_id, agreement_id, created_at);
+      CREATE TABLE IF NOT EXISTS signature_evidence (
+        id text PRIMARY KEY, tenant_id text NOT NULL, agreement_id text NOT NULL, participant_id text NOT NULL,
+        status text NOT NULL, payload jsonb NOT NULL, created_at timestamptz NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS signature_evidence_agreement_idx ON signature_evidence (tenant_id, agreement_id, created_at);
       CREATE TABLE IF NOT EXISTS invitations (
         id text PRIMARY KEY, tenant_id text NOT NULL, agreement_id text NOT NULL,
         token_hash text UNIQUE NOT NULL, payload jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
@@ -663,8 +678,13 @@ export class PostgresRepository extends MemoryRepository {
     return result.rows[0] ? AgreementArtifactSchema.parse(result.rows[0].payload) : undefined;
   }
 
-  override async commitAgreementEvent(agreement: Agreement, event: AgreementAuditEvent, deliveries: WebhookDelivery[]): Promise<void> {
-    AgreementSchema.parse(agreement); AgreementAuditEventSchema.parse(event); deliveries.forEach((item) => WebhookDeliverySchema.parse(item));
+  override async listSignatureEvidence(tenantId: string, agreementId: string): Promise<SignatureEvidence[]> {
+    const result = await this.pool.query('SELECT payload FROM signature_evidence WHERE tenant_id=$1 AND agreement_id=$2 ORDER BY created_at', [tenantId, agreementId]);
+    return result.rows.map((row) => SignatureEvidenceSchema.parse(row.payload));
+  }
+
+  override async commitAgreementEvent(agreement: Agreement, event: AgreementAuditEvent, deliveries: WebhookDelivery[], signatureEvidence: SignatureEvidence[] = []): Promise<void> {
+    AgreementSchema.parse(agreement); AgreementAuditEventSchema.parse(event); deliveries.forEach((item) => WebhookDeliverySchema.parse(item)); signatureEvidence.forEach((item) => SignatureEvidenceSchema.parse(item));
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
@@ -672,6 +692,7 @@ export class PostgresRepository extends MemoryRepository {
       if (saved.rowCount !== 1) throw new Error('Agreement was not found.');
       await client.query('INSERT INTO agreement_audit_events (id,tenant_id,agreement_id,event_type,payload,created_at) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (id) DO NOTHING', [event.id, event.tenantId, event.agreementId, event.type, JSON.stringify(event), event.createdAt]);
       for (const delivery of deliveries) await client.query('INSERT INTO webhook_deliveries (id,tenant_id,endpoint_id,event_id,status,next_attempt_at,payload) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (endpoint_id,event_id) DO NOTHING', [delivery.id, delivery.tenantId, delivery.endpointId, delivery.eventId, delivery.status, delivery.nextAttemptAt, JSON.stringify(delivery)]);
+      for (const evidence of signatureEvidence) await client.query('INSERT INTO signature_evidence (id,tenant_id,agreement_id,participant_id,status,payload,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (id) DO NOTHING', [evidence.id, evidence.tenantId, evidence.agreementId, evidence.participantId, evidence.status, JSON.stringify(evidence), evidence.createdAt]);
       await client.query('COMMIT');
     } catch (error) {
       await client.query('ROLLBACK'); throw error;

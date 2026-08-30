@@ -257,7 +257,7 @@ export function createApp(repository: Repository): Hono {
   app.get('/health', (context) => context.json({ status: 'ok', version: '0.1.0', storage: repository.kind }));
   app.get('/metrics', async (context) => context.req.header('authorization') === `Bearer ${config.METRICS_TOKEN}` ? context.text(renderMetrics(await repository.deliveryQueueStats()), 200, { 'content-type': 'text/plain; version=0.0.4' }) : context.json({ error: 'unauthorized', message: 'A metrics bearer token is required.' }, 401));
   app.get('/health/ready', async (context) => {
-    const checks = { persistentStorage: repository.kind === 'postgres', storageReachable: await repository.healthCheck(), artifactStorage: await artifactStorage().healthCheck(), externalArtifactStorage: artifactStorage().driver !== 'database', oidc: config.AUTH_MODE === 'oidc', safeSigningConfiguration: config.SIGNING_MODE !== 'development' };
+    const checks = { persistentStorage: repository.kind === 'postgres', storageReachable: await repository.healthCheck(), artifactStorage: await artifactStorage().healthCheck(), externalArtifactStorage: artifactStorage().driver !== 'database', oidc: config.AUTH_MODE === 'oidc', safeSigningConfiguration: config.NODE_ENV !== 'production' || config.SIGNING_MODE !== 'development' };
     const ready = Object.values(checks).every(Boolean);
     return context.json({ status: ready ? 'ready' : 'not_ready', checks }, ready ? 200 : 503);
   });

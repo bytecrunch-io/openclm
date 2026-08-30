@@ -21,6 +21,14 @@ const productionEnvironment = {
 } satisfies NodeJS.ProcessEnv;
 
 describe("production configuration", () => {
+  it("accepts a production-like staging deployment with the test signing witness", () => {
+    expect(parseConfig({ ...productionEnvironment, NODE_ENV: "staging", SIGNING_MODE: "development" })).toMatchObject({
+      NODE_ENV: "staging",
+      AUTH_MODE: "oidc",
+      SIGNING_MODE: "development",
+    });
+  });
+
   it("accepts a persistent, OIDC-backed deployment with development signing disabled", () => {
     expect(parseConfig(productionEnvironment)).toMatchObject({
       NODE_ENV: "production",

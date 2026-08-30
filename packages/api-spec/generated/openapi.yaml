@@ -3464,14 +3464,23 @@ components:
           properties:
             persistentStorage:
               type: boolean
+            storageReachable:
+              type: boolean
+            artifactStorage:
+              type: boolean
+            externalArtifactStorage:
+              type: boolean
             oidc:
               type: boolean
-            productionSigning:
+            safeSigningConfiguration:
               type: boolean
           required:
             - persistentStorage
+            - storageReachable
+            - artifactStorage
+            - externalArtifactStorage
             - oidc
-            - productionSigning
+            - safeSigningConfiguration
     RecipientAuthenticated:
       type: object
       required:

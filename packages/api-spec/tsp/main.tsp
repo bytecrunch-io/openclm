@@ -58,7 +58,14 @@ model HealthResponse {
 
 model ReadinessResponse {
   status: "ready" | "not_ready";
-  checks: { persistentStorage: boolean; oidc: boolean; productionSigning: boolean; };
+  checks: {
+    persistentStorage: boolean;
+    storageReachable: boolean;
+    artifactStorage: boolean;
+    externalArtifactStorage: boolean;
+    oidc: boolean;
+    safeSigningConfiguration: boolean;
+  };
 }
 
 model Template {

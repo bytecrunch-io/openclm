@@ -15,7 +15,7 @@ Never promote a staging database, signing key, invitation, or artifact volume in
 - `/metrics` exposes Prometheus text format and requires `Authorization: Bearer $METRICS_TOKEN`.
 - Alert on readiness failures, 5xx rate, p95 latency, process restarts/memory, SMTP failures, webhook failures/dead letters, PostgreSQL capacity/replication lag, artifact-volume capacity, certificate expiry, and backup age.
 
-Webhook and email delivery stop retrying after `DELIVERY_MAX_ATTEMPTS`. Webhook dead letters are visible through the entity-scoped delivery API and can be replayed after remediation. Notification dead-letter administration should be added before a large hosted rollout.
+Webhook and email delivery stop retrying after `DELIVERY_MAX_ATTEMPTS`. Both channels claim work with PostgreSQL row locks so multiple API replicas do not concurrently send the same record. Entity-scoped delivery APIs expose dead letters and permit replay after remediation. Prometheus reports pending, failed, and dead-letter counts plus the oldest queued-item age for each channel.
 
 ## Backup and recovery
 
