@@ -67,6 +67,7 @@ services:
       SIGNING_MODE: development
       ARTIFACT_STORAGE_DRIVER: filesystem
       ARTIFACT_STORAGE_PATH: /var/lib/bytecrunch/artifacts
+      ARTIFACT_RETENTION_DAYS: 2555
       RATE_LIMIT_SECRET: local-compose-rate-limit-secret-change-in-production
       TRUST_PROXY: "false"
       METRICS_TOKEN: local-compose-metrics-token-change-in-production

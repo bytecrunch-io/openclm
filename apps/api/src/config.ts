@@ -44,6 +44,7 @@ const ConfigSchema = z
     SIGNING_MODE: z.enum(["development", "disabled"]).default("development"),
     ARTIFACT_STORAGE_DRIVER: z.enum(["database", "filesystem"]).default("database"),
     ARTIFACT_STORAGE_PATH: z.string().min(1).default("./var/artifacts"),
+    ARTIFACT_RETENTION_DAYS: z.coerce.number().int().min(1).max(36500).default(2555),
     RATE_LIMIT_SECRET: z.string().min(32).default("local-rate-limit-secret-change-me"),
     TRUST_PROXY: z.enum(["true", "false"]).default("false"),
     METRICS_TOKEN: z.string().min(32).default("local-metrics-token-change-me-now"),

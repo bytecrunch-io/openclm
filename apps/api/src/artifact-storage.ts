@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve, sep } from 'node:path';
 import { config } from './config.js';
 
@@ -57,7 +58,13 @@ class FilesystemArtifactStorage implements ArtifactStorage {
   }
 
   async healthCheck() {
-    try { await mkdir(this.root, { recursive: true }); await readFile(this.root).catch(() => undefined); return true; } catch { return false; }
+    try {
+      await mkdir(this.root, { recursive: true });
+      await access(this.root, constants.R_OK | constants.W_OK);
+      return true;
+    } catch {
+      return false;
+    }
   }
 }
 

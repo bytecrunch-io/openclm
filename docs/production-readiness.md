@@ -18,6 +18,7 @@ Bytecrunch Contracts now has a production-oriented application boundary, but it 
 - Integration condition evaluation is scoped by customer entity, integration, and opaque subject. Unlinked subjects return unmet conditions without exposing agreement data.
 - Staff signing is bound to the authenticated account's own creator-participant record; external subject identifiers cannot be used at the staff signing boundary.
 - Artifact bytes use a provider-neutral, content-addressed storage capability with integrity verification. Production rejects inline database storage; the filesystem/PVC adapter is available for deployment testing.
+- Every new evidence artifact records a configurable earliest-disposal date (seven years by default) and legal-hold metadata; no automatic deletion path exists.
 - Prometheus request/latency/process metrics are bearer-protected, and delivery attempts become explicit dead letters after a configurable bound.
 - Dependency audit, CodeQL, secret/misconfiguration scanning, container scanning, and automated dependency updates are configured in GitHub Actions.
 - The operations runbook defines deployment modes, monitoring, secret rotation, backup/restore drills, and incident response.
@@ -35,7 +36,7 @@ The European Commission distinguishes simple, advanced, and qualified electronic
 - Move the provider-attributed signature evidence currently retained in agreement snapshots/manifests into normalized immutable relational records, including callback evidence and artifact references.
 - Make initial agreement creation, invitation issuance, notification enqueue, and signing-artifact creation participate in explicit workflow transactions. Lifecycle aggregate updates, audit appends, and webhook enqueue are already atomic, but these adjacent records currently use separate transactions and require idempotent recovery.
 - Select and implement the deployment's durable storage adapter and infrastructure retention policy. The application boundary is provider-neutral; filesystem/PVC is built in, while GCS, OCI, S3-compatible object lock, or Arweave require provider-specific adapters and recovery tests.
-- Define retention, deletion, legal-hold, export, and data-residency policies.
+- Approve jurisdiction/customer-specific retention, deletion, legal-hold, export, and data-residency policies. The application records retention/hold metadata and supports evidence download, but final policy and controlled disposal require an accountable operator and the selected storage backend.
 
 ### Operations and security
 
@@ -69,6 +70,7 @@ SMTP_HOST=...
 SIGNING_MODE=disabled
 ARTIFACT_STORAGE_DRIVER=filesystem
 ARTIFACT_STORAGE_PATH=/var/lib/bytecrunch/artifacts
+ARTIFACT_RETENTION_DAYS=2555
 ```
 
 `SIGNING_MODE=disabled` is the only safe production setting currently available. Introducing another value must require a real provider implementation and provider-specific readiness checks, not merely a configuration change.

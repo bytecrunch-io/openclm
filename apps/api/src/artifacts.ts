@@ -6,6 +6,7 @@ import {
 } from "@bytecrunch/contracts-domain";
 import type { Repository } from "./repository.js";
 import { artifactStorage } from "./artifact-storage.js";
+import { config } from "./config.js";
 
 const now = () => new Date().toISOString();
 const sha256 = (value: string) =>
@@ -40,7 +41,7 @@ async function storeJsonArtifact(
     fileName,
     storageDriver: artifactStorage().driver,
     ...stored,
-    retentionUntil: null,
+    retentionUntil: new Date(Date.now() + config.ARTIFACT_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString(),
     legalHold: false,
     createdAt: now(),
   });
@@ -148,8 +149,8 @@ export async function ensureCompletionManifest(
 
 export function publicArtifact(
   artifact: AgreementArtifact,
-): Omit<AgreementArtifact, "contentBase64" | "storageKey"> {
-  const { contentBase64: _, storageKey: __, ...metadata } = artifact;
+): Omit<AgreementArtifact, "contentBase64" | "storageKey" | "storageDriver"> {
+  const { contentBase64: _, storageKey: __, storageDriver: ___, ...metadata } = artifact;
   return metadata;
 }
 

@@ -20,5 +20,6 @@ COPY --chown=node:node --from=build /app/apps/api/package.json ./apps/api/packag
 COPY --chown=node:node --from=build /app/packages/domain/dist ./packages/domain/dist
 COPY --chown=node:node --from=build /app/packages/domain/package.json ./packages/domain/package.json
 COPY --chown=node:node --from=build /app/packages/api-spec/generated ./packages/api-spec/generated
+RUN mkdir -p /var/lib/bytecrunch/artifacts && chown node:node /var/lib/bytecrunch/artifacts
 USER node
 CMD ["node", "apps/api/dist/index.js"]

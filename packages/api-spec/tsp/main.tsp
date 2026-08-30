@@ -340,6 +340,8 @@ model AgreementArtifact {
   artifactSha256: string;
   mediaType: string;
   fileName: string;
+  retentionUntil: utcDateTime | null;
+  legalHold: boolean;
   createdAt: utcDateTime;
 }
 

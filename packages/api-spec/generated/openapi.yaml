@@ -2055,6 +2055,8 @@ components:
         - artifactSha256
         - mediaType
         - fileName
+        - retentionUntil
+        - legalHold
         - createdAt
       properties:
         id:
@@ -2079,6 +2081,13 @@ components:
           type: string
         fileName:
           type: string
+        retentionUntil:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+        legalHold:
+          type: boolean
         createdAt:
           type: string
           format: date-time
