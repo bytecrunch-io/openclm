@@ -22,6 +22,7 @@ import {
   PasskeyChallengeSchema,
   WebhookDeliverySchema,
   AgreementAuditEventSchema,
+  AgreementArtifactSchema,
   type Agreement,
   type CreateAgreement,
   type CreateTemplate,
@@ -45,6 +46,7 @@ import {
   type PasskeyChallenge,
   type WebhookDelivery,
   type AgreementAuditEvent,
+  type AgreementArtifact,
 } from '@bytecrunch/contracts-domain';
 
 export interface WebhookEndpoint {
@@ -73,6 +75,9 @@ export interface Repository {
   saveWebhookDelivery(delivery: WebhookDelivery): Promise<void>;
   appendAgreementAuditEvent(event: AgreementAuditEvent): Promise<void>;
   listAgreementAuditEvents(tenantId: string, agreementId: string): Promise<AgreementAuditEvent[]>;
+  createAgreementArtifact(artifact: AgreementArtifact): Promise<void>;
+  listAgreementArtifacts(tenantId: string, agreementId: string): Promise<AgreementArtifact[]>;
+  getAgreementArtifact(tenantId: string, agreementId: string, artifactId: string): Promise<AgreementArtifact | undefined>;
   createInvitation(invitation: Invitation): Promise<void>;
   getInvitationByTokenHash(tokenHash: string): Promise<Invitation | undefined>;
   getInvitation(id: string): Promise<Invitation | undefined>;
@@ -139,6 +144,7 @@ export class MemoryRepository implements Repository {
   protected webhooks: WebhookEndpoint[] = [];
   protected webhookDeliveries: WebhookDelivery[] = [];
   protected agreementAuditEvents: AgreementAuditEvent[] = [];
+  protected agreementArtifacts: AgreementArtifact[] = [];
   protected invitations: Invitation[] = [];
   protected people: Person[] = [];
   protected integrations: Integration[] = [];
@@ -282,6 +288,20 @@ export class MemoryRepository implements Repository {
     return this.agreementAuditEvents.filter((item) => item.tenantId === tenantId && item.agreementId === agreementId).sort((a, b) => a.createdAt.localeCompare(b.createdAt)).map((item) => structuredClone(item));
   }
 
+  async createAgreementArtifact(artifact: AgreementArtifact): Promise<void> {
+    if (this.agreementArtifacts.some((item) => item.id === artifact.id)) return;
+    this.agreementArtifacts.push(AgreementArtifactSchema.parse(artifact));
+  }
+
+  async listAgreementArtifacts(tenantId: string, agreementId: string): Promise<AgreementArtifact[]> {
+    return this.agreementArtifacts.filter((item) => item.tenantId === tenantId && item.agreementId === agreementId).sort((a, b) => a.createdAt.localeCompare(b.createdAt)).map((item) => structuredClone(item));
+  }
+
+  async getAgreementArtifact(tenantId: string, agreementId: string, artifactId: string): Promise<AgreementArtifact | undefined> {
+    const value = this.agreementArtifacts.find((item) => item.tenantId === tenantId && item.agreementId === agreementId && item.id === artifactId);
+    return value ? structuredClone(value) : undefined;
+  }
+
   async createInvitation(invitation: Invitation): Promise<void> { this.invitations.push(InvitationSchema.parse(invitation)); }
   async getInvitationByTokenHash(tokenHash: string): Promise<Invitation | undefined> { const value = this.invitations.find((item) => item.tokenHash === tokenHash); return value ? structuredClone(value) : undefined; }
   async getInvitation(id: string): Promise<Invitation | undefined> { const value = this.invitations.find((item) => item.id === id); return value ? structuredClone(value) : undefined; }
@@ -390,6 +410,13 @@ export class PostgresRepository extends MemoryRepository {
         payload jsonb NOT NULL, created_at timestamptz NOT NULL
       );
       CREATE INDEX IF NOT EXISTS agreement_audit_events_agreement_idx ON agreement_audit_events (tenant_id, agreement_id, created_at);
+      CREATE TABLE IF NOT EXISTS agreement_artifacts (
+        id text PRIMARY KEY, tenant_id text NOT NULL, agreement_id text NOT NULL, artifact_kind text NOT NULL,
+        revision integer NOT NULL, content_sha256 text NOT NULL, artifact_sha256 text NOT NULL,
+        payload jsonb NOT NULL, created_at timestamptz NOT NULL,
+        UNIQUE (agreement_id, artifact_kind, revision, content_sha256)
+      );
+      CREATE INDEX IF NOT EXISTS agreement_artifacts_agreement_idx ON agreement_artifacts (tenant_id, agreement_id, created_at);
       CREATE TABLE IF NOT EXISTS invitations (
         id text PRIMARY KEY, tenant_id text NOT NULL, agreement_id text NOT NULL,
         token_hash text UNIQUE NOT NULL, payload jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
@@ -557,6 +584,21 @@ export class PostgresRepository extends MemoryRepository {
   override async listAgreementAuditEvents(tenantId: string, agreementId: string): Promise<AgreementAuditEvent[]> {
     const result = await this.pool.query('SELECT payload FROM agreement_audit_events WHERE tenant_id=$1 AND agreement_id=$2 ORDER BY created_at', [tenantId, agreementId]);
     return result.rows.map((row) => AgreementAuditEventSchema.parse(row.payload));
+  }
+
+  override async createAgreementArtifact(artifact: AgreementArtifact): Promise<void> {
+    AgreementArtifactSchema.parse(artifact);
+    await this.pool.query('INSERT INTO agreement_artifacts (id,tenant_id,agreement_id,artifact_kind,revision,content_sha256,artifact_sha256,payload,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (agreement_id,artifact_kind,revision,content_sha256) DO NOTHING', [artifact.id, artifact.tenantId, artifact.agreementId, artifact.kind, artifact.revision, artifact.contentSha256, artifact.artifactSha256, JSON.stringify(artifact), artifact.createdAt]);
+  }
+
+  override async listAgreementArtifacts(tenantId: string, agreementId: string): Promise<AgreementArtifact[]> {
+    const result = await this.pool.query('SELECT payload FROM agreement_artifacts WHERE tenant_id=$1 AND agreement_id=$2 ORDER BY created_at', [tenantId, agreementId]);
+    return result.rows.map((row) => AgreementArtifactSchema.parse(row.payload));
+  }
+
+  override async getAgreementArtifact(tenantId: string, agreementId: string, artifactId: string): Promise<AgreementArtifact | undefined> {
+    const result = await this.pool.query('SELECT payload FROM agreement_artifacts WHERE tenant_id=$1 AND agreement_id=$2 AND id=$3', [tenantId, agreementId, artifactId]);
+    return result.rows[0] ? AgreementArtifactSchema.parse(result.rows[0].payload) : undefined;
   }
 
   override async createInvitation(invitation: Invitation): Promise<void> {

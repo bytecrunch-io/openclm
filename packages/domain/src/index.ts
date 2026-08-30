@@ -32,6 +32,11 @@ export type SignatureInput = z.infer<typeof SignatureInputSchema>;
 export const SignatureRecordSchema = z.object({
   method: z.enum(['typed', 'drawn']), typedName: z.string().min(2).max(160), imageDataUrl: z.string().nullable(),
   signedContentSha256: z.string().length(64), signedAt: z.string().datetime(),
+  provider: z.enum(['development_witness', 'external_provider']).default('development_witness'),
+  providerSignatureId: z.string().min(1).nullable().default(null),
+  authenticationMethod: z.enum(['development', 'oidc', 'invitation', 'email_code', 'passkey', 'integration_handoff']).default('development'),
+  consentText: z.string().min(1).max(1000).default('I intend to sign this agreement electronically and adopt this mark as my signature.'),
+  consentVersion: z.string().min(1).max(40).default('2026-08-30'),
 });
 export type SignatureRecord = z.infer<typeof SignatureRecordSchema>;
 export const InvalidatedSignatureSchema = z.object({
@@ -409,6 +414,14 @@ export const AgreementAuditEventSchema = z.object({
   eventSha256: z.string().length(64), createdAt: z.string().datetime(),
 });
 export type AgreementAuditEvent = z.infer<typeof AgreementAuditEventSchema>;
+
+export const AgreementArtifactSchema = z.object({
+  id: z.string().min(1), tenantId: z.string().min(1), agreementId: z.string().min(1),
+  kind: z.enum(['signing_snapshot', 'completion_manifest']), revision: z.number().int().positive(),
+  contentSha256: z.string().length(64), artifactSha256: z.string().length(64), mediaType: z.string().min(1).max(120),
+  fileName: z.string().min(1).max(255), contentBase64: z.string().min(1), createdAt: z.string().datetime(),
+});
+export type AgreementArtifact = z.infer<typeof AgreementArtifactSchema>;
 
 export const SignAgreementSchema = z.object({
   participantId: z.string().min(1).optional(),

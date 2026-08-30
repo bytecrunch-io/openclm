@@ -18,6 +18,8 @@ It is designed to work as a standalone product first. Each customer legal entity
 - Consolidated hand-back notifications instead of per-keystroke email noise
 - Unordered signing, countersigning, signature invalidation when negotiation reopens, and document-native signature blocks
 - Content revisions bound to SHA-256 fingerprints
+- Provider-attributed signature evidence with authentication method and versioned consent text
+- Immutable signing snapshots and downloadable, hashed completion manifests
 
 ### Accounts and access
 
@@ -175,7 +177,7 @@ The CI workflow runs the same checks for pushes and pull requests. Read [CONTRIB
 
 ## Production gaps
 
-Production configuration now fails closed, lifecycle events are append-only, and webhook delivery is durable and replayable. Before real contract execution, the project still needs a signing-provider boundary, sealed PDF artifacts and certificates, normalized immutable signing evidence, atomic aggregate/event/outbox writes, object storage, retention and privacy controls, backup/restore procedures, finer resource-level authorization tests, operational observability, and an external security review. See [production readiness](./docs/production-readiness.md) and [SECURITY.md](./SECURITY.md).
+Production configuration now fails closed, lifecycle events are append-only, signature orchestration has a provider boundary, execution creates immutable evidence manifests, and webhook delivery is durable and replayable. Before real contract execution, the project still needs a real signing-provider adapter, sealed PDF artifacts and certificates, normalized provider evidence, atomic aggregate/event/outbox writes, production object storage, retention and privacy controls, backup/restore procedures, finer resource-level authorization tests, operational observability, and an external security review. See [production readiness](./docs/production-readiness.md) and [SECURITY.md](./SECURITY.md).
 
 ## License
 

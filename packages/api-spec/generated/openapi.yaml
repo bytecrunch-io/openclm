@@ -332,6 +332,49 @@ paths:
                 anyOf:
                   - $ref: '#/components/schemas/ExternalView'
                   - $ref: '#/components/schemas/ErrorResponse'
+  /public/session/artifacts:
+    get:
+      operationId: ExternalParticipantOperations_sessionArtifacts
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - type: array
+                    items:
+                      $ref: '#/components/schemas/AgreementArtifact'
+                  - $ref: '#/components/schemas/ErrorResponse'
+  /public/session/artifacts/{artifactId}/content:
+    get:
+      operationId: ExternalParticipantOperations_sessionArtifactContent
+      parameters:
+        - name: artifactId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          headers:
+            content-disposition:
+              required: true
+              schema:
+                type: string
+            x-content-sha256:
+              required: true
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+            '*/*':
+              schema:
+                contentMediaType: '*/*'
   /public/session/comments:
     post:
       operationId: ExternalParticipantOperations_comment
@@ -689,6 +732,75 @@ paths:
                 anyOf:
                   - $ref: '#/components/schemas/Agreement'
                   - $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+  /v1/agreements/{agreementId}/artifacts:
+    get:
+      operationId: AgreementOperations_artifacts
+      parameters:
+        - $ref: '#/components/parameters/EntityContext'
+        - name: agreementId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - type: array
+                    items:
+                      $ref: '#/components/schemas/AgreementArtifact'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+  /v1/agreements/{agreementId}/artifacts/{artifactId}/content:
+    get:
+      operationId: AgreementOperations_artifactContent
+      parameters:
+        - $ref: '#/components/parameters/EntityContext'
+        - name: agreementId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: artifactId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          headers:
+            content-disposition:
+              required: true
+              schema:
+                type: string
+            x-content-sha256:
+              required: true
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+            '*/*':
+              schema:
+                contentMediaType: '*/*'
       security:
         - ContractsOAuth2:
             - agreements:read
@@ -1931,6 +2043,45 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/InvalidatedSignature'
+    AgreementArtifact:
+      type: object
+      required:
+        - id
+        - tenantId
+        - agreementId
+        - kind
+        - revision
+        - contentSha256
+        - artifactSha256
+        - mediaType
+        - fileName
+        - createdAt
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        agreementId:
+          type: string
+        kind:
+          type: string
+          enum:
+            - signing_snapshot
+            - completion_manifest
+        revision:
+          type: integer
+          format: int32
+        contentSha256:
+          type: string
+        artifactSha256:
+          type: string
+        mediaType:
+          type: string
+        fileName:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
     AgreementAuditEvent:
       type: object
       required:
@@ -3446,6 +3597,11 @@ components:
         - imageDataUrl
         - signedContentSha256
         - signedAt
+        - provider
+        - providerSignatureId
+        - authenticationMethod
+        - consentText
+        - consentVersion
       properties:
         method:
           type: string
@@ -3463,6 +3619,28 @@ components:
         signedAt:
           type: string
           format: date-time
+        provider:
+          type: string
+          enum:
+            - development_witness
+            - external_provider
+        providerSignatureId:
+          anyOf:
+            - type: string
+            - type: 'null'
+        authenticationMethod:
+          type: string
+          enum:
+            - development
+            - oidc
+            - invitation
+            - email_code
+            - passkey
+            - integration_handoff
+        consentText:
+          type: string
+        consentVersion:
+          type: string
     SigningCapacity:
       type: string
       enum:

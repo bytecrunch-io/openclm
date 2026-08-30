@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { createHash } from 'node:crypto';
 import { createApp } from './app.js';
 import { MemoryRepository } from './repository.js';
 import { hashInvitationToken } from './external-auth.js';
@@ -124,7 +125,10 @@ describe('contracts API vertical slice', () => {
     await app.request('/public/session/onboarding', { method: 'POST', headers: externalHeaders, body: JSON.stringify({ name: 'Visitor Person', title: 'Director', capacity: 'director', authorityConfirmed: true, entity: { legalName: 'Visitor ApS', jurisdiction: 'DK' } }) });
     expect((await app.request(`/v1/agreements/${handoff.agreementId}/send-for-signature`, { method: 'POST' })).status).toBe(200);
     const signed = await app.request('/public/session/sign', { method: 'POST', headers: externalHeaders, body: JSON.stringify({ intentConfirmed: true }) });
-    expect(await signed.json()).toMatchObject({ agreement: { status: 'executed' } });
+    expect(await signed.json()).toMatchObject({ agreement: { status: 'executed' }, participant: { signature: { provider: 'development_witness', providerSignatureId: expect.stringMatching(/^devsig_/), authenticationMethod: 'integration_handoff', consentVersion: '2026-08-30' } } });
+    const artifacts = await (await app.request(`/v1/agreements/${handoff.agreementId}/artifacts`)).json() as Array<{ id: string; kind: string; artifactSha256: string }>; expect(artifacts.map((item) => item.kind)).toEqual(['signing_snapshot', 'completion_manifest']); const manifest = artifacts.find((item) => item.kind === 'completion_manifest')!;
+    const downloaded = await app.request(`/v1/agreements/${handoff.agreementId}/artifacts/${manifest.id}/content`); const manifestContent = await downloaded.text(); expect(downloaded.headers.get('content-disposition')).toContain('completion-manifest.json'); expect(downloaded.headers.get('x-content-sha256')).toBe(createHash('sha256').update(manifestContent).digest('hex')); expect(JSON.parse(manifestContent)).toMatchObject({ schemaVersion: 1, signatures: [expect.objectContaining({ signature: expect.objectContaining({ authenticationMethod: 'integration_handoff' }) })] });
+    expect(await (await app.request('/public/session/artifacts', { headers: { cookie } })).json()).toEqual(expect.arrayContaining([expect.objectContaining({ id: manifest.id, kind: 'completion_manifest' })])); expect((await app.request(`/public/session/artifacts/${manifest.id}/content`, { headers: { cookie } })).status).toBe(200);
     const evaluation = await app.request('/v1/conditions/evaluate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ integrationKey: 'customer-portal', subject: 'portal-user-42', operator: 'all', conditions: [{ kind: 'subject_signed', templateKey: 'mutual-nda', minimumVersion: 1 }, { kind: 'agreement_executed', templateKey: 'mutual-nda', minimumVersion: 1 }] }) });
     expect(await evaluation.json()).toMatchObject({ integrationKey: 'customer-portal', subject: 'portal-user-42', met: true, operator: 'all', conditions: [{ kind: 'subject_signed', met: true }, { kind: 'agreement_executed', met: true }] });
     const unknown = await app.request('/v1/conditions/evaluate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ integrationKey: 'customer-portal', subject: 'unknown-subject', conditions: [{ kind: 'agreement_executed', templateKey: 'mutual-nda' }] }) }); expect(await unknown.json()).toMatchObject({ met: false, conditions: [{ met: false }] });

@@ -17,6 +17,7 @@ import {
   FileCheck2,
   FileClock,
   FilePenLine,
+  Download,
   BookOpen,
   Braces,
   Building2,
@@ -1851,6 +1852,26 @@ function AgreementDetail({
       setBusy(undefined);
     }
   }
+  async function downloadCompletion() {
+    try {
+      setBusy("download");
+      const artifacts = await api.agreementArtifacts(agreement.id);
+      const manifest = artifacts.find(
+        (item) => item.kind === "completion_manifest",
+      );
+      if (!manifest)
+        throw new Error("The completion manifest is not available yet.");
+      await api.downloadAgreementArtifact(agreement.id, manifest.id);
+    } catch (cause) {
+      onError(
+        cause instanceof Error
+          ? cause.message
+          : "Could not download the completion manifest.",
+      );
+    } finally {
+      setBusy(undefined);
+    }
+  }
   async function suggest(event: FormEvent) {
     event.preventDefault();
     if (!selection) return;
@@ -1994,6 +2015,23 @@ function AgreementDetail({
         </button>
         <div className="detail-actions">
           <StatusBadge status={agreement.status} />
+          {agreement.status === "executed" && (
+            <button
+              disabled={Boolean(busy)}
+              className="button button-secondary button-small"
+              onClick={() => void downloadCompletion()}
+            >
+              {busy === "download" ? (
+                <>
+                  <BusyMark /> Preparing…
+                </>
+              ) : (
+                <>
+                  <Download /> Download evidence
+                </>
+              )}
+            </button>
+          )}
           {agreement.status === "draft" && (
             <button
               disabled={Boolean(busy)}

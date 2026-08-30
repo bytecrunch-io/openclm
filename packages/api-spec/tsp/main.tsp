@@ -101,7 +101,18 @@ union SignatureInput {
   typed: { method: "typed"; typedName: string; imageDataUrl: null; },
   drawn: { method: "drawn"; typedName: string; imageDataUrl: string; },
 }
-model SignatureRecord { method: "typed" | "drawn"; typedName: string; imageDataUrl: string | null; signedContentSha256: string; signedAt: utcDateTime; }
+model SignatureRecord {
+  method: "typed" | "drawn";
+  typedName: string;
+  imageDataUrl: string | null;
+  signedContentSha256: string;
+  signedAt: utcDateTime;
+  provider: "development_witness" | "external_provider";
+  providerSignatureId: string | null;
+  authenticationMethod: "development" | "oidc" | "invitation" | "email_code" | "passkey" | "integration_handoff";
+  consentText: string;
+  consentVersion: string;
+}
 model InvalidatedSignature { participantId: string; participantName: string; signature: SignatureRecord; invalidatedAt: utcDateTime; invalidatedByParticipantId: string; reason: "review_reopened"; }
 
 model CreateParticipant {
@@ -320,6 +331,26 @@ model AgreementAuditEvent {
   createdAt: utcDateTime;
 }
 
+model AgreementArtifact {
+  id: string;
+  tenantId: string;
+  agreementId: string;
+  kind: "signing_snapshot" | "completion_manifest";
+  revision: int32;
+  contentSha256: string;
+  artifactSha256: string;
+  mediaType: string;
+  fileName: string;
+  createdAt: utcDateTime;
+}
+
+model ArtifactContentResponse {
+  @header("content-type") contentType: string;
+  @header("content-disposition") contentDisposition: string;
+  @header("x-content-sha256") contentSha256: string;
+  @body body: bytes;
+}
+
 model Invitation {
   id: string;
   tenantId: string;
@@ -452,6 +483,12 @@ interface AgreementOperations {
 
   @get @route("/{agreementId}/audit-events")
   auditEvents(...EntityContext, @path agreementId: string): AgreementAuditEvent[] | ErrorResponse;
+
+  @get @route("/{agreementId}/artifacts")
+  artifacts(...EntityContext, @path agreementId: string): AgreementArtifact[] | ErrorResponse;
+
+  @get @route("/{agreementId}/artifacts/{artifactId}/content")
+  artifactContent(...EntityContext, @path agreementId: string, @path artifactId: string): ArtifactContentResponse | ErrorResponse;
 
   @post @route("/{agreementId}/review")
   startReview(@path agreementId: string): Agreement | ErrorResponse;
@@ -601,6 +638,12 @@ interface ExternalParticipantOperations {
 
   @get @route("/session")
   session(): ExternalView | ErrorResponse;
+
+  @get @route("/session/artifacts")
+  sessionArtifacts(): AgreementArtifact[] | ErrorResponse;
+
+  @get @route("/session/artifacts/{artifactId}/content")
+  sessionArtifactContent(@path artifactId: string): ArtifactContentResponse | ErrorResponse;
 
   @post @route("/session/onboarding")
   onboard(@body body: OnboardParticipant): ExternalView | ErrorResponse;

@@ -22,7 +22,7 @@ This pass adds an explicit next-action layer, touch-friendly typed/drawn signing
 | Redlining | Good | The active reviewer edits a clean private draft directly in the document; saving derives a synchronized sidebar diff. Granular structured-document operations remain future work. |
 | Action clarity | Strong after this pass | Dashboard attention queue and agreement-level next-action banner make ownership explicit. |
 | Signing ceremony | Good for local development | Typed/drawn marks, touch input, intent confirmation, exact hash, and visible blocks are present. |
-| Production signing assurance | Not production-ready | No signing provider, sealed PDF/PAdES, immutable evidence ledger, identity assurance policy, or downloadable completion certificate. |
+| Production signing assurance | Not production-ready | Provider orchestration, authentication attribution, signing snapshots, and completion manifests exist; a real provider, sealed PDF/PAdES, normalized evidence ledger, assurance policy, and provider certificate remain. |
 | Mobile | Good baseline | Review and touch signing reflow to one column; long-document navigation still needs a mobile progress pattern. |
 | Accessibility | Fair | Typed signing, global focus styling, reduced-motion support, and shared accessible dialog behavior are present; document semantics and complete workflows still need a full screen-reader pass. |
 | Multi-entity identity | Good | Global accounts, explicit customer-entity context, isolated data, durable recipient access, member administration, and cross-entity personal inboxes are implemented. |

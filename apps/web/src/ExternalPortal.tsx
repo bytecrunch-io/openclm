@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   ArrowRight,
   Check,
+  Download,
   FileCheck2,
   Send,
   ShieldCheck,
@@ -152,6 +153,7 @@ export default function ExternalPortal() {
         busy={busyAction}
         {...(error ? { error } : {})}
         update={update}
+        onError={setError}
       />
     </PortalFrame>
   );
@@ -350,6 +352,7 @@ function Workspace({
   busy,
   error,
   update,
+  onError,
 }: {
   view: ExternalView;
   busy: string | undefined;
@@ -358,6 +361,7 @@ function Workspace({
     action: () => Promise<ExternalView>,
     label?: string,
   ) => Promise<boolean>;
+  onError: (message: string) => void;
 }) {
   const [selection, setSelection] = useState<TextSelection>();
   const [replacement, setReplacement] = useState("");
@@ -368,6 +372,27 @@ function Workspace({
   const [showNominate, setShowNominate] = useState(false);
   const [showReopen, setShowReopen] = useState(false);
   const [draftState, setDraftState] = useState<DraftSaveState>("saved");
+  const [downloading, setDownloading] = useState(false);
+  async function downloadCompletion() {
+    try {
+      setDownloading(true);
+      const artifacts = await api.externalArtifacts();
+      const manifest = artifacts.find(
+        (item) => item.kind === "completion_manifest",
+      );
+      if (!manifest)
+        throw new Error("The completion manifest is not available yet.");
+      await api.downloadExternalArtifact(manifest.id);
+    } catch (cause) {
+      onError(
+        cause instanceof Error
+          ? cause.message
+          : "Could not download the completion manifest.",
+      );
+    } finally {
+      setDownloading(false);
+    }
+  }
   const canReview =
     view.agreement.status === "in_review" &&
     (view.agreement.reviewAssignedTo === "counterparty" ||
@@ -774,13 +799,30 @@ function Workspace({
                   ? "Every required signature has been collected."
                   : "We’ll notify you when the remaining signatories complete the agreement."}
               </p>
+              {view.agreement.status === "executed" && (
+                <button
+                  disabled={downloading}
+                  className="button button-secondary"
+                  onClick={() => void downloadCompletion()}
+                >
+                  {downloading ? (
+                    <>
+                      <BusyMark /> Preparing download…
+                    </>
+                  ) : (
+                    <>
+                      <Download /> Download evidence
+                    </>
+                  )}
+                </button>
+              )}
               {view.agreement.status === "executed" &&
                 view.agreement.integrationContext && (
                   <a
                     className="button button-accent"
                     href={view.agreement.integrationContext.returnUrl}
                   >
-                    Return to projects <ArrowRight />
+                    Return to connected app <ArrowRight />
                   </a>
                 )}
             </section>

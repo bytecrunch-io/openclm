@@ -48,7 +48,7 @@ Server integrations use OAuth2 bearer tokens issued for the API audience. The bu
 
 ## Signing boundary
 
-The current `sign` operation is a development witness used to exercise lifecycle invariants and integrations. Production signing must be implemented behind a provider interface that freezes a rendered artifact, sends the exact hash to every signatory, verifies provider callbacks, stores the sealed artifact, and records audit evidence. No development signature should be represented as PAdES, AdES, QES, or legally certified.
+Signature orchestration now runs through a provider interface. The included provider is a development witness: it records the authentication path, versioned consent, provider reference, timestamp, and exact content hash. Opening signing freezes an immutable JSON signing snapshot; execution adds a hashed completion manifest that both parties can download. A production provider must additionally create and seal a deterministic PDF, send the exact artifact to every signatory, verify provider callbacks, retain the provider evidence and certificate, and replace database artifact payloads with production object storage. No development signature or JSON manifest should be represented as PAdES, AdES, QES, or legally certified.
 
 ## Persistence roadmap
 

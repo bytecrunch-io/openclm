@@ -6,6 +6,8 @@ Bytecrunch Contracts now has a production-oriented application boundary, but it 
 
 - Production configuration fails closed unless PostgreSQL, OIDC, HTTPS URLs, SMTP, and non-development secrets are configured.
 - The local signature witness cannot be enabled with `NODE_ENV=production`. A deployment may run with `SIGNING_MODE=disabled` while a signing provider is being implemented.
+- Signature orchestration has a provider interface. Development signatures record a provider reference, authentication method, versioned consent, timestamp, and exact content hash.
+- Entering signing freezes an immutable, hashed JSON snapshot. Execution creates a downloadable completion manifest containing active and invalidated signature evidence.
 - `/health` reports liveness. `/health/ready` reports whether persistent storage, OIDC, and a non-development signing mode are present.
 - Agreement lifecycle events are written to an append-only table with their revision, status, content hash, timestamp, and event digest.
 - Webhook deliveries use a persistent outbox, exponential retry, delivery IDs, response/error history, administrative inspection, and manual replay.
@@ -16,13 +18,13 @@ Bytecrunch Contracts now has a production-oriented application boundary, but it 
 
 ### Contract execution
 
-The built-in signing ceremony is a development witness. Before enabling real signatures, choose the required assurance level by contract type and jurisdiction, then implement a provider adapter that freezes a deterministic PDF, binds every signer to that artifact, verifies signed callbacks, stores the sealed artifact and provider evidence, and produces a completion certificate. Keep signing disabled in production until this is complete.
+The built-in signing provider is a development witness. Before enabling real signatures, choose the required assurance level by contract type and jurisdiction, then implement an external provider adapter that renders and freezes a deterministic PDF, binds every signer to that artifact, verifies signed callbacks, stores the sealed artifact and provider evidence, and produces a completion certificate. Keep signing disabled in production until this is complete. The current JSON snapshot and completion manifest make the lifecycle testable but are not substitutes for a signed PDF or provider certificate.
 
 The European Commission distinguishes simple, advanced, and qualified electronic signatures and provides DSS as an open-source implementation/reference for formats including PAdES. This is an architecture input, not a claim that any deployment is legally compliant. Obtain legal review for supported jurisdictions and use cases.
 
 ### Evidence and persistence
 
-- Move signer identity, consent text/version, authentication method, provider evidence, artifact references, and invalidations into immutable relational evidence records.
+- Move the provider-attributed signature evidence currently retained in agreement snapshots/manifests into normalized immutable relational records, including callback evidence and artifact references.
 - Make agreement mutation, audit append, and webhook enqueue one database transaction. The current event/outbox records are durable but are appended immediately after the aggregate save.
 - Add immutable object storage with retention locks for source, final, executed, and certificate artifacts.
 - Define retention, deletion, legal-hold, export, and data-residency policies.
