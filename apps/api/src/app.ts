@@ -14,22 +14,12 @@ import {
   CreateAgreementSchema,
   CreateSuggestionSchema,
   CreateTemplateSchema,
-  CreateWebhookSchema,
-  CreateIntegrationSchema,
-  CreateIntegrationSessionSchema,
-  CreateCustomerEntitySchema,
   AgreementAccessSchema,
   AccessChallengeSchema,
   RecipientLoginChallengeSchema,
   RecipientInboxItemSchema,
   PasskeyCredentialSchema,
   PasskeyChallengeSchema,
-  EntityMemberInvitationSchema,
-  InviteEntityMemberSchema,
-  UpdateEntityMemberSchema,
-  IdentityLinkSchema,
-  IntegrationSessionSchema,
-  EvaluateAgreementStatusSchema,
   ExternalSignAgreementSchema,
   InvitationSchema,
   NominateSignatorySchema,
@@ -53,11 +43,13 @@ import {
 } from '@bytecrunch/contracts-domain';
 import { authMiddleware, currentUser, registerAuthRoutes } from './auth.js';
 import { config } from './config.js';
-import { sendAccessEmail, sendInvitationEmail, sendMemberInvitationEmail, sendRecipientLoginCode } from './email.js';
+import { sendAccessEmail, sendInvitationEmail, sendRecipientLoginCode } from './email.js';
 import { createInvitationToken, currentExternalSession, externalSessionMiddleware, hashInvitationToken, setExternalSession } from './external-auth.js';
 import { hashContent, type Repository } from './repository.js';
 import { emitAgreementEvent } from './webhooks.js';
 import { notifyParticipants } from './notifications.js';
+import { registerPlatformRoutes } from './routes/platform.js';
+import { registerEntityRoutes } from './routes/entities.js';
 import { clearRecipientSession, createRecipientLoginCode, currentRecipientSession, recipientSessionMiddleware, setRecipientSession, verifyRecipientLoginCode } from './recipient-auth.js';
 
 function isoNow(): string { return new Date().toISOString(); }
@@ -358,67 +350,7 @@ export function createApp(repository: Repository): Hono {
     return next();
   });
 
-  app.get('/v1/me', async (context) => {
-    const user = currentUser(context); const memberships = await repository.listEntityMemberships(user.id);
-    const entities = (await Promise.all(memberships.filter((item) => item.status === 'active').map(async (membership) => {
-      const entity = await repository.getCustomerEntity(membership.entityId); return entity ? { ...membership, entity } : undefined;
-    }))).filter((item) => item !== undefined);
-    return context.json({ id: user.id, email: user.email, name: user.name, activeEntityId: entities.some((item) => item?.entityId === user.tenantId) ? user.tenantId : entities[0]?.entityId ?? null, entities, scopes: user.scopes });
-  });
-  app.get('/v1/my-work', async (context) => { const user = currentUser(context); return context.json(await buildPersonalInbox(repository, user.id, user.email, false)); });
-
-  app.post('/v1/entities', async (context) => {
-    const user = currentUser(context); const input = CreateCustomerEntitySchema.parse(await context.req.json());
-    const entity = await repository.createCustomerEntity({ ...input, businessAddress: input.businessAddress ?? null, registrationNumber: input.registrationNumber ?? null, jurisdiction: input.jurisdiction ?? null });
-    await repository.grantEntityMembership(user.id, entity.id, ['administrator'], permissionsForEntityRoles(['administrator']));
-    const sourceTemplate = (await repository.listTemplates('bytecrunch')).filter((item) => item.key === 'mutual-nda').sort((a, b) => b.version - a.version)[0];
-    if (sourceTemplate) await repository.createTemplate(entity.id, { key: sourceTemplate.key, name: sourceTemplate.name, description: sourceTemplate.description, content: sourceTemplate.content });
-    return context.json(entity, 201);
-  });
-
-  app.get('/v1/entity-members', async (context) => {
-    const user = currentUser(context); const memberships = await repository.listEntityMembers(user.tenantId);
-    const members = (await Promise.all(memberships.map(async (membership) => { const account = await repository.getAccount(membership.accountId); return account ? { membership, account } : undefined; }))).filter((item) => item !== undefined);
-    const invitations = (await repository.listEntityMemberInvitations(user.tenantId)).map(publicEntityMemberInvitation);
-    return context.json({ members, invitations });
-  });
-
-  app.post('/v1/entity-members/invitations', async (context) => {
-    const user = currentUser(context); const input = InviteEntityMemberSchema.parse(await context.req.json()); const email = input.email.toLowerCase();
-    const entity = await repository.getCustomerEntity(user.tenantId); if (!entity) throw new Error('The active customer entity could not be found.');
-    const existingMembers = await repository.listEntityMembers(user.tenantId); const existingAccounts = await Promise.all(existingMembers.map((item) => repository.getAccount(item.accountId)));
-    if (existingAccounts.some((account) => account?.email === email)) return context.json({ error: 'already_member', message: 'That person is already a member of this customer entity.' }, 409);
-    const invitations = await repository.listEntityMemberInvitations(user.tenantId); await Promise.all(invitations.filter((item) => item.email === email && item.status === 'pending').map(async (item) => { item.status = 'revoked'; await repository.saveEntityMemberInvitation(item); }));
-    const { token, tokenHash } = createInvitationToken(); const invitation = EntityMemberInvitationSchema.parse({ id: `member_inv_${randomUUID()}`, entityId: user.tenantId, email, roles: input.roles, tokenHash, status: 'pending', invitedByAccountId: user.id, acceptedByAccountId: null, expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), createdAt: isoNow(), acceptedAt: null });
-    await repository.createEntityMemberInvitation(invitation); const invitationUrl = `${config.WEB_URL}/membership?token=${encodeURIComponent(token)}`; await sendMemberInvitationEmail({ email, inviterName: user.name, entityName: entity.legalName, invitationUrl });
-    return context.json({ ...publicEntityMemberInvitation(invitation), invitationUrl }, 201);
-  });
-
-  app.patch('/v1/entity-members/:membershipId', async (context) => {
-    const user = currentUser(context); const input = UpdateEntityMemberSchema.parse(await context.req.json()); const membership = await repository.getEntityMembership(context.req.param('membershipId'));
-    if (!membership || membership.entityId !== user.tenantId) return context.json({ error: 'not_found', message: 'Entity member not found.' }, 404);
-    if (membership.roles.includes('administrator') && !input.roles.includes('administrator')) await assertAnotherAdministrator(repository, membership);
-    membership.roles = input.roles; membership.permissions = permissionsForEntityRoles(input.roles); membership.status = 'active'; await repository.saveEntityMembership(membership); return context.json(membership);
-  });
-
-  app.delete('/v1/entity-members/:membershipId', async (context) => {
-    const user = currentUser(context); const membership = await repository.getEntityMembership(context.req.param('membershipId'));
-    if (!membership || membership.entityId !== user.tenantId) return context.json({ error: 'not_found', message: 'Entity member not found.' }, 404);
-    if (membership.roles.includes('administrator')) await assertAnotherAdministrator(repository, membership);
-    membership.status = 'suspended'; await repository.saveEntityMembership(membership); return context.json(membership);
-  });
-
-  app.post('/v1/entity-member-invitations/accept', async (context) => {
-    const user = currentUser(context); const body = await context.req.json() as { token?: unknown }; if (typeof body.token !== 'string' || body.token.length < 20) return context.json({ error: 'invalid_invitation', message: 'The membership invitation is invalid.' }, 400);
-    const invitation = await repository.getEntityMemberInvitationByTokenHash(hashInvitationToken(body.token)); if (!invitation || invitation.status !== 'pending') return context.json({ error: 'invalid_invitation', message: 'This membership invitation is no longer active.' }, 410);
-    if (new Date(invitation.expiresAt).getTime() <= Date.now()) { invitation.status = 'expired'; await repository.saveEntityMemberInvitation(invitation); return context.json({ error: 'invitation_expired', message: 'This membership invitation has expired.' }, 410); }
-    if (!user.emailVerified || user.email.toLowerCase() !== invitation.email) return context.json({ error: 'email_mismatch', message: 'Sign in with the verified email address that received this invitation.' }, 403);
-    let membership = (await repository.listEntityMemberships(user.id)).find((item) => item.entityId === invitation.entityId);
-    if (membership) { membership.roles = invitation.roles; membership.permissions = permissionsForEntityRoles(invitation.roles); membership.status = 'active'; await repository.saveEntityMembership(membership); }
-    else membership = await repository.grantEntityMembership(user.id, invitation.entityId, invitation.roles, permissionsForEntityRoles(invitation.roles));
-    invitation.status = 'accepted'; invitation.acceptedAt = isoNow(); invitation.acceptedByAccountId = user.id; await repository.saveEntityMemberInvitation(invitation);
-    const entity = await repository.getCustomerEntity(invitation.entityId); return context.json({ membership, entity });
-  });
+  registerEntityRoutes(app, repository, { now: isoNow, personalInbox: (accountId, email, accessOnly) => buildPersonalInbox(repository, accountId, email, accessOnly), publicInvitation: publicEntityMemberInvitation, assertAnotherAdministrator: (membership) => assertAnotherAdministrator(repository, membership) });
 
   app.post('/public/invitations/exchange', async (context) => {
     const body = await context.req.json() as { token?: unknown };
@@ -805,87 +737,7 @@ export function createApp(repository: Repository): Hono {
     return context.json(agreement);
   });
 
-  app.get('/v1/notifications', async (context) => {
-    const user = currentUser(context); const person = await repository.findPersonByEmail(user.tenantId, user.email);
-    const recipientIds = [...new Set([user.id, ...(person ? [person.id] : [])])]; const notifications = (await Promise.all(recipientIds.map((id) => repository.listNotifications(user.tenantId, id)))).flat();
-    return context.json([...new Map(notifications.map((item) => [item.id, item])).values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
-  });
-
-  app.post('/v1/notifications/:notificationId/read', async (context) => {
-    const user = currentUser(context); const person = await repository.findPersonByEmail(user.tenantId, user.email); const recipientIds = [...new Set([user.id, ...(person ? [person.id] : [])])]; const notifications = (await Promise.all(recipientIds.map((id) => repository.listNotifications(user.tenantId, id)))).flat();
-    const notification = notifications.find((item) => item.id === context.req.param('notificationId')); if (!notification) throw new Error('Notification not found.'); notification.readAt = isoNow(); await repository.saveNotification(notification); return context.json(notification);
-  });
-
-  app.post('/v1/notifications/read-all', async (context) => {
-    const user = currentUser(context); const person = await repository.findPersonByEmail(user.tenantId, user.email); const recipientIds = [...new Set([user.id, ...(person ? [person.id] : [])])]; const notifications = (await Promise.all(recipientIds.map((id) => repository.listNotifications(user.tenantId, id)))).flat(); const unread = [...new Map(notifications.map((item) => [item.id, item])).values()].filter((item) => !item.readAt); await Promise.all(unread.map(async (item) => { item.readAt = isoNow(); await repository.saveNotification(item); })); return context.json({ updated: unread.length });
-  });
-
-  app.get('/v1/integrations', async (context) => context.json(await repository.listIntegrations(currentUser(context).tenantId)));
-  app.post('/v1/integrations', async (context) => {
-    const input = CreateIntegrationSchema.parse(await context.req.json());
-    return context.json(await repository.createIntegration(currentUser(context).tenantId, input), 201);
-  });
-
-  app.post('/v1/integration-sessions', async (context) => {
-    const input = CreateIntegrationSessionSchema.parse(await context.req.json()); const user = currentUser(context);
-    const integration = await repository.findIntegration(user.tenantId, input.integrationKey);
-    if (!integration) throw new Error('Integration not found.');
-    if (!integration.allowedRedirectUris.includes(input.returnUrl)) throw new Error('returnUrl is not allow-listed for this integration.');
-    let link = await repository.findIdentityLink(user.tenantId, integration.id, input.subject);
-    if (link && link.email.toLowerCase() !== input.email.toLowerCase()) throw new Error('This subject is already linked to a different email address.');
-    if (!link) {
-      const person = await repository.findPersonByEmail(user.tenantId, input.email) ?? await repository.createPerson(user.tenantId, input.email, input.displayName ?? input.email.split('@')[0]!);
-      link = IdentityLinkSchema.parse({ id: `link_${randomUUID()}`, tenantId: user.tenantId, integrationId: integration.id, externalSubject: input.subject, personId: person.id, email: input.email.toLowerCase(), linkingMethod: integration.mappingStrategy, verifiedAt: isoNow() });
-      await repository.createIdentityLink(link);
-    }
-    const agreement = await repository.createAgreement(user.tenantId, { title: input.title ?? `${input.templateKey} agreement`, templateKey: input.templateKey, participants: [], parties: [{ role: 'counterparty', entity: {}, minimumSignatures: 1, participants: [{ email: input.email, name: input.displayName, role: 'signatory', required: true }] }], metadata: input.metadata });
-    const participant = agreement.participants[0]!; participant.personId = link.personId;
-    agreement.integrationContext = { integrationId: integration.id, integrationKey: integration.key, externalSubject: input.subject, personId: link.personId, returnUrl: input.returnUrl };
-    transition(agreement, 'in_review'); await repository.saveAgreement(agreement);
-    const { token, tokenHash } = createInvitationToken();
-    const handoff = IntegrationSessionSchema.parse({ id: `isess_${randomUUID()}`, tenantId: user.tenantId, integrationId: integration.id, personId: link.personId, externalSubject: input.subject, agreementId: agreement.id, participantId: participant.id, tokenHash, status: 'pending', returnUrl: input.returnUrl, expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(), createdAt: isoNow(), acceptedAt: null });
-    await repository.createIntegrationSession(handoff);
-    return context.json({ agreementId: agreement.id, expiresAt: handoff.expiresAt, handoffUrl: `${config.WEB_URL}/invite?integrationToken=${encodeURIComponent(token)}` }, 201);
-  });
-
-  app.get('/v1/integration-status', async (context) => {
-    const user = currentUser(context); const integrationKey = context.req.query('integrationKey'); const subject = context.req.query('subject'); const templateKey = context.req.query('templateKey'); const minimumVersion = Number(context.req.query('minimumVersion') ?? '1');
-    if (!integrationKey || !subject || !templateKey || !Number.isInteger(minimumVersion) || minimumVersion < 1) return context.json({ error: 'invalid_query', message: 'integrationKey, subject and templateKey are required.' }, 400);
-    const integration = await repository.findIntegration(user.tenantId, integrationKey); if (!integration) return context.json({ satisfied: false, templateKey, minimumVersion });
-    const link = await repository.findIdentityLink(user.tenantId, integration.id, subject); if (!link) return context.json({ satisfied: false, templateKey, minimumVersion });
-    return context.json(requirementResultByPerson(await repository.listAgreements(user.tenantId), link.personId, templateKey, minimumVersion));
-  });
-
-  app.get('/v1/agreement-status', async (context) => {
-    const externalSubjectId = context.req.query('externalSubjectId');
-    const templateKey = context.req.query('templateKey');
-    const minimumVersion = Number(context.req.query('minimumVersion') ?? '1');
-    if (!externalSubjectId || !templateKey || !Number.isInteger(minimumVersion) || minimumVersion < 1) {
-      return context.json({ error: 'invalid_query', message: 'externalSubjectId, templateKey and a valid minimumVersion are required.' }, 400);
-    }
-    const agreements = await repository.listAgreements(currentUser(context).tenantId);
-    return context.json(requirementResult(agreements, externalSubjectId, templateKey, minimumVersion));
-  });
-
-  app.post('/v1/agreement-status/evaluate', async (context) => {
-    const input = EvaluateAgreementStatusSchema.parse(await context.req.json());
-    const agreements = await repository.listAgreements(currentUser(context).tenantId);
-    const requirements = input.requirements.map((requirement) => requirementResult(
-      agreements, input.externalSubjectId, requirement.templateKey, requirement.minimumVersion,
-    ));
-    return context.json({
-      externalSubjectId: input.externalSubjectId,
-      operator: input.operator,
-      satisfied: input.operator === 'all' ? requirements.every((item) => item.satisfied) : requirements.some((item) => item.satisfied),
-      requirements,
-    });
-  });
-
-  app.get('/v1/webhooks', async (context) => context.json(await repository.listWebhooks(currentUser(context).tenantId)));
-  app.post('/v1/webhooks', async (context) => {
-    const input = CreateWebhookSchema.parse(await context.req.json());
-    return context.json(await repository.createWebhook(currentUser(context).tenantId, input.url, input.events), 201);
-  });
+  registerPlatformRoutes(app, repository, { now: isoNow, transition, requirementBySubject: requirementResult, requirementByPerson: requirementResultByPerson });
 
   app.onError((error, context) => {
     if (error instanceof ZodError) {
