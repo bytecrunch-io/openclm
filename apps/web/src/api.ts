@@ -76,7 +76,7 @@ const AgreementArtifactSchema = z.object({
   id: z.string(),
   tenantId: z.string(),
   agreementId: z.string(),
-  kind: z.enum(["signing_snapshot", "completion_manifest"]),
+  kind: z.enum(["signing_snapshot", "signing_pdf", "executed_pdf", "completion_certificate", "completion_manifest", "validation_report"]),
   revision: z.number().int().positive(),
   contentSha256: z.string().length(64),
   artifactSha256: z.string().length(64),
@@ -91,6 +91,14 @@ export type EntityRole = z.infer<typeof EntityRoleSchema>;
 export type RecipientInboxItem = z.infer<typeof RecipientInboxItemSchema>;
 export type Passkey = z.infer<typeof PasskeySchema>;
 export type AgreementArtifact = z.infer<typeof AgreementArtifactSchema>;
+const PublicVerificationSchema = z.object({
+  schemaVersion: z.number(), status: z.literal('executed'), title: z.string(), agreementId: z.string(), revision: z.number(), executedAt: z.string(), contentSha256: z.string(),
+  parties: z.array(z.object({ role: z.enum(['sender', 'counterparty']), legalName: z.string().nullable() })),
+  signers: z.array(z.object({ name: z.string(), partyRole: z.enum(['sender', 'counterparty']).nullable(), signedAt: z.string() })),
+  executedPdf: z.object({ sha256: z.string(), downloadUrl: z.string() }).nullable(),
+  validation: z.object({ documentIntegrityValid: z.boolean(), cmsSignatureValid: z.boolean(), byteRangeValid: z.boolean(), certificateTrust: z.string(), profile: z.string(), limitations: z.array(z.string()) }).passthrough().nullable(),
+});
+export type PublicVerification = z.infer<typeof PublicVerificationSchema>;
 
 async function request<T>(
   path: string,
@@ -151,6 +159,8 @@ export const api = {
   loginUrl: `${API_URL}/auth/login`,
   loginUrlFor: (returnTo: string) =>
     `${API_URL}/auth/login?returnTo=${encodeURIComponent(returnTo)}`,
+  verifyAgreement: (code: string) => request(`/public/verify/${encodeURIComponent(code)}`, PublicVerificationSchema),
+  downloadVerifiedAgreement: (code: string) => download(`/public/verify/${encodeURIComponent(code)}/document`),
   me: () => request("/v1/me", UserSchema),
   myWork: () => request("/v1/my-work", z.array(RecipientInboxItemSchema)),
   selectEntity: (entityId: string) => {

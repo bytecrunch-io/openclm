@@ -377,17 +377,14 @@ function Workspace({
     try {
       setDownloading(true);
       const artifacts = await api.externalArtifacts();
-      const manifest = artifacts.find(
-        (item) => item.kind === "completion_manifest",
-      );
-      if (!manifest)
-        throw new Error("The completion manifest is not available yet.");
-      await api.downloadExternalArtifact(manifest.id);
+      const document = artifacts.find((item) => item.kind === "executed_pdf");
+      if (!document) throw new Error("The sealed executed PDF is not available yet.");
+      await api.downloadExternalArtifact(document.id);
     } catch (cause) {
       onError(
         cause instanceof Error
           ? cause.message
-          : "Could not download the completion manifest.",
+          : "Could not download the executed agreement.",
       );
     } finally {
       setDownloading(false);
@@ -811,11 +808,12 @@ function Workspace({
                     </>
                   ) : (
                     <>
-                      <Download /> Download evidence
+                      <Download /> Download sealed PDF
                     </>
                   )}
                 </button>
               )}
+              {view.agreement.status === 'executed' && view.agreement.verificationCode && <a className="button button-secondary" href={`/verify/${view.agreement.verificationCode}`} target="_blank" rel="noreferrer">Verify document</a>}
               {view.agreement.status === "executed" &&
                 view.agreement.integrationContext && (
                   <a

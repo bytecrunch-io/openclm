@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import {
   AgreementArtifactSchema,
   type Agreement,
@@ -7,10 +7,10 @@ import {
 import type { Repository } from "./repository.js";
 import { artifactStorage } from "./artifact-storage.js";
 import { config } from "./config.js";
+import { renderAgreementPdf, renderCompletionCertificatePdf } from './pdf.js';
+import { pdfSha256, sealPdf, validateSealedPdf } from './pdf-seal.js';
 
 const now = () => new Date().toISOString();
-const sha256 = (value: string) =>
-  createHash("sha256").update(value).digest("hex");
 const safeName = (value: string) =>
   value
     .toLowerCase()
@@ -18,17 +18,17 @@ const safeName = (value: string) =>
     .replace(/^-|-$/g, "")
     .slice(0, 100) || "agreement";
 
-async function storeJsonArtifact(
+async function storeArtifact(
   repository: Repository,
   agreement: Agreement,
   kind: AgreementArtifact["kind"],
   fileName: string,
-  body: unknown,
+  mediaType: string,
+  bytes: Uint8Array,
 ): Promise<AgreementArtifact> {
-  const content = `${JSON.stringify(body, null, 2)}\n`;
-  const artifactSha256 = sha256(content);
+  const artifactSha256 = createHash('sha256').update(bytes).digest('hex');
   const key = `${agreement.tenantId}/${agreement.id}/${kind}/${artifactSha256}-${fileName.replace(/[^a-zA-Z0-9._-]/g, '-')}`;
-  const stored = await artifactStorage().put(key, new TextEncoder().encode(content), artifactSha256);
+  const stored = await artifactStorage().put(key, bytes, artifactSha256);
   const artifact = AgreementArtifactSchema.parse({
     id: `artifact_${randomUUID()}`,
     tenantId: agreement.tenantId,
@@ -37,7 +37,7 @@ async function storeJsonArtifact(
     revision: agreement.revision,
     contentSha256: agreement.contentSha256,
     artifactSha256,
-    mediaType: "application/json",
+    mediaType,
     fileName,
     storageDriver: artifactStorage().driver,
     ...stored,
@@ -49,20 +49,22 @@ async function storeJsonArtifact(
   return artifact;
 }
 
+async function storeJsonArtifact(repository: Repository, agreement: Agreement, kind: AgreementArtifact['kind'], fileName: string, body: unknown) {
+  return storeArtifact(repository, agreement, kind, fileName, 'application/json', new TextEncoder().encode(`${JSON.stringify(body, null, 2)}\n`));
+}
+
 export async function ensureSigningSnapshot(
   repository: Repository,
   agreement: Agreement,
 ): Promise<AgreementArtifact> {
-  const existing = (
-    await repository.listAgreementArtifacts(agreement.tenantId, agreement.id)
-  ).find(
+  const artifacts = await repository.listAgreementArtifacts(agreement.tenantId, agreement.id);
+  const existing = artifacts.find(
     (item) =>
       item.kind === "signing_snapshot" &&
       item.revision === agreement.revision &&
       item.contentSha256 === agreement.contentSha256,
   );
-  if (existing) return existing;
-  return storeJsonArtifact(
+  const snapshot = existing ?? await storeJsonArtifact(
     repository,
     agreement,
     "signing_snapshot",
@@ -94,6 +96,14 @@ export async function ensureSigningSnapshot(
       frozenAt: now(),
     },
   );
+  let signingPdf = artifacts.find((item) => item.kind === 'signing_pdf' && item.revision === agreement.revision && item.contentSha256 === agreement.contentSha256);
+  if (!signingPdf) signingPdf = await storeArtifact(repository, agreement, 'signing_pdf', `${safeName(agreement.title)}-r${agreement.revision}-signing.pdf`, 'application/pdf', await renderAgreementPdf(agreement));
+  const envelopeMatches = agreement.signingEnvelope?.status === 'active' && agreement.signingEnvelope.revision === agreement.revision && agreement.signingEnvelope.contentSha256 === agreement.contentSha256 && agreement.signingEnvelope.signingArtifactSha256 === signingPdf.artifactSha256;
+  if (!envelopeMatches) {
+    agreement.signingEnvelope = { id: `envelope_${randomUUID()}`, revision: agreement.revision, contentSha256: agreement.contentSha256, signingArtifactId: signingPdf.id, signingArtifactSha256: signingPdf.artifactSha256, status: 'active', frozenAt: signingPdf.createdAt, invalidatedAt: null };
+    await repository.saveAgreement(agreement);
+  }
+  return snapshot;
 }
 
 export async function ensureCompletionManifest(
@@ -104,15 +114,26 @@ export async function ensureCompletionManifest(
     throw new Error(
       "A completion manifest can only be created for an executed agreement.",
     );
-  const existing = (
-    await repository.listAgreementArtifacts(agreement.tenantId, agreement.id)
-  ).find(
+  const artifacts = await repository.listAgreementArtifacts(agreement.tenantId, agreement.id);
+  const existing = artifacts.find(
     (item) =>
       item.kind === "completion_manifest" &&
       item.revision === agreement.revision &&
       item.contentSha256 === agreement.contentSha256,
   );
   if (existing) return existing;
+  if (!agreement.signingEnvelope || !['active', 'executed'].includes(agreement.signingEnvelope.status)) throw new Error('The executed agreement has no valid frozen signing envelope.');
+  const sealedAt = agreement.executedAt ?? now();
+  let executedPdf = artifacts.find((item) => item.kind === 'executed_pdf' && item.revision === agreement.revision && item.contentSha256 === agreement.contentSha256);
+  let sealed: Awaited<ReturnType<typeof sealPdf>> | null = null;
+  if (!executedPdf) { sealed = await sealPdf(await renderAgreementPdf(agreement, true), sealedAt); executedPdf = await storeArtifact(repository, agreement, 'executed_pdf', `${safeName(agreement.title)}-executed.pdf`, 'application/pdf', sealed.bytes); }
+  const executedBytes = await readArtifactContent(executedPdf); const executedSha256 = pdfSha256(executedBytes); const validation = await validateSealedPdf(executedBytes);
+  let validationReport = artifacts.find((item) => item.kind === 'validation_report' && item.revision === agreement.revision && item.contentSha256 === agreement.contentSha256);
+  validationReport ??= await storeJsonArtifact(repository, agreement, 'validation_report', `${safeName(agreement.title)}-validation.json`, { ...validation, artifactId: executedPdf.id, artifactSha256: executedPdf.artifactSha256, validatedAt: now() });
+  const sealProfile = sealed?.profile ?? validation.profile; const sealProvider = sealed?.provider ?? (config.PDF_SEAL_MODE === 'p12' ? 'deployment_p12' : 'development_ephemeral');
+  let completionCertificate = artifacts.find((item) => item.kind === 'completion_certificate' && item.revision === agreement.revision && item.contentSha256 === agreement.contentSha256);
+  completionCertificate ??= await storeArtifact(repository, agreement, 'completion_certificate', `${safeName(agreement.title)}-completion-certificate.pdf`, 'application/pdf', await renderCompletionCertificatePdf(agreement, executedSha256, `${sealProfile} · ${sealProvider}`));
+  agreement.signingEnvelope.status = 'executed'; agreement.verificationCode ??= randomBytes(24).toString('base64url'); await repository.saveAgreement(agreement);
   const evidence = await repository.listSignatureEvidence(agreement.tenantId, agreement.id);
   return storeJsonArtifact(
     repository,
@@ -120,7 +141,7 @@ export async function ensureCompletionManifest(
     "completion_manifest",
     `${safeName(agreement.title)}-completion-manifest.json`,
     {
-      schemaVersion: 2,
+      schemaVersion: 3,
       agreement: {
         id: agreement.id,
         title: agreement.title,
@@ -144,6 +165,10 @@ export async function ensureCompletionManifest(
         })),
       invalidatedSignatures: agreement.invalidatedSignatures,
       signatureEvidence: evidence,
+      signingEnvelope: agreement.signingEnvelope,
+      artifacts: { executedPdf: { id: executedPdf.id, sha256: executedPdf.artifactSha256 }, completionCertificate: { id: completionCertificate.id, sha256: completionCertificate.artifactSha256 }, validationReport: { id: validationReport.id, sha256: validationReport.artifactSha256 } },
+      seal: { profile: sealProfile, provider: sealProvider, sealedAt, validation },
+      verificationCode: agreement.verificationCode,
       completedAt: now(),
     },
   );

@@ -41,7 +41,13 @@ const ConfigSchema = z
       .min(32)
       .default("local-only-session-secret-change-me"),
     WEBHOOK_SIGNING_SECRET: z.string().min(8).default("local-webhook-secret"),
-    SIGNING_MODE: z.enum(["development", "disabled"]).default("development"),
+    SIGNING_MODE: z.enum(["development", "platform", "disabled"]).default("development"),
+    PDF_SEAL_MODE: z.enum(["development", "p12", "disabled"]).default("development"),
+    PDF_SEAL_P12_PATH: z.string().min(1).optional(),
+    PDF_SEAL_P12_PASSWORD: z.string().optional(),
+    PDF_SEAL_NAME: z.string().min(1).default("ByteCrunch Contracts"),
+    PDF_SEAL_LOCATION: z.string().default("Copenhagen, Denmark"),
+    PDF_SEAL_CONTACT: z.string().default("contracts@bytecrunch.com"),
     ARTIFACT_STORAGE_DRIVER: z.enum(["database", "filesystem"]).default("database"),
     ARTIFACT_STORAGE_PATH: z.string().min(1).default("./var/artifacts"),
     ARTIFACT_RETENTION_DAYS: z.coerce.number().int().min(1).max(36500).default(2555),
@@ -93,8 +99,15 @@ const ConfigSchema = z
       "local-") && !value.RATE_LIMIT_SECRET.includes("change-"), "RATE_LIMIT_SECRET", "Use a unique production rate-limit key secret.");
     require(!value.METRICS_TOKEN.includes(
       "local-") && !value.METRICS_TOKEN.includes("change-"), "METRICS_TOKEN", "Use a unique production metrics bearer token.");
-    if (value.NODE_ENV === "production") require(value.SIGNING_MODE !==
-      "development", "SIGNING_MODE", "The development signature witness cannot run in production. Set signing to disabled until a certified provider is configured.");
+    if (value.NODE_ENV === "production") {
+      require(value.SIGNING_MODE !== "development", "SIGNING_MODE", "The development signature witness cannot run in production.");
+      if (value.SIGNING_MODE === "platform") {
+        require(value.PDF_SEAL_MODE === "p12", "PDF_SEAL_MODE", "Platform signing in production requires a deployment-managed PKCS#12 seal.");
+        require(Boolean(value.PDF_SEAL_P12_PATH), "PDF_SEAL_P12_PATH", "Set the path to the deployment PKCS#12 seal.");
+        require(Boolean(value.PDF_SEAL_P12_PASSWORD), "PDF_SEAL_P12_PASSWORD", "Set the PKCS#12 seal password.");
+      }
+      if (value.SIGNING_MODE !== 'disabled') require(value.PDF_SEAL_MODE !== "development", "PDF_SEAL_MODE", "The ephemeral development seal cannot run in production.");
+    }
   });
 
 export function parseConfig(environment: NodeJS.ProcessEnv) {

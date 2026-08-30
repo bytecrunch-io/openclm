@@ -435,6 +435,19 @@ paths:
                 anyOf:
                   - $ref: '#/components/schemas/ExternalView'
                   - $ref: '#/components/schemas/ErrorResponse'
+  /public/session/finalize:
+    post:
+      operationId: ExternalParticipantOperations_finalizeSession
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/ExternalView'
+                  - $ref: '#/components/schemas/ErrorResponse'
   /public/session/nominate:
     post:
       operationId: ExternalParticipantOperations_nominate
@@ -666,6 +679,52 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/ResolveSuggestion'
+  /public/verify/{code}:
+    get:
+      operationId: ExternalParticipantOperations_verify
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/PublicVerification'
+                  - $ref: '#/components/schemas/ErrorResponse'
+  /public/verify/{code}/document:
+    get:
+      operationId: ExternalParticipantOperations_verifiedDocument
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          headers:
+            content-disposition:
+              required: true
+              schema:
+                type: string
+            x-content-sha256:
+              required: true
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+            '*/*':
+              schema:
+                contentMediaType: '*/*'
   /v1/agreements:
     get:
       operationId: AgreementOperations_list
@@ -942,6 +1001,32 @@ paths:
           schema:
             type: string
         - name: commentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/Agreement'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+  /v1/agreements/{agreementId}/finalize:
+    post:
+      operationId: AgreementOperations_finalize
+      parameters:
+        - $ref: '#/components/parameters/EntityContext'
+        - name: agreementId
           in: path
           required: true
           schema:
@@ -2011,6 +2096,8 @@ components:
         - executedAt
         - signatureNotificationsSentAt
         - invalidatedSignatures
+        - signingEnvelope
+        - verificationCode
       properties:
         id:
           type: string
@@ -2095,6 +2182,14 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/InvalidatedSignature'
+        signingEnvelope:
+          anyOf:
+            - $ref: '#/components/schemas/SigningEnvelope'
+            - type: 'null'
+        verificationCode:
+          anyOf:
+            - type: string
+            - type: 'null'
     AgreementArtifact:
       type: object
       required:
@@ -2121,7 +2216,11 @@ components:
           type: string
           enum:
             - signing_snapshot
+            - signing_pdf
+            - executed_pdf
+            - completion_certificate
             - completion_manifest
+            - validation_report
         revision:
           type: integer
           format: int32
@@ -3448,6 +3547,89 @@ components:
         options:
           type: object
           unevaluatedProperties: {}
+    PublicVerification:
+      type: object
+      required:
+        - schemaVersion
+        - status
+        - title
+        - agreementId
+        - revision
+        - executedAt
+        - contentSha256
+        - parties
+        - signers
+        - executedPdf
+        - validation
+      properties:
+        schemaVersion:
+          type: integer
+          format: int32
+        status:
+          type: string
+          enum:
+            - executed
+        title:
+          type: string
+        agreementId:
+          type: string
+        revision:
+          type: integer
+          format: int32
+        executedAt:
+          type: string
+          format: date-time
+        contentSha256:
+          type: string
+        parties:
+          type: array
+          items:
+            type: object
+            properties:
+              role:
+                $ref: '#/components/schemas/PartyRole'
+              legalName:
+                anyOf:
+                  - type: string
+                  - type: 'null'
+            required:
+              - role
+              - legalName
+        signers:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              partyRole:
+                anyOf:
+                  - $ref: '#/components/schemas/PartyRole'
+                  - type: 'null'
+              signedAt:
+                type: string
+                format: date-time
+            required:
+              - name
+              - partyRole
+              - signedAt
+        executedPdf:
+          anyOf:
+            - type: object
+              properties:
+                sha256:
+                  type: string
+                downloadUrl:
+                  type: string
+              required:
+                - sha256
+                - downloadUrl
+            - type: 'null'
+        validation:
+          anyOf:
+            - type: object
+              unevaluatedProperties: {}
+            - type: 'null'
     ReadinessResponse:
       type: object
       required:
@@ -3720,6 +3902,8 @@ components:
         - typedName
         - imageDataUrl
         - signedContentSha256
+        - signedArtifactSha256
+        - signingEnvelopeId
         - signedAt
         - provider
         - providerSignatureId
@@ -3740,6 +3924,14 @@ components:
             - type: 'null'
         signedContentSha256:
           type: string
+        signedArtifactSha256:
+          anyOf:
+            - type: string
+            - type: 'null'
+        signingEnvelopeId:
+          anyOf:
+            - type: string
+            - type: 'null'
         signedAt:
           type: string
           format: date-time
@@ -3747,6 +3939,7 @@ components:
           type: string
           enum:
             - development_witness
+            - platform_electronic_signature
             - external_provider
         providerSignatureId:
           anyOf:
@@ -3773,6 +3966,43 @@ components:
         - officer
         - personally
         - other
+    SigningEnvelope:
+      type: object
+      required:
+        - id
+        - revision
+        - contentSha256
+        - signingArtifactId
+        - signingArtifactSha256
+        - status
+        - frozenAt
+        - invalidatedAt
+      properties:
+        id:
+          type: string
+        revision:
+          type: integer
+          format: int32
+        contentSha256:
+          type: string
+        signingArtifactId:
+          type: string
+        signingArtifactSha256:
+          type: string
+        status:
+          type: string
+          enum:
+            - active
+            - invalidated
+            - executed
+        frozenAt:
+          type: string
+          format: date-time
+        invalidatedAt:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: 'null'
     Suggestion:
       type: object
       required:

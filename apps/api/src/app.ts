@@ -273,6 +273,21 @@ export function createApp(repository: Repository): Hono {
   app.use('/public/recipient-auth/verify', rateLimit(repository, { namespace: 'recipient-auth-verify', limit: 30, windowSeconds: 900 }));
   app.use('/public/recipient-auth/passkey/verify', rateLimit(repository, { namespace: 'passkey-verify', limit: 30, windowSeconds: 900 }));
   app.use('/public/invitations/exchange', rateLimit(repository, { namespace: 'invitation-exchange', limit: 60, windowSeconds: 900 }));
+  app.use('/public/verify/*', rateLimit(repository, { namespace: 'public-verification', limit: 60, windowSeconds: 900 }));
+  app.get('/public/verify/:code', async (context) => {
+    const agreement = await repository.findAgreementByVerificationCode(context.req.param('code'));
+    if (!agreement) return context.json({ error: 'not_found', message: 'No executed agreement matched this verification code.' }, 404);
+    const artifacts = await repository.listAgreementArtifacts(agreement.tenantId, agreement.id); const executedPdf = artifacts.find((item) => item.kind === 'executed_pdf'); const report = artifacts.find((item) => item.kind === 'validation_report');
+    let validation: unknown = null; if (report) validation = JSON.parse(new TextDecoder().decode(await readArtifactContent(report)));
+    return context.json({ schemaVersion: 1, status: 'executed', title: agreement.title, agreementId: agreement.id, revision: agreement.revision, executedAt: agreement.executedAt, contentSha256: agreement.contentSha256, parties: agreement.parties.map((party) => ({ role: party.role, legalName: party.entity.legalName })), signers: agreement.participants.filter((item) => item.signature).map((item) => ({ name: item.name, partyRole: agreement.parties.find((party) => party.id === item.partyId)?.role ?? null, signedAt: item.signature!.signedAt })), executedPdf: executedPdf ? { sha256: executedPdf.artifactSha256, downloadUrl: `/public/verify/${agreement.verificationCode}/document` } : null, validation });
+  });
+  app.get('/public/verify/:code/document', async (context) => {
+    const agreement = await repository.findAgreementByVerificationCode(context.req.param('code'));
+    if (!agreement) return context.json({ error: 'not_found', message: 'No executed agreement matched this verification code.' }, 404);
+    const artifact = (await repository.listAgreementArtifacts(agreement.tenantId, agreement.id)).find((item) => item.kind === 'executed_pdf');
+    if (!artifact) return context.json({ error: 'not_found', message: 'The executed PDF is unavailable.' }, 404);
+    return context.body(Uint8Array.from(await readArtifactContent(artifact)), 200, { 'content-type': 'application/pdf', 'content-disposition': `attachment; filename="${artifact.fileName}"`, 'x-content-sha256': artifact.artifactSha256 });
+  });
   app.use('/public/access/exchange', rateLimit(repository, { namespace: 'access-exchange', limit: 60, windowSeconds: 900 }));
   app.use('/public/integration-sessions/exchange', rateLimit(repository, { namespace: 'integration-exchange', limit: 60, windowSeconds: 900 }));
   registerAuthRoutes(app);
@@ -447,6 +462,11 @@ export function createApp(repository: Repository): Hono {
     if (!artifact) return context.json({ error: 'not_found', message: 'Agreement artifact not found.' }, 404);
     return context.body(Uint8Array.from(await readArtifactContent(artifact)), 200, { 'content-type': artifact.mediaType, 'content-disposition': `attachment; filename="${artifact.fileName}"`, 'x-content-sha256': artifact.artifactSha256 });
   });
+  app.post('/public/session/finalize', externalSessionMiddleware(), async (context) => {
+    const session = currentExternalSession(context); const agreement = await requiredAgreement(repository, session.tenantId, session.agreementId);
+    if (agreement.status !== 'executed') throw new Error('Only an executed agreement can be finalized.');
+    await ensureCompletionManifest(repository, agreement); return context.json(await externalView(repository, session));
+  });
 
   app.post('/public/session/onboarding', externalSessionMiddleware(), async (context) => {
     const input = OnboardParticipantSchema.parse(await context.req.json());
@@ -550,6 +570,7 @@ export function createApp(repository: Repository): Hono {
     if (participant.status === 'signed') throw new Error('Your approval and signature are complete. Only an unsigned reviewer can reopen negotiation.');
     if (!['out_for_signature', 'partially_signed'].includes(agreement.status)) throw new Error('Only an agreement awaiting signatures can be reopened for review.');
     const invalidatedAt = isoNow(); const signed = agreement.participants.filter((item) => item.signature);
+    if (agreement.signingEnvelope) { agreement.signingEnvelope.status = 'invalidated'; agreement.signingEnvelope.invalidatedAt = invalidatedAt; }
     for (const signer of signed) {
       agreement.invalidatedSignatures.push({ participantId: signer.id, participantName: signer.name, signature: signer.signature!, invalidatedAt, invalidatedByParticipantId: participant.id, reason: 'review_reopened' });
       signer.signature = null; signer.signedAt = null; signer.status = 'reviewed';
@@ -638,6 +659,11 @@ export function createApp(repository: Repository): Hono {
     const user = currentUser(context); await requiredAgreement(repository, user.tenantId, context.req.param('agreementId')); const artifact = await repository.getAgreementArtifact(user.tenantId, context.req.param('agreementId'), context.req.param('artifactId'));
     if (!artifact) return context.json({ error: 'not_found', message: 'Agreement artifact not found.' }, 404);
     return context.body(Uint8Array.from(await readArtifactContent(artifact)), 200, { 'content-type': artifact.mediaType, 'content-disposition': `attachment; filename="${artifact.fileName}"`, 'x-content-sha256': artifact.artifactSha256 });
+  });
+  app.post('/v1/agreements/:agreementId/finalize', async (context) => {
+    const agreement = await requiredAgreement(repository, currentUser(context).tenantId, context.req.param('agreementId'));
+    if (agreement.status !== 'executed') throw new Error('Only an executed agreement can be finalized.');
+    await ensureCompletionManifest(repository, agreement); return context.json(agreement);
   });
 
   app.post('/v1/agreements/:agreementId/review', async (context) => {

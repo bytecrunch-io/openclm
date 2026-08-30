@@ -32,7 +32,9 @@ export type SignatureInput = z.infer<typeof SignatureInputSchema>;
 export const SignatureRecordSchema = z.object({
   method: z.enum(['typed', 'drawn']), typedName: z.string().min(2).max(160), imageDataUrl: z.string().nullable(),
   signedContentSha256: z.string().length(64), signedAt: z.string().datetime(),
-  provider: z.enum(['development_witness', 'external_provider']).default('development_witness'),
+  signedArtifactSha256: z.string().length(64).nullable().default(null),
+  signingEnvelopeId: z.string().min(1).nullable().default(null),
+  provider: z.enum(['development_witness', 'platform_electronic_signature', 'external_provider']).default('development_witness'),
   providerSignatureId: z.string().min(1).nullable().default(null),
   authenticationMethod: z.enum(['development', 'oidc', 'invitation', 'email_code', 'passkey', 'integration_handoff']).default('development'),
   consentText: z.string().min(1).max(1000).default('I intend to sign this agreement electronically and adopt this mark as my signature.'),
@@ -54,6 +56,14 @@ export const SignatureEvidenceSchema = z.object({
   invalidationReason: z.enum(['review_reopened']).nullable(), createdAt: z.string().datetime(),
 });
 export type SignatureEvidence = z.infer<typeof SignatureEvidenceSchema>;
+
+export const SigningEnvelopeSchema = z.object({
+  id: z.string().min(1), revision: z.number().int().positive(), contentSha256: z.string().length(64),
+  signingArtifactId: z.string().min(1), signingArtifactSha256: z.string().length(64),
+  status: z.enum(['active', 'invalidated', 'executed']), frozenAt: z.string().datetime(),
+  invalidatedAt: z.string().datetime().nullable().default(null),
+});
+export type SigningEnvelope = z.infer<typeof SigningEnvelopeSchema>;
 
 export const ThreadMessageSchema = z.object({
   id: z.string().min(1), authorId: z.string().min(1), authorName: z.string().min(1).max(160),
@@ -315,6 +325,8 @@ export const AgreementSchema = z.object({
   executedAt: z.string().datetime().nullable(),
   signatureNotificationsSentAt: z.string().datetime().nullable().default(null),
   invalidatedSignatures: z.array(InvalidatedSignatureSchema).default([]),
+  signingEnvelope: SigningEnvelopeSchema.nullable().default(null),
+  verificationCode: z.string().min(32).nullable().default(null),
 });
 export type Agreement = z.infer<typeof AgreementSchema>;
 
@@ -427,7 +439,7 @@ export type AgreementAuditEvent = z.infer<typeof AgreementAuditEventSchema>;
 
 export const AgreementArtifactSchema = z.object({
   id: z.string().min(1), tenantId: z.string().min(1), agreementId: z.string().min(1),
-  kind: z.enum(['signing_snapshot', 'completion_manifest']), revision: z.number().int().positive(),
+  kind: z.enum(['signing_snapshot', 'signing_pdf', 'executed_pdf', 'completion_certificate', 'completion_manifest', 'validation_report']), revision: z.number().int().positive(),
   contentSha256: z.string().length(64), artifactSha256: z.string().length(64), mediaType: z.string().min(1).max(120),
   fileName: z.string().min(1).max(255), storageDriver: z.enum(['database', 'filesystem']).default('database'),
   storageKey: z.string().min(1).nullable().default(null), contentBase64: z.string().min(1).nullable().default(null),

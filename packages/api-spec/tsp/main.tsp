@@ -113,14 +113,17 @@ model SignatureRecord {
   typedName: string;
   imageDataUrl: string | null;
   signedContentSha256: string;
+  signedArtifactSha256: string | null;
+  signingEnvelopeId: string | null;
   signedAt: utcDateTime;
-  provider: "development_witness" | "external_provider";
+  provider: "development_witness" | "platform_electronic_signature" | "external_provider";
   providerSignatureId: string | null;
   authenticationMethod: "development" | "oidc" | "invitation" | "email_code" | "passkey" | "integration_handoff";
   consentText: string;
   consentVersion: string;
 }
 model InvalidatedSignature { participantId: string; participantName: string; signature: SignatureRecord; invalidatedAt: utcDateTime; invalidatedByParticipantId: string; reason: "review_reopened"; }
+model SigningEnvelope { id: string; revision: int32; contentSha256: string; signingArtifactId: string; signingArtifactSha256: string; status: "active" | "invalidated" | "executed"; frozenAt: utcDateTime; invalidatedAt: utcDateTime | null; }
 
 model CreateParticipant {
   email: string;
@@ -216,6 +219,8 @@ model Agreement {
   executedAt: utcDateTime | null;
   signatureNotificationsSentAt: utcDateTime | null;
   invalidatedSignatures: InvalidatedSignature[];
+  signingEnvelope: SigningEnvelope | null;
+  verificationCode: string | null;
 }
 
 model CreateAgreement {
@@ -341,7 +346,7 @@ model AgreementArtifact {
   id: string;
   tenantId: string;
   agreementId: string;
-  kind: "signing_snapshot" | "completion_manifest";
+  kind: "signing_snapshot" | "signing_pdf" | "executed_pdf" | "completion_certificate" | "completion_manifest" | "validation_report";
   revision: int32;
   contentSha256: string;
   artifactSha256: string;
@@ -357,6 +362,13 @@ model ArtifactContentResponse {
   @header("content-disposition") contentDisposition: string;
   @header("x-content-sha256") contentSha256: string;
   @body body: bytes;
+}
+model PublicVerification {
+  schemaVersion: int32; status: "executed"; title: string; agreementId: string; revision: int32; executedAt: utcDateTime;
+  contentSha256: string; parties: { role: PartyRole; legalName: string | null; }[];
+  signers: { name: string; partyRole: PartyRole | null; signedAt: utcDateTime; }[];
+  executedPdf: { sha256: string; downloadUrl: string; } | null;
+  validation: Record<unknown> | null;
 }
 
 model Invitation {
@@ -503,6 +515,9 @@ interface AgreementOperations {
   @get @route("/{agreementId}/artifacts/{artifactId}/content")
   artifactContent(...EntityContext, @path agreementId: string, @path artifactId: string): ArtifactContentResponse | ErrorResponse;
 
+  @post @route("/{agreementId}/finalize")
+  finalize(...EntityContext, @path agreementId: string): Agreement | ErrorResponse;
+
   @post @route("/{agreementId}/review")
   startReview(@path agreementId: string): Agreement | ErrorResponse;
 
@@ -611,6 +626,11 @@ interface WebhookDeliveryOperations {
 
 @route("/public")
 interface ExternalParticipantOperations {
+  @get @route("/verify/{code}")
+  verify(@path code: string): PublicVerification | ErrorResponse;
+
+  @get @route("/verify/{code}/document")
+  verifiedDocument(@path code: string): ArtifactContentResponse | ErrorResponse;
   @post @route("/recipient-auth/request")
   requestRecipientCode(@body body: RequestRecipientCode): RecipientCodeRequested | ErrorResponse;
 
@@ -664,6 +684,9 @@ interface ExternalParticipantOperations {
 
   @get @route("/session/artifacts/{artifactId}/content")
   sessionArtifactContent(@path artifactId: string): ArtifactContentResponse | ErrorResponse;
+
+  @post @route("/session/finalize")
+  finalizeSession(): ExternalView | ErrorResponse;
 
   @post @route("/session/onboarding")
   onboard(@body body: OnboardParticipant): ExternalView | ErrorResponse;

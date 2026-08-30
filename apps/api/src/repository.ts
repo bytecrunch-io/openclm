@@ -73,6 +73,7 @@ export interface Repository {
   createTemplate(tenantId: string, input: CreateTemplate): Promise<Template>;
   listAgreements(tenantId: string): Promise<Agreement[]>;
   getAgreement(tenantId: string, id: string): Promise<Agreement | undefined>;
+  findAgreementByVerificationCode(code: string): Promise<Agreement | undefined>;
   createAgreement(tenantId: string, input: CreateAgreement): Promise<Agreement>;
   saveAgreement(agreement: Agreement): Promise<void>;
   listWebhooks(tenantId: string): Promise<WebhookEndpoint[]>;
@@ -215,6 +216,11 @@ export class MemoryRepository implements Repository {
 
   async getAgreement(tenantId: string, id: string): Promise<Agreement | undefined> {
     const agreement = this.agreements.find((item) => item.tenantId === tenantId && item.id === id);
+    return agreement ? structuredClone(agreement) : undefined;
+  }
+
+  async findAgreementByVerificationCode(code: string): Promise<Agreement | undefined> {
+    const agreement = this.agreements.find((item) => item.verificationCode === code && item.status === 'executed');
     return agreement ? structuredClone(agreement) : undefined;
   }
 
@@ -448,6 +454,7 @@ export class PostgresRepository extends MemoryRepository {
         id text PRIMARY KEY, tenant_id text NOT NULL, payload jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now()
       );
       CREATE INDEX IF NOT EXISTS agreements_tenant_idx ON agreements (tenant_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS agreements_verification_code_idx ON agreements ((payload->>'verificationCode')) WHERE payload->>'verificationCode' IS NOT NULL;
       CREATE TABLE IF NOT EXISTS webhook_endpoints (
         id text PRIMARY KEY, tenant_id text NOT NULL, payload jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
       );
@@ -567,6 +574,11 @@ export class PostgresRepository extends MemoryRepository {
 
   override async getAgreement(tenantId: string, id: string): Promise<Agreement | undefined> {
     const result = await this.pool.query('SELECT payload FROM agreements WHERE tenant_id = $1 AND id = $2', [tenantId, id]);
+    return result.rows[0] ? AgreementSchema.parse(result.rows[0].payload) : undefined;
+  }
+
+  override async findAgreementByVerificationCode(code: string): Promise<Agreement | undefined> {
+    const result = await this.pool.query("SELECT payload FROM agreements WHERE payload->>'verificationCode' = $1 AND payload->>'status' = 'executed' LIMIT 1", [code]);
     return result.rows[0] ? AgreementSchema.parse(result.rows[0].payload) : undefined;
   }
 

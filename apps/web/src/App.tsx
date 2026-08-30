@@ -52,6 +52,7 @@ import {
   type EntityMemberList,
   type EntityRole,
   type Passkey,
+  type PublicVerification,
   type RecipientInboxItem,
   type User,
 } from "./api";
@@ -86,7 +87,26 @@ function App() {
   if (window.location.pathname === "/inbox") return <RecipientInboxPage />;
   if (window.location.pathname === "/membership")
     return <MembershipInvitationPage />;
+  if (window.location.pathname.startsWith('/verify/')) return <VerificationPage />;
   return <AdminApp />;
+}
+
+function VerificationPage() {
+  const code = decodeURIComponent(window.location.pathname.slice('/verify/'.length));
+  const [result, setResult] = useState<PublicVerification>(); const [error, setError] = useState<string>(); const [busy, setBusy] = useState(false);
+  useEffect(() => { if (!code) { setError('The verification code is missing.'); return; } void api.verifyAgreement(code).then(setResult).catch((cause) => setError(cause instanceof Error ? cause.message : 'Verification failed.')); }, [code]);
+  return <main className="membership-invitation verification-page"><section>
+    <img src={logo} alt="" /><span className="bc-eyebrow bc-text-orange">// DOCUMENT VERIFICATION</span>
+    {result ? <>
+      <h1>{result.validation?.documentIntegrityValid ? 'Document integrity verified' : 'Document could not be verified'}</h1>
+      <p><strong>{result.title}</strong> was completed on {new Date(result.executedAt).toLocaleString()}.</p>
+      <div className="verification-facts"><span>Agreement ID<strong>{result.agreementId}</strong></span><span>Revision<strong>{result.revision}</strong></span><span>Seal profile<strong>{result.validation?.profile ?? 'Unavailable'}</strong></span><span>Certificate trust<strong>{result.validation?.certificateTrust.replaceAll('_', ' ') ?? 'Unavailable'}</strong></span></div>
+      <div className="verification-signers">{result.signers.map((signer) => <span key={`${signer.name}-${signer.signedAt}`}><Check /> <strong>{signer.name}</strong> signed {new Date(signer.signedAt).toLocaleString()}</span>)}</div>
+      {result.validation?.limitations.map((limitation) => <small key={limitation}>{limitation}</small>)}
+      {result.executedPdf && <button className="button button-accent" disabled={busy} onClick={() => { setBusy(true); void api.downloadVerifiedAgreement(code).catch((cause) => setError(cause instanceof Error ? cause.message : 'Download failed.')).finally(() => setBusy(false)); }}>{busy ? <><BusyMark /> Downloading…</> : <><Download /> Download sealed PDF</>}</button>}
+    </> : !error ? <div className="portal-loading"><BusyMark /></div> : null}
+    {error && <div className="inline-error">{error}</div>}
+  </section></main>;
 }
 
 function AdminApp() {
@@ -1856,17 +1876,14 @@ function AgreementDetail({
     try {
       setBusy("download");
       const artifacts = await api.agreementArtifacts(agreement.id);
-      const manifest = artifacts.find(
-        (item) => item.kind === "completion_manifest",
-      );
-      if (!manifest)
-        throw new Error("The completion manifest is not available yet.");
-      await api.downloadAgreementArtifact(agreement.id, manifest.id);
+      const document = artifacts.find((item) => item.kind === "executed_pdf");
+      if (!document) throw new Error("The sealed executed PDF is not available yet.");
+      await api.downloadAgreementArtifact(agreement.id, document.id);
     } catch (cause) {
       onError(
         cause instanceof Error
           ? cause.message
-          : "Could not download the completion manifest.",
+          : "Could not download the executed agreement.",
       );
     } finally {
       setBusy(undefined);
@@ -2027,11 +2044,12 @@ function AgreementDetail({
                 </>
               ) : (
                 <>
-                  <Download /> Download evidence
+                  <Download /> Download sealed PDF
                 </>
               )}
             </button>
           )}
+          {agreement.status === 'executed' && agreement.verificationCode && <a className="button button-secondary button-small" href={`/verify/${agreement.verificationCode}`} target="_blank" rel="noreferrer"><ShieldCheck /> Verify</a>}
           {agreement.status === "draft" && (
             <button
               disabled={Boolean(busy)}
