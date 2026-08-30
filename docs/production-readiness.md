@@ -8,7 +8,7 @@ Bytecrunch Contracts now has a production-oriented application boundary, but it 
 - The local signature witness cannot be enabled with `NODE_ENV=production`. A deployment may run with `SIGNING_MODE=disabled` while a signing provider is being implemented.
 - Signature orchestration has a provider interface. Development signatures record a provider reference, authentication method, versioned consent, timestamp, and exact content hash.
 - Entering signing freezes an immutable, hashed JSON snapshot. Execution creates a downloadable completion manifest containing active and invalidated signature evidence.
-- `/health` reports liveness. `/health/ready` reports whether persistent storage, OIDC, and a non-development signing mode are present.
+- `/health` reports liveness. `/health/ready` actively probes storage and reports whether persistent storage, OIDC, and a safe non-development signing configuration are present. Disabled signing is safe for review-only deployment; it is not labelled as production signing.
 - Agreement lifecycle events are written to an append-only table with their revision, status, content hash, timestamp, and event digest.
 - Lifecycle aggregate updates, audit-event appends, and webhook-outbox inserts share one PostgreSQL transaction.
 - Webhook deliveries use a persistent outbox, exponential retry, delivery IDs, response/error history, administrative inspection, and manual replay.

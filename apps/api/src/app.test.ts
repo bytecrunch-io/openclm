@@ -20,7 +20,16 @@ class FailingLifecycleRepository extends MemoryRepository {
   }
 }
 
+class UnavailableRepository extends MemoryRepository {
+  override async healthCheck(): Promise<boolean> { return false; }
+}
+
 describe('contracts API vertical slice', () => {
+  it('reports failed storage connectivity through readiness', async () => {
+    const repository = new UnavailableRepository(); await repository.init(); const response = await createApp(repository).request('/health/ready');
+    expect(response.status).toBe(503); expect(await response.json()).toMatchObject({ status: 'not_ready', checks: { storageReachable: false, safeSigningConfiguration: false } });
+  });
+
   it('rejects state-changing browser requests from an untrusted origin', async () => {
     const app = await testApp();
     const response = await app.request('/v1/agreements', { method: 'POST', headers: { origin: 'https://attacker.example', 'content-type': 'application/json' }, body: '{}' });

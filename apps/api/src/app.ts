@@ -251,8 +251,8 @@ export function createApp(repository: Repository): Hono {
   });
 
   app.get('/health', (context) => context.json({ status: 'ok', version: '0.1.0', storage: repository.kind }));
-  app.get('/health/ready', (context) => {
-    const checks = { persistentStorage: repository.kind === 'postgres', oidc: config.AUTH_MODE === 'oidc', productionSigning: config.SIGNING_MODE !== 'development' };
+  app.get('/health/ready', async (context) => {
+    const checks = { persistentStorage: repository.kind === 'postgres', storageReachable: await repository.healthCheck(), oidc: config.AUTH_MODE === 'oidc', safeSigningConfiguration: config.SIGNING_MODE !== 'development' };
     const ready = Object.values(checks).every(Boolean);
     return context.json({ status: ready ? 'ready' : 'not_ready', checks }, ready ? 200 : 503);
   });

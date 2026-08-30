@@ -60,6 +60,7 @@ export interface WebhookEndpoint {
 export interface Repository {
   readonly kind: 'memory' | 'postgres';
   init(): Promise<void>;
+  healthCheck(): Promise<boolean>;
   listTemplates(tenantId: string): Promise<Template[]>;
   createTemplate(tenantId: string, input: CreateTemplate): Promise<Template>;
   listAgreements(tenantId: string): Promise<Agreement[]>;
@@ -175,6 +176,8 @@ export class MemoryRepository implements Repository {
       });
     }
   }
+
+  async healthCheck(): Promise<boolean> { return true; }
 
   async listTemplates(tenantId: string): Promise<Template[]> {
     return this.templates.filter((template) => template.id.startsWith(`${tenantId}:`)).map((template) => structuredClone(template));
@@ -488,6 +491,10 @@ export class PostgresRepository extends MemoryRepository {
         content: 'MUTUAL NON-DISCLOSURE AGREEMENT\n\nThis agreement is made between {{sender.legal_name}} and {{counterparty.legal_name}}.\n\n1. Confidential information\nEach party may disclose confidential information solely for evaluating a potential business relationship.\n\n2. Protection\nEach receiving party will protect confidential information using reasonable care.\n\n3. Term\nThese obligations continue for two years from the effective date.\n\nIN WITNESS WHEREOF, the parties agree to the terms above through their authorized signatories.\n\n{{signature_blocks}}',
       });
     }
+  }
+
+  override async healthCheck(): Promise<boolean> {
+    try { await this.pool.query('SELECT 1'); return true; } catch { return false; }
   }
 
   override async listTemplates(tenantId: string): Promise<Template[]> {
