@@ -45,11 +45,10 @@ import {
   canTransition,
   isExecutionComplete,
   isPartySignatureComplete,
+  permissionsForEntityRoles,
   type Agreement,
   type AgreementStatus,
   type Suggestion,
-  type EntityRole,
-  type EntityPermission,
   type RecipientInboxItem,
 } from '@bytecrunch/contracts-domain';
 import { authMiddleware, currentUser, registerAuthRoutes } from './auth.js';
@@ -62,15 +61,6 @@ import { notifyParticipants } from './notifications.js';
 import { clearRecipientSession, createRecipientLoginCode, currentRecipientSession, recipientSessionMiddleware, setRecipientSession, verifyRecipientLoginCode } from './recipient-auth.js';
 
 function isoNow(): string { return new Date().toISOString(); }
-
-const rolePermissions: Record<EntityRole, EntityPermission[]> = {
-  administrator: ['entity.manage', 'members.manage', 'templates.read', 'templates.write', 'agreements.read', 'agreements.write', 'agreements.sign'],
-  template_manager: ['templates.read', 'templates.write', 'agreements.read'],
-  contract_manager: ['templates.read', 'agreements.read', 'agreements.write'],
-  signatory: ['templates.read', 'agreements.read', 'agreements.sign'],
-  viewer: ['templates.read', 'agreements.read'],
-};
-function permissionsForEntityRoles(roles: EntityRole[]): EntityPermission[] { return [...new Set(roles.flatMap((role) => rolePermissions[role]))]; }
 
 function transition(agreement: Agreement, status: AgreementStatus): void {
   if (!canTransition(agreement.status, status)) {
@@ -340,7 +330,7 @@ export function createApp(repository: Repository): Hono {
     if (memberships.length === 0 && (config.AUTH_MODE === 'dev' || authenticated.email.toLowerCase() === config.DEV_USER_EMAIL.toLowerCase())) {
       let defaultEntity = await repository.getCustomerEntity(authenticated.tenantId);
       defaultEntity ??= await repository.createCustomerEntity({ id: authenticated.tenantId, slug: authenticated.tenantId, legalName: config.TENANT_LEGAL_NAME, businessAddress: config.TENANT_BUSINESS_ADDRESS || null, registrationNumber: null, jurisdiction: null });
-      await repository.grantEntityMembership(account.id, defaultEntity.id, ['administrator'], ['entity.manage', 'members.manage', 'templates.read', 'templates.write', 'agreements.read', 'agreements.write', 'agreements.sign']);
+      await repository.grantEntityMembership(account.id, defaultEntity.id, ['administrator'], permissionsForEntityRoles(['administrator']));
       memberships = await repository.listEntityMemberships(account.id);
     }
     if (memberships.length === 0 && context.req.path === '/v1/me') return next();
@@ -380,7 +370,7 @@ export function createApp(repository: Repository): Hono {
   app.post('/v1/entities', async (context) => {
     const user = currentUser(context); const input = CreateCustomerEntitySchema.parse(await context.req.json());
     const entity = await repository.createCustomerEntity({ ...input, businessAddress: input.businessAddress ?? null, registrationNumber: input.registrationNumber ?? null, jurisdiction: input.jurisdiction ?? null });
-    await repository.grantEntityMembership(user.id, entity.id, ['administrator'], ['entity.manage', 'members.manage', 'templates.read', 'templates.write', 'agreements.read', 'agreements.write', 'agreements.sign']);
+    await repository.grantEntityMembership(user.id, entity.id, ['administrator'], permissionsForEntityRoles(['administrator']));
     const sourceTemplate = (await repository.listTemplates('bytecrunch')).filter((item) => item.key === 'mutual-nda').sort((a, b) => b.version - a.version)[0];
     if (sourceTemplate) await repository.createTemplate(entity.id, { key: sourceTemplate.key, name: sourceTemplate.name, description: sourceTemplate.description, content: sourceTemplate.content });
     return context.json(entity, 201);

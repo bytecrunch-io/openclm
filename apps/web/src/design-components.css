@@ -4,7 +4,7 @@
    ============================================================ */
 
 /* ---- Button ---- */
-.bc-btn {
+:where(.bc-btn, .button) {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -16,8 +16,8 @@
     line-height: 1;
     border: 1px solid transparent;
     border-radius: var(--radius-0);
-    padding: 0 var(--space-8);
-    height: 52px;
+    padding: 0 var(--space-5);
+    min-height: 44px;
     cursor: pointer;
     white-space: nowrap;
     transition: background var(--dur-fast) var(--ease-standard),
@@ -26,28 +26,31 @@
         filter var(--dur-fast) var(--ease-standard),
         transform var(--dur-fast) var(--ease-standard);
 }
-.bc-btn:active { transform: translateY(1px); }
-.bc-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
-.bc-btn svg { width: 16px; height: 16px; flex: none; }
-.bc-btn .bc-btn-arrow { transition: transform var(--dur-base) var(--ease-out); }
-.bc-btn:hover .bc-btn-arrow { transform: translateX(4px); }
+:where(.bc-btn, .button):active { transform: translateY(1px); }
+:where(.bc-btn, .button):disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+:where(.bc-btn, .button) svg { width: 16px; height: 16px; flex: none; }
+:where(.bc-btn, .button) svg:last-child { transition: transform var(--dur-base) var(--ease-out); }
+:where(.bc-btn, .button):hover svg:last-child { transform: translateX(4px); }
 
 /* sizes */
-.bc-btn--sm { height: 40px; padding: 0 var(--space-5); font-size: var(--fs-xs); }
-.bc-btn--lg { height: 60px; padding: 0 var(--space-10); font-size: var(--fs-body); }
+.bc-btn--sm, .button-small { min-height: 38px; padding: 0 var(--space-4); font-size: var(--fs-xs); }
+.bc-btn--lg, .button-large { min-height: 60px; padding: 0 var(--space-10); font-size: var(--fs-body); }
 
 /* variants */
-.bc-btn--primary { background: var(--fg); color: var(--bg); border-color: var(--fg); }
-.bc-btn--primary:hover:not(:disabled) { filter: brightness(0.88); }
+.bc-btn--primary, .button-primary { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.bc-btn--primary:hover:not(:disabled), .button-primary:hover:not(:disabled) { filter: brightness(0.88); }
 
-.bc-btn--accent { background: var(--bc-orange); color: #fff; border-color: var(--bc-orange); }
-.bc-btn--accent:hover:not(:disabled) { background: var(--bc-orange-600); border-color: var(--bc-orange-600); }
+.bc-btn--accent, .button-accent { background: var(--bc-orange); color: var(--bc-white); border-color: var(--bc-orange); }
+.bc-btn--accent:hover:not(:disabled), .button-accent:hover:not(:disabled) { background: var(--bc-orange-600); border-color: var(--bc-orange-600); }
 
-.bc-btn--secondary { background: transparent; color: var(--fg); border-color: var(--border-2); }
-.bc-btn--secondary:hover:not(:disabled) { background: var(--surface-hover); border-color: var(--fg); }
+.bc-btn--secondary, .button-secondary { background: transparent; color: var(--fg); border-color: var(--border-2); }
+.bc-btn--secondary:hover:not(:disabled), .button-secondary:hover:not(:disabled) { background: var(--surface-hover); border-color: var(--fg); }
 
-.bc-btn--ghost { background: transparent; color: var(--fg); border-color: transparent; }
-.bc-btn--ghost:hover:not(:disabled) { background: var(--surface-hover); }
+.bc-btn--ghost, .button-ghost { background: transparent; color: var(--fg); border-color: transparent; }
+.bc-btn--ghost:hover:not(:disabled), .button-ghost:hover:not(:disabled) { background: var(--surface-hover); }
+
+.button-danger { background: var(--bc-danger); color: var(--bc-white); border-color: var(--bc-danger); }
+.button-danger:hover:not(:disabled) { filter: brightness(.88); }
 
 .bc-btn--link {
     background: transparent; color: var(--fg); border: none; padding: 0; height: auto;
@@ -57,17 +60,26 @@
 .bc-btn--link:active { transform: none; }
 
 /* ---- IconButton ---- */
-.bc-iconbtn {
+:where(.bc-iconbtn, .icon-button) {
     display: inline-flex; align-items: center; justify-content: center;
-    width: 40px; height: 40px; padding: 0;
+    width: 42px; height: 42px; padding: 0;
     color: var(--fg); background: transparent;
     border: 1px solid transparent; border-radius: var(--radius-sm); cursor: pointer;
     transition: background var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard);
 }
-.bc-iconbtn:hover:not(:disabled) { background: var(--surface-hover); }
-.bc-iconbtn--bordered { border-color: var(--border-2); }
-.bc-iconbtn:disabled { opacity: 0.4; cursor: not-allowed; }
-.bc-iconbtn svg { width: 18px; height: 18px; }
+:where(.bc-iconbtn, .icon-button):hover:not(:disabled) { background: var(--surface-hover); border-color: var(--border-2); }
+.bc-iconbtn--bordered, .icon-button:not(.icon-button-ghost) { border-color: var(--border-1); }
+:where(.bc-iconbtn, .icon-button):disabled { opacity: 0.4; cursor: not-allowed; }
+:where(.bc-iconbtn, .icon-button) svg { width: 18px; height: 18px; }
+
+/* ---- Inline alert ---- */
+.inline-alert {
+    display: flex; align-items: center; justify-content: space-between; gap: var(--space-4);
+    padding: var(--space-3) var(--space-4); border: 1px solid var(--border-2);
+    color: var(--text-2); background: var(--surface-2);
+}
+.inline-alert-danger { border-color: color-mix(in oklab, var(--bc-danger) 55%, var(--border-1)); }
+.inline-alert-info { border-color: color-mix(in oklab, var(--bc-blue) 55%, var(--border-1)); }
 
 /* ---- Eyebrow ---- */
 .bc-eyebrow-label {

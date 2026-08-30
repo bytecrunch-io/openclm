@@ -3,14 +3,15 @@ import { browserSupportsWebAuthn, startAuthentication, startRegistration } from 
 import type { PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/browser';
 import {
   ArrowRight, Bell, Check, ChevronRight, CircleUserRound, FileCheck2, FileClock, FilePenLine,
-  BookOpen, Braces, Building2, FilePlus2, Files, History, Inbox, KeyRound, LayoutDashboard, LogOut, Mail, Moon, Plus, Save, Settings, ShieldCheck, Sun, UserPlus, UsersRound, Webhook, X,
+  BookOpen, Braces, Building2, FilePlus2, Files, History, Inbox, KeyRound, LayoutDashboard, LogOut, Mail, Plus, Save, Settings, ShieldCheck, UserPlus, UsersRound, Webhook, X,
 } from 'lucide-react';
 import type { Agreement, CreateAgreement, CreateTemplate, Notification, Template } from '@bytecrunch/contracts-domain';
 import logo from './assets/logomark.svg';
 import { api, statusLabel, type EntityMemberList, type EntityRole, type Passkey, type RecipientInboxItem, type User } from './api';
 import ExternalPortal from './ExternalPortal';
-import { BusyMark, DirectContractEditor, DocumentCommentCard, RedlineCard, SIGNATURE_BLOCKS_PLACEHOLDER, SelectableContract, type DraftSaveState, type TextSelection } from './ReviewWorkspace';
+import { DirectContractEditor, DocumentCommentCard, RedlineCard, SIGNATURE_BLOCKS_PLACEHOLDER, SelectableContract, type DraftSaveState, type TextSelection } from './ReviewWorkspace';
 import { NextActionBanner, SignatureBlocks, SignatureCeremony } from './SigningExperience';
+import { BusyMark, InlineAlert, ThemeToggle } from './components/ui';
 
 type View = 'dashboard' | 'my-work' | 'agreements' | 'templates' | 'members' | 'settings';
 
@@ -22,11 +23,6 @@ function App() {
 }
 
 function AdminApp() {
-  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
-    const stored = localStorage.getItem('bc-contracts-theme-choice');
-    if (stored === 'light' || stored === 'dark') return stored;
-    return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
-  });
   const [view, setView] = useState<View>('dashboard');
   const [user, setUser] = useState<User>();
   const [agreements, setAgreements] = useState<Agreement[]>([]);
@@ -37,17 +33,6 @@ function AdminApp() {
   const [creatingEntity, setCreatingEntity] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
-
-  useEffect(() => {
-    document.documentElement.className = theme;
-  }, [theme]);
-  useEffect(() => {
-    if (localStorage.getItem('bc-contracts-theme-choice')) return;
-    const media = window.matchMedia('(prefers-color-scheme: light)');
-    const update = () => setTheme(media.matches ? 'light' : 'dark');
-    media.addEventListener('change', update);
-    return () => media.removeEventListener('change', update);
-  }, []);
 
   async function refresh() {
     try {
@@ -105,13 +90,13 @@ function AdminApp() {
           <div className="entity-context"><span className="bc-eyebrow">// ACTING FOR</span>{user && <label><Building2 /><select aria-label="Active customer entity" value={user.activeEntityId ?? ''} onChange={(event) => { api.selectEntity(event.target.value); setSelected(undefined); void refresh(); }}>{user.entities.map((membership) => <option key={membership.entityId} value={membership.entityId}>{membership.entity.legalName}</option>)}</select></label>}<button className="text-button" onClick={() => setCreatingEntity(true)}>Add entity</button></div>
           <div className="top-actions">
             <button className="icon-button notification-trigger" aria-label="Notifications" onClick={() => setShowNotifications((value) => !value)}><Bell />{notifications.some((item) => !item.readAt) && <i>{notifications.filter((item) => !item.readAt).length}</i>}</button>
-            <button className="icon-button" aria-label={`Use ${theme === 'dark' ? 'light' : 'dark'} theme`} onClick={() => { const next = theme === 'dark' ? 'light' : 'dark'; localStorage.setItem('bc-contracts-theme-choice', next); setTheme(next); }}>{theme === 'dark' ? <Sun /> : <Moon />}</button>
+            <ThemeToggle />
             <button className="button button-accent" onClick={() => setCreating(true)}><Plus /> New agreement</button>
           </div>
         </header>
         {showNotifications && <NotificationCenter notifications={notifications} onClose={() => setShowNotifications(false)} onReadAll={() => void api.readAllNotifications().then(() => setNotifications((items) => items.map((item) => ({ ...item, readAt: item.readAt ?? new Date().toISOString() }))))} onOpen={(notification) => void api.readNotification(notification.id).then(() => { setNotifications((items) => items.map((item) => item.id === notification.id ? { ...item, readAt: new Date().toISOString() } : item)); const agreement = agreements.find((item) => item.id === notification.agreementId); if (agreement) openAgreement(agreement); setShowNotifications(false); })} />}
 
-        {error && <div className="error-banner"><span>{error}</span><button onClick={() => setError(undefined)}><X /></button></div>}
+        {error && <InlineAlert className="error-banner" onDismiss={() => setError(undefined)}>{error}</InlineAlert>}
         {loading && <div className="loading-line" />}
         {view === 'dashboard' && <Dashboard agreements={agreements} counts={counts} onOpen={openAgreement} onCreate={() => setCreating(true)} />}
         {view === 'my-work' && <PersonalWork onOpen={(item) => void openPersonalWork(item)} onError={setError} />}
@@ -147,7 +132,7 @@ function PersonalWork({ onOpen, onError }: { onOpen: (item: RecipientInboxItem) 
 
 function RecipientInboxPage() {
   const [items, setItems] = useState<RecipientInboxItem[]>(); const [passkeys, setPasskeys] = useState<Passkey[]>([]); const [email, setEmail] = useState(''); const [requestId, setRequestId] = useState<string>(); const [code, setCode] = useState(''); const [expiresAt, setExpiresAt] = useState<string>(); const [error, setError] = useState<string>(); const [busy, setBusy] = useState(false); const [checking, setChecking] = useState(true);
-  useEffect(() => { const stored = localStorage.getItem('bc-contracts-theme-choice'); document.documentElement.className = stored === 'dark' || stored === 'light' ? stored : window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'; void Promise.all([api.recipientInbox(), api.recipientPasskeys()]).then(([nextItems, nextPasskeys]) => { setItems(nextItems); setPasskeys(nextPasskeys); }).catch(() => undefined).finally(() => setChecking(false)); }, []);
+  useEffect(() => { void Promise.all([api.recipientInbox(), api.recipientPasskeys()]).then(([nextItems, nextPasskeys]) => { setItems(nextItems); setPasskeys(nextPasskeys); }).catch(() => undefined).finally(() => setChecking(false)); }, []);
   async function requestCode(event: FormEvent) { event.preventDefault(); try { setBusy(true); setError(undefined); const response = await api.requestRecipientCode(email); setRequestId(response.requestId); setExpiresAt(response.expiresAt); if (response.developmentCode) setCode(response.developmentCode); } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not request a code.'); } finally { setBusy(false); } }
   async function verify(event: FormEvent) { event.preventDefault(); if (!requestId) return; try { setBusy(true); setError(undefined); await api.verifyRecipientCode(requestId, code); const [nextItems, nextPasskeys] = await Promise.all([api.recipientInbox(), api.recipientPasskeys()]); setItems(nextItems); setPasskeys(nextPasskeys); } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not verify that code.'); } finally { setBusy(false); } }
   async function signInWithPasskey() { try { setBusy(true); setError(undefined); const generated = await api.recipientPasskeyOptions(); const response = await startAuthentication({ optionsJSON: generated.options as unknown as PublicKeyCredentialRequestOptionsJSON }); await api.verifyRecipientPasskey(generated.requestId, response); const [nextItems, nextPasskeys] = await Promise.all([api.recipientInbox(), api.recipientPasskeys()]); setItems(nextItems); setPasskeys(nextPasskeys); } catch (cause) { setError(cause instanceof Error ? cause.message : 'The passkey could not be used.'); } finally { setBusy(false); } }
@@ -284,7 +269,7 @@ const entityRoleLabel = (role: EntityRole) => role.replace('_', ' ');
 
 function MembershipInvitationPage() {
   const token = new URLSearchParams(window.location.search).get('token'); const [preview, setPreview] = useState<{ entityName: string; emailHint: string; roles: EntityRole[]; expiresAt: string }>(); const [error, setError] = useState<string>(); const [busy, setBusy] = useState(false);
-  useEffect(() => { const stored = localStorage.getItem('bc-contracts-theme-choice'); document.documentElement.className = stored === 'dark' || stored === 'light' ? stored : window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'; if (!token) { setError('The membership invitation token is missing.'); return; } void api.previewEntityMemberInvitation(token).then(setPreview).catch((cause) => setError(cause instanceof Error ? cause.message : 'The invitation could not be opened.')); }, [token]);
+  useEffect(() => { if (!token) { setError('The membership invitation token is missing.'); return; } void api.previewEntityMemberInvitation(token).then(setPreview).catch((cause) => setError(cause instanceof Error ? cause.message : 'The invitation could not be opened.')); }, [token]);
   async function accept() { if (!token) return; try { setBusy(true); setError(undefined); const result = await api.acceptEntityMemberInvitation(token); api.selectEntity(result.entity.id); window.location.assign('/'); } catch (cause) { setError(cause instanceof Error ? cause.message : 'The invitation could not be accepted.'); } finally { setBusy(false); } }
   const returnTo = `${window.location.pathname}${window.location.search}`;
   return <main className="membership-invitation"><section><img src={logo} alt="" /><span className="bc-eyebrow bc-text-orange">// CUSTOMER ENTITY INVITATION</span>{preview ? <><h1>Join {preview.entityName}</h1><p>This invitation grants <strong>{preview.roles.map(entityRoleLabel).join(', ')}</strong> access to the customer entity. Sign in as <strong>{preview.emailHint}</strong> to accept it.</p><div className="membership-invite-actions"><button disabled={busy} className="button button-accent" onClick={() => void accept()}>{busy ? <><BusyMark /> Accepting…</> : <>Accept invitation <ArrowRight /></>}</button><a className="button button-secondary" href={api.loginUrlFor(returnTo)}>Sign in with SSO</a></div><small>Expires {new Date(preview.expiresAt).toLocaleString()}</small></> : !error ? <div className="portal-loading"><div className="loading-line" /></div> : null}{error && <div className="inline-error">{error}</div>}{error?.toLowerCase().includes('sign in') && <a className="button button-accent" href={api.loginUrlFor(returnTo)}>Sign in with the invited email <ArrowRight /></a>}</section></main>;

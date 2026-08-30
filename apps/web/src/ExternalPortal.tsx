@@ -2,8 +2,9 @@ import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { AlertTriangle, ArrowRight, Check, FileCheck2, Send, ShieldCheck, UserPlus, X } from 'lucide-react';
 import logo from './assets/logomark.svg';
 import { api, statusLabel, type ExternalView } from './api';
-import { BusyMark, DirectContractEditor, DocumentCommentCard, RedlineCard, SIGNATURE_BLOCKS_PLACEHOLDER, SelectableContract, type DraftSaveState, type TextSelection } from './ReviewWorkspace';
+import { DirectContractEditor, DocumentCommentCard, RedlineCard, SIGNATURE_BLOCKS_PLACEHOLDER, SelectableContract, type DraftSaveState, type TextSelection } from './ReviewWorkspace';
 import { NextActionBanner, SignatureBlocks, SignatureCeremony } from './SigningExperience';
+import { BusyMark } from './components/ui';
 
 export default function ExternalPortal() {
   const [view, setView] = useState<ExternalView>();
@@ -11,13 +12,6 @@ export default function ExternalPortal() {
   const [busyAction, setBusyAction] = useState<string>();
   const [error, setError] = useState<string>();
   const [recoveryMessage, setRecoveryMessage] = useState<string>();
-  useEffect(() => {
-    const stored = localStorage.getItem('bc-contracts-theme-choice');
-    const media = window.matchMedia('(prefers-color-scheme: light)');
-    const apply = () => { document.documentElement.className = stored === 'dark' || stored === 'light' ? stored : media.matches ? 'light' : 'dark'; };
-    apply(); media.addEventListener('change', apply); return () => media.removeEventListener('change', apply);
-  }, []);
-
   async function load() {
     try {
       setLoading(true); setError(undefined);

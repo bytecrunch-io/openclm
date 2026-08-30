@@ -58,6 +58,17 @@
     --accent-2: var(--bc-blue);
     --accent-text: var(--bc-orange-300);
     --focus-ring: var(--bc-blue);
+    --scroll-thumb: var(--bc-ink-600);
+    --scroll-thumb-hover: var(--bc-ink-500);
+
+    /* Contract paper stays theme-independent so the document remains a
+       familiar legal artifact while the application chrome changes. */
+    --document-bg: #f8f6f1;
+    --document-surface: #efede6;
+    --document-text: #242424;
+    --document-muted: #61615d;
+    --document-border: rgba(0, 0, 0, 0.16);
+    --signature-ink: #111111;
 
     /* Logo render variables (consumed by the inline SVG mark) */
     --background: var(--bc-ink-950);
@@ -101,6 +112,8 @@ html.light {
     --border-strong: var(--bc-grey-200);
 
     --accent-text: var(--bc-orange-600);
+    --scroll-thumb: var(--bc-grey-200);
+    --scroll-thumb-hover: var(--bc-grey-300);
 
     /* Logo render variables — light */
     --background: var(--bc-grey-100);

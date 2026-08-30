@@ -74,6 +74,16 @@ export const EntityPermissionSchema = z.enum([
   'agreements.read', 'agreements.write', 'agreements.sign',
 ]);
 export type EntityPermission = z.infer<typeof EntityPermissionSchema>;
+export const ENTITY_ROLE_PERMISSIONS: Readonly<Record<EntityRole, readonly EntityPermission[]>> = {
+  administrator: ['entity.manage', 'members.manage', 'templates.read', 'templates.write', 'agreements.read', 'agreements.write', 'agreements.sign'],
+  template_manager: ['templates.read', 'templates.write', 'agreements.read'],
+  contract_manager: ['templates.read', 'agreements.read', 'agreements.write'],
+  signatory: ['templates.read', 'agreements.read', 'agreements.sign'],
+  viewer: ['templates.read', 'agreements.read'],
+};
+export function permissionsForEntityRoles(roles: readonly EntityRole[]): EntityPermission[] {
+  return [...new Set(roles.flatMap((role) => ENTITY_ROLE_PERMISSIONS[role]))];
+}
 export const CustomerEntitySchema = z.object({
   id: z.string().min(1),
   slug: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),

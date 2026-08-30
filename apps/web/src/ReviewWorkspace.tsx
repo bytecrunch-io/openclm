@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Check, MessageSquareText, Pencil, Redo2, Trash2, Undo2, X } from 'lucide-react';
 import type { Agreement, DocumentComment, Suggestion } from '@bytecrunch/contracts-domain';
+import { BusyMark } from './components/ui';
 
 export interface TextSelection { text: string; start: number; end: number }
 export const SIGNATURE_BLOCKS_PLACEHOLDER = '{{signature_blocks}}';
@@ -165,4 +166,4 @@ export function DocumentCommentCard({ item, busy, canEdit, canResolve, onEdit, o
   return <div className="document-comment"><strong>{item.authorName}</strong>{editing ? <form className="comment-edit" onSubmit={(event) => { event.preventDefault(); if (body.trim()) { onEdit?.(body.trim()); setEditing(false); } }}><textarea required autoFocus value={body} onChange={(event) => setBody(event.target.value)} /><div><button type="button" className="text-button" onClick={() => { setBody(item.body); setEditing(false); }}>Cancel</button><button disabled={busy} className="button button-secondary button-small">Save</button></div></form> : <p>{item.body}</p>} {!editing && (canEdit || canResolve) && <div className="comment-actions">{canEdit && <><button disabled={busy} className="text-button" onClick={() => setEditing(true)}>Edit</button><button disabled={busy} className="text-button danger" onClick={onRemove}>Remove</button></>}{canResolve && <button disabled={busy} className="text-button" onClick={onResolve}>Resolve feedback</button>}</div>}</div>;
 }
 
-export function BusyMark() { return <span className="busy-mark" aria-hidden="true">{Array.from({ length: 16 }, (_, index) => <i key={index} />)}</span>; }
+export { BusyMark };

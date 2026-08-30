@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AgreementSchema, assertReadyForSignature, canTransition, isExecutionComplete } from './index.js';
+import { AgreementSchema, assertReadyForSignature, canTransition, isExecutionComplete, permissionsForEntityRoles } from './index.js';
 
 const agreement = AgreementSchema.parse({
   id: 'agr_test', tenantId: 'org_test', externalId: null, title: 'NDA',
@@ -24,5 +24,10 @@ describe('agreement lifecycle', () => {
     expect(isExecutionComplete(agreement)).toBe(false);
     agreement.participants[0]!.status = 'signed';
     expect(isExecutionComplete(agreement)).toBe(true);
+  });
+
+  it('derives stable permissions from entity role bundles', () => {
+    expect(permissionsForEntityRoles(['viewer', 'template_manager'])).toEqual(['templates.read', 'agreements.read', 'templates.write']);
+    expect(permissionsForEntityRoles(['administrator'])).toContain('members.manage');
   });
 });

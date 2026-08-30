@@ -57,10 +57,20 @@ a {
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-    background: var(--bc-ink-600);
+    background: var(--scroll-thumb);
     border-radius: var(--radius-pill);
 }
-::-webkit-scrollbar-thumb:hover { background: var(--bc-ink-500); }
+::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover); }
+
+@media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+    }
+}
 
 /* ---- Type role utilities ---- */
 .bc-display {
