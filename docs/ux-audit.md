@@ -8,7 +8,7 @@ Scope: standalone sender and participant journeys across agreement creation, inv
 
 The product now has a coherent review model and a strong Bytecrunch visual identity. The largest usability gap was action hierarchy: lifecycle status was visible, but the person responsible for moving an agreement forward had to infer their next action from small controls. Signing also behaved like a status toggle rather than a deliberate ceremony.
 
-This pass adds an explicit next-action layer, touch-friendly typed/drawn signing, document-bound signature evidence, and visible signature blocks. It remains a development witness—not production electronic-signature infrastructure.
+This pass adds an explicit next-action layer, touch-friendly typed/drawn signing, document-bound signature evidence, visible signature blocks, sealed executed PDFs, completion records, and a public verification experience. The built-in production mode is ordinary electronic signing with an organizational PAdES-B-B seal, not AES/QES.
 
 ## Current scorecard
 
@@ -22,7 +22,7 @@ This pass adds an explicit next-action layer, touch-friendly typed/drawn signing
 | Redlining | Good | The active reviewer edits a clean private draft directly in the document; saving derives a synchronized sidebar diff. Granular structured-document operations remain future work. |
 | Action clarity | Strong after this pass | Dashboard attention queue and agreement-level next-action banner make ownership explicit. |
 | Signing ceremony | Good for local development | Typed/drawn marks, touch input, intent confirmation, exact hash, and visible blocks are present. |
-| Production signing assurance | Not production-ready | Provider orchestration, authentication attribution, signing snapshots, and completion manifests exist; a real provider, sealed PDF/PAdES, normalized evidence ledger, assurance policy, and provider certificate remain. |
+| Production signing assurance | Conditional | Frozen-PDF binding, normalized evidence, PAdES-B-B sealing, completion certificates, integrity verification, and a deployment P12 mode exist. Certificate procurement, assurance policy, interoperability testing, and legal acceptance remain operator gates. |
 | Mobile | Good baseline | Review and touch signing reflow to one column; long-document navigation still needs a mobile progress pattern. |
 | Accessibility | Fair | Typed signing, global focus styling, reduced-motion support, and shared accessible dialog behavior are present; document semantics and complete workflows still need a full screen-reader pass. |
 | Multi-entity identity | Good | Global accounts, explicit customer-entity context, isolated data, durable recipient access, member administration, and cross-entity personal inboxes are implemented. |
@@ -61,7 +61,7 @@ This pass adds an explicit next-action layer, touch-friendly typed/drawn signing
 
 ### P0 — required before real contracts
 
-1. Replace the development witness with a signing-provider boundary. Freeze a rendered artifact, create an envelope, verify callbacks, and store the sealed output.
+1. Add a QTSP/DSS provider only for use cases that require AES/QES, trusted timestamps, revocation data, or PAdES-B-LT/B-LTA.
 2. Store signing evidence in append-only records, not only the mutable agreement aggregate. Include signer identity, authentication method, timestamps, document hash, consent text/version, provider evidence, and relevant delivery events.
 3. Produce a final downloadable PDF with signatures applied to deterministic fields and a completion certificate. The current HTML signature blocks are visual evidence inside the app, not a sealed document.
 4. Define signature assurance profiles by use case and jurisdiction. Basic NDAs may use simple electronic signatures; higher-risk contracts may require stronger authentication or qualified signatures.

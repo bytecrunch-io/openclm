@@ -17,6 +17,7 @@ Use:
 ```dotenv
 NODE_ENV=staging
 SIGNING_MODE=development
+PDF_SEAL_MODE=development
 ARTIFACT_STORAGE_DRIVER=filesystem
 ARTIFACT_STORAGE_PATH=/var/lib/bytecrunch/artifacts
 ```
@@ -47,4 +48,4 @@ Then complete the manual two-browser workflow in the README: create an entity-ow
 
 Run the manually dispatched **Staging DAST** GitHub workflow against these same HTTPS origins. It uses the official ZAP packaged baseline and OpenAPI scans and retains their reports as workflow artifacts. The public scan is a starting point; configure an authenticated ZAP context for staff and recipient roles before treating the DAST release gate as complete.
 
-Before any production deployment, set `NODE_ENV=production` and keep `SIGNING_MODE=disabled`. Real contract execution remains blocked until a reviewed signing adapter produces and verifies a deterministic sealed document and provider evidence. Follow the remaining gates in [production readiness](./production-readiness.md) and the backup/incident procedures in [operations](./operations.md).
+For a review-only production deployment, use `SIGNING_MODE=disabled` and `PDF_SEAL_MODE=disabled`. To enable the built-in ordinary electronic-signature flow, use `SIGNING_MODE=platform`, `PDF_SEAL_MODE=p12`, and mount a deployment-managed PKCS#12 document-seal credential. Startup fails closed if the path or password is absent. This produces a PAdES-B-B organizational seal over the executed PDF; it does not turn the human marks into advanced or qualified electronic signatures and does not provide B-LT/B-LTA long-term validation. Follow [production readiness](./production-readiness.md) and execute the signing test plan before enabling it.

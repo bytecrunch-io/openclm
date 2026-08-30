@@ -2,6 +2,8 @@
 
 Agreement evidence uses the `ArtifactStorage` capability in `apps/api/src/artifact-storage.ts`. Domain records contain an opaque storage key and SHA-256 digest; they do not contain bucket names, cloud URLs, or provider SDK types.
 
+Each executed revision retains a signing snapshot, frozen signing PDF, sealed executed PDF, validation report, standalone completion certificate, and completion manifest. The repository enforces one canonical record per agreement/kind/revision/content hash; concurrent finalization callers receive that canonical record rather than creating alternate evidence sets.
+
 ## Built-in adapters
 
 - `database` stores base64 content in the artifact metadata record. It is convenient for tests and local development and is rejected by production configuration.

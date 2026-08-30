@@ -85,7 +85,7 @@ export interface Repository {
   saveWebhookDelivery(delivery: WebhookDelivery): Promise<void>;
   appendAgreementAuditEvent(event: AgreementAuditEvent): Promise<void>;
   listAgreementAuditEvents(tenantId: string, agreementId: string): Promise<AgreementAuditEvent[]>;
-  createAgreementArtifact(artifact: AgreementArtifact): Promise<void>;
+  createAgreementArtifact(artifact: AgreementArtifact): Promise<AgreementArtifact>;
   listAgreementArtifacts(tenantId: string, agreementId: string): Promise<AgreementArtifact[]>;
   getAgreementArtifact(tenantId: string, agreementId: string, artifactId: string): Promise<AgreementArtifact | undefined>;
   listSignatureEvidence(tenantId: string, agreementId: string): Promise<SignatureEvidence[]>;
@@ -151,6 +151,13 @@ export interface Repository {
 
 function now(): string { return new Date().toISOString(); }
 export function hashContent(content: string): string { return createHash('sha256').update(content).digest('hex'); }
+function assertSigningWriteIsCurrent(stored: Agreement, incoming: Agreement): void {
+  if (stored.revision !== incoming.revision || stored.contentSha256 !== incoming.contentSha256 || stored.signingEnvelope?.id !== incoming.signingEnvelope?.id) throw new Error('The signing revision changed. Refresh the agreement before signing.');
+  for (const storedParticipant of stored.participants.filter((item) => item.signature)) {
+    const submitted = incoming.participants.find((item) => item.id === storedParticipant.id)?.signature;
+    if (!submitted || submitted.providerSignatureId !== storedParticipant.signature!.providerSignatureId) throw new Error('Another signature was recorded first. Refresh the agreement before signing.');
+  }
+}
 
 export class MemoryRepository implements Repository {
   readonly kind: 'memory' | 'postgres' = 'memory';
@@ -319,9 +326,10 @@ export class MemoryRepository implements Repository {
     return this.agreementAuditEvents.filter((item) => item.tenantId === tenantId && item.agreementId === agreementId).sort((a, b) => a.createdAt.localeCompare(b.createdAt)).map((item) => structuredClone(item));
   }
 
-  async createAgreementArtifact(artifact: AgreementArtifact): Promise<void> {
-    if (this.agreementArtifacts.some((item) => item.id === artifact.id)) return;
-    this.agreementArtifacts.push(AgreementArtifactSchema.parse(artifact));
+  async createAgreementArtifact(artifact: AgreementArtifact): Promise<AgreementArtifact> {
+    const existing = this.agreementArtifacts.find((item) => item.agreementId === artifact.agreementId && item.kind === artifact.kind && item.revision === artifact.revision && item.contentSha256 === artifact.contentSha256);
+    if (existing) return structuredClone(existing);
+    const parsed = AgreementArtifactSchema.parse(artifact); this.agreementArtifacts.push(parsed); return structuredClone(parsed);
   }
 
   async listAgreementArtifacts(tenantId: string, agreementId: string): Promise<AgreementArtifact[]> {
@@ -344,6 +352,7 @@ export class MemoryRepository implements Repository {
     const parsedEvidence = signatureEvidence.map((item) => SignatureEvidenceSchema.parse(item));
     const agreementIndex = this.agreements.findIndex((item) => item.id === parsedAgreement.id && item.tenantId === parsedAgreement.tenantId);
     if (agreementIndex < 0) throw new Error('Agreement not found.');
+    if (parsedEvidence.some((item) => item.status === 'active')) assertSigningWriteIsCurrent(this.agreements[agreementIndex]!, parsedAgreement);
     this.agreements[agreementIndex] = structuredClone(parsedAgreement);
     if (!this.agreementAuditEvents.some((item) => item.id === parsedEvent.id)) this.agreementAuditEvents.push(parsedEvent);
     this.webhookDeliveries.push(...parsedDeliveries);
@@ -675,9 +684,13 @@ export class PostgresRepository extends MemoryRepository {
     return result.rows.map((row) => AgreementAuditEventSchema.parse(row.payload));
   }
 
-  override async createAgreementArtifact(artifact: AgreementArtifact): Promise<void> {
+  override async createAgreementArtifact(artifact: AgreementArtifact): Promise<AgreementArtifact> {
     AgreementArtifactSchema.parse(artifact);
-    await this.pool.query('INSERT INTO agreement_artifacts (id,tenant_id,agreement_id,artifact_kind,revision,content_sha256,artifact_sha256,payload,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (agreement_id,artifact_kind,revision,content_sha256) DO NOTHING', [artifact.id, artifact.tenantId, artifact.agreementId, artifact.kind, artifact.revision, artifact.contentSha256, artifact.artifactSha256, JSON.stringify(artifact), artifact.createdAt]);
+    const result = await this.pool.query('INSERT INTO agreement_artifacts (id,tenant_id,agreement_id,artifact_kind,revision,content_sha256,artifact_sha256,payload,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (agreement_id,artifact_kind,revision,content_sha256) DO NOTHING RETURNING payload', [artifact.id, artifact.tenantId, artifact.agreementId, artifact.kind, artifact.revision, artifact.contentSha256, artifact.artifactSha256, JSON.stringify(artifact), artifact.createdAt]);
+    if (result.rows[0]) return AgreementArtifactSchema.parse(result.rows[0].payload);
+    const existing = await this.pool.query('SELECT payload FROM agreement_artifacts WHERE agreement_id=$1 AND artifact_kind=$2 AND revision=$3 AND content_sha256=$4', [artifact.agreementId, artifact.kind, artifact.revision, artifact.contentSha256]);
+    if (!existing.rows[0]) throw new Error('The canonical agreement artifact could not be loaded after a concurrent write.');
+    return AgreementArtifactSchema.parse(existing.rows[0].payload);
   }
 
   override async listAgreementArtifacts(tenantId: string, agreementId: string): Promise<AgreementArtifact[]> {
@@ -700,6 +713,11 @@ export class PostgresRepository extends MemoryRepository {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
+      if (signatureEvidence.some((item) => item.status === 'active')) {
+        const locked = await client.query('SELECT payload FROM agreements WHERE id=$1 AND tenant_id=$2 FOR UPDATE', [agreement.id, agreement.tenantId]);
+        if (!locked.rows[0]) throw new Error('Agreement was not found.');
+        assertSigningWriteIsCurrent(AgreementSchema.parse(locked.rows[0].payload), agreement);
+      }
       const saved = await client.query('UPDATE agreements SET payload=$1,updated_at=now() WHERE id=$2 AND tenant_id=$3', [JSON.stringify(agreement), agreement.id, agreement.tenantId]);
       if (saved.rowCount !== 1) throw new Error('Agreement was not found.');
       await client.query('INSERT INTO agreement_audit_events (id,tenant_id,agreement_id,event_type,payload,created_at) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (id) DO NOTHING', [event.id, event.tenantId, event.agreementId, event.type, JSON.stringify(event), event.createdAt]);

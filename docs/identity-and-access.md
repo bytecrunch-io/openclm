@@ -66,4 +66,4 @@ Initial role bundles are administrator, template manager, contract manager, sign
 
 Signing must bind explicit intent and claimed capacity to an immutable document hash. Production evidence should record the signer account and participant, customer entity and party snapshot, authentication method and age, consent text, UTC time, document hash, and relevant audit events. Any document change invalidates attached signatures.
 
-The development witness is not represented as AdES, QES, PAdES, or a certified signature. Higher-assurance signatures belong behind a signing-provider boundary and require jurisdiction-specific review.
+Development uses an ephemeral witness and self-signed seal. Production platform mode records the authenticated human ceremony and applies a PAdES-B-B organizational seal with a deployment-owned certificate. It is not represented as AES/QES, signer-owned certificate identity, or long-term validation. Higher-assurance signatures belong behind a QTSP/provider boundary and require jurisdiction-specific review.

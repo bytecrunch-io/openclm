@@ -1,5 +1,6 @@
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib';
 import type { Agreement, Participant } from '@bytecrunch/contracts-domain';
+import { config } from './config.js';
 
 const PAGE = { width: 595.28, height: 841.89, left: 58, right: 58, top: 68, bottom: 58 };
 const COLORS = { ink: rgb(0.075, 0.082, 0.098), muted: rgb(0.38, 0.42, 0.48), accent: rgb(0.99, 0.34, 0.13), line: rgb(0.84, 0.86, 0.89) };
@@ -107,7 +108,22 @@ export async function renderAgreementPdf(agreement: Agreement, executed = false)
   }
   cursor.y -= 12;
   cursor = drawWrapped(document, fonts, cursor, agreement, 'SIGNATURES', { size: 12, bold: true, gap: 8 });
-  for (const participant of agreement.participants.filter((item) => item.role === 'signatory' && item.required)) cursor = await drawSignatureBlock(document, fonts, cursor, agreement, participant);
+  for (const participant of agreement.participants.filter((item) => item.role === 'signatory')) cursor = await drawSignatureBlock(document, fonts, cursor, agreement, participant);
+  if (executed) {
+    cursor = newPage(document, fonts, cursor.pageNumber + 1, agreement);
+    cursor = drawWrapped(document, fonts, cursor, agreement, 'ELECTRONIC COMPLETION RECORD', { size: 16, bold: true, gap: 12 });
+    cursor = drawWrapped(document, fonts, cursor, agreement, 'This page is part of the sealed PDF. It summarizes the electronic signing events; the platform’s detached cryptographic seal covers this page and every preceding page.', { color: COLORS.muted, gap: 12 });
+    for (const [label, value] of [['Agreement ID', agreement.id], ['Revision', String(agreement.revision)], ['Executed at', agreement.executedAt ?? ''], ['Document content SHA-256', agreement.contentSha256]]) {
+      cursor = drawWrapped(document, fonts, cursor, agreement, label!, { size: 7, bold: true, color: COLORS.muted, gap: 0 }); cursor = drawWrapped(document, fonts, cursor, agreement, value!, { size: 9, gap: 7 });
+    }
+    cursor = drawWrapped(document, fonts, cursor, agreement, 'SIGNING EVENTS', { size: 11, bold: true, gap: 6 });
+    for (const participant of agreement.participants.filter((item) => item.signature)) cursor = drawWrapped(document, fonts, cursor, agreement, `${participant.name} · ${participantParty(agreement, participant)} · ${participant.signature!.signedAt} · authenticated by ${participant.signature!.authenticationMethod}`, { size: 8.5, gap: 5 });
+    if (agreement.verificationCode) {
+      const verificationUrl = new URL(`/verify/${agreement.verificationCode}`, config.WEB_URL).toString();
+      cursor = drawWrapped(document, fonts, cursor, agreement, 'VERIFY THIS DOCUMENT', { size: 11, bold: true, gap: 4 }); cursor = drawWrapped(document, fonts, cursor, agreement, verificationUrl, { size: 8.5, color: COLORS.accent, gap: 8 });
+    }
+    drawWrapped(document, fonts, cursor, agreement, 'The platform seal is an organizational seal over the evidence package. It is not represented as the signer’s qualified electronic signature. Certificate-chain trust, revocation and long-term validation status are reported separately.', { size: 8, color: COLORS.muted });
+  }
   return document.save({ useObjectStreams: false, addDefaultPage: false, updateFieldAppearances: false });
 }
 

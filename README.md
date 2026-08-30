@@ -5,7 +5,7 @@ Bytecrunch Contracts is a self-hostable contract lifecycle management applicatio
 It is designed to work as a standalone product first. Each customer legal entity is an independent tenant and contracting context; Bytecrunch operates the software and is never an implicit party to customer agreements. One account may represent several entities and explicitly chooses the entity it is acting for.
 
 > [!WARNING]
-> This is an early development release. The built-in signature flow is a development witness, not a certified electronic-signature implementation. The project is licensed under AGPL-3.0-only; review that choice before the first public release if a different open-source/commercial model is intended.
+> This is an early development release. The built-in production path implements an ordinary electronic-signature ceremony plus a PAdES-B-B organizational seal over the final PDF. It is not an advanced or qualified electronic signature, does not include long-term-validation material, and still requires deployment and jurisdiction-specific acceptance. The project is licensed under AGPL-3.0-only; review that choice before the first public release if a different open-source/commercial model is intended.
 
 ## Current capabilities
 
@@ -19,7 +19,9 @@ It is designed to work as a standalone product first. Each customer legal entity
 - Unordered signing, countersigning, signature invalidation when negotiation reopens, and document-native signature blocks
 - Content revisions bound to SHA-256 fingerprints
 - Provider-attributed signature evidence with authentication method and versioned consent text
-- Immutable signing snapshots and downloadable, hashed completion manifests
+- Frozen signing PDFs that every signature binds to by SHA-256
+- Executed PDFs with document-native signatures, an embedded completion record, and a PAdES-B-B detached CMS platform seal
+- Standalone completion certificates, machine-readable manifests, CMS validation reports, and public opaque-code verification
 
 ### Accounts and access
 
@@ -43,7 +45,7 @@ It is designed to work as a standalone product first. Each customer legal entity
 - Local PostgreSQL, Keycloak, Mailpit, API, and web application through Docker Compose
 - System, light, and dark Bytecrunch themes
 
-More detail is available in [architecture](./docs/architecture.md), [identity and access](./docs/identity-and-access.md), [artifact storage](./docs/artifact-storage.md), the [deployment guide](./docs/deployment.md), [operations](./docs/operations.md), the [design system](./docs/design-system.md), the [UX audit](./docs/ux-audit.md), and the [production-readiness checklist](./docs/production-readiness.md).
+More detail is available in [architecture](./docs/architecture.md), [identity and access](./docs/identity-and-access.md), [artifact storage](./docs/artifact-storage.md), the [deployment guide](./docs/deployment.md), [operations](./docs/operations.md), the [signing test plan](./docs/signing-test-plan.md), the [design system](./docs/design-system.md), the [UX audit](./docs/ux-audit.md), and the [production-readiness checklist](./docs/production-readiness.md).
 
 ## Architecture
 
@@ -93,7 +95,8 @@ The stack has no required hosted identity, database, email, font, telemetry, or 
 7. Edit the document directly. Tracked changes remain private until the recipient sends the review.
 8. Resolve or counter the changes as the sender, then either return another review or move the agreed revision to signing.
 9. Sign from either side in either order. Verify that all required signature blocks appear and the agreement becomes executed.
-10. Close the recipient session and return through `/inbox` with a Mailpit code; optionally enroll a passkey and use it for the next return.
+10. Download the sealed PDF, open **Verify**, and confirm its SHA-256 and CMS integrity. The PDF includes its verification URL and electronic completion record.
+11. Close the recipient session and return through `/inbox` with a Mailpit code; optionally enroll a passkey and use it for the next return.
 
 Create another customer entity with **Add entity** to verify that templates, agreements, people, and sender identity change with the selected context. Open **People** to test member invitations and role assignment.
 
@@ -175,9 +178,11 @@ git diff --check
 
 The CI workflow runs the same checks for pushes and pull requests. Read [CONTRIBUTING.md](./CONTRIBUTING.md) before changing API boundaries or shared UI.
 
-## Production gaps
+## Production boundary
 
-Deployed configuration now fails closed, lifecycle events are append-only, lifecycle aggregate/event/webhook/signature-evidence writes are atomic, signature orchestration has a provider boundary, execution creates immutable evidence manifests, delivery is durable and replayable, and artifacts use a provider-neutral integrity-checked store. Before real contract execution, the project still needs a real signing-provider adapter, sealed PDF artifacts and certificates, provider callback evidence, recovery for adjacent invitation/notification/artifact workflows, a deployment-specific durable storage and retention policy, backup/restore drills, finer resource-level authorization tests, authenticated DAST, legal/privacy review, penetration testing, and an external security review. See [production readiness](./docs/production-readiness.md) and [SECURITY.md](./SECURITY.md).
+The ordinary-signature path is implemented end to end: authenticated intent and authority evidence, frozen-PDF binding, immutable artifacts, document-native marks, PAdES-B-B sealing, CMS integrity verification, completion records, idempotent finalization, and public verification. Production uses a deployment-owned PKCS#12 seal and provider-neutral durable artifact storage.
+
+This is deliberately not marketed as AES/QES. Qualified signing, trusted timestamps, revocation material, and B-LT/B-LTA require a QTSP/DSS-style adapter and legal acceptance for the intended contracts and jurisdictions. Remaining launch decisions include the deployment storage/retention policy, seal-certificate procurement and trust expectations, resource-level authorization expansion, privacy/legal review, and the manual interoperability cases in the [signing test plan](./docs/signing-test-plan.md). The backup drill and penetration test are currently accepted exclusions at the project owner's direction, not completed controls. See [production readiness](./docs/production-readiness.md) and [SECURITY.md](./SECURITY.md).
 
 ## License
 

@@ -48,7 +48,9 @@ Server integrations use OAuth2 bearer tokens issued for the API audience. The bu
 
 ## Signing boundary
 
-Signature orchestration now runs through a provider interface. The included provider is a development witness: it records the authentication path, versioned consent, provider reference, timestamp, and exact content hash. Opening signing freezes an immutable JSON signing snapshot; execution adds a hashed completion manifest that both parties can download. A production provider must additionally create and seal a deterministic PDF, send the exact artifact to every signatory, verify provider callbacks, retain the provider evidence and certificate, and replace database artifact payloads with production object storage. No development signature or JSON manifest should be represented as PAdES, AdES, QES, or legally certified.
+Signature orchestration runs through a provider interface. Opening signing freezes immutable JSON and PDF artifacts; every signer record binds the content hash, frozen PDF hash, and envelope ID. Execution renders the adopted marks and an electronic completion page into the document, applies a PAdES-B-B detached CMS organizational seal, verifies the ByteRange and CMS signature, and stores a sealed PDF, standalone completion certificate, validation report, and manifest. Finalization can resume idempotently after an adjacent storage/seal outage.
+
+The development mode uses an ephemeral self-signed seal. Production `platform` mode requires a deployment-managed PKCS#12 key and certificate. In both cases, the seal belongs to the platform/operator and proves final-document integrity; it is not represented as the human signer's certificate, an advanced/qualified signature, a trusted timestamp, or long-term validation. Those assurance levels belong behind a QTSP/DSS provider adapter.
 
 ## Persistence roadmap
 

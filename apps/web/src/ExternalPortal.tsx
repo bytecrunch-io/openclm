@@ -879,6 +879,7 @@ function Workspace({
           signer={view.participant}
           busy={busy === "sign"}
           onClose={() => setShowSigning(false)}
+          onDownload={() => void api.downloadExternalSigningPdf().catch((cause) => onError(cause instanceof Error ? cause.message : 'Could not download the frozen PDF.'))}
           onSign={(signature) =>
             void update(() => api.externalSign(signature), "sign").then(
               (signed) => {

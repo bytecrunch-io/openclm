@@ -289,6 +289,10 @@ export const api = {
     request(`/v1/agreements/${id}/artifacts`, z.array(AgreementArtifactSchema)),
   downloadAgreementArtifact: (agreementId: string, artifactId: string) =>
     download(`/v1/agreements/${agreementId}/artifacts/${artifactId}/content`),
+  downloadSigningPdf: async (agreementId: string) => {
+    const artifacts = await request(`/v1/agreements/${agreementId}/artifacts`, z.array(AgreementArtifactSchema)); const artifact = artifacts.find((item) => item.kind === 'signing_pdf');
+    if (!artifact) throw new Error('The frozen signing PDF is unavailable.'); return download(`/v1/agreements/${agreementId}/artifacts/${artifact.id}/content`);
+  },
   createAgreement: (input: CreateAgreement) =>
     request("/v1/agreements", AgreementSchema, {
       method: "POST",
@@ -523,6 +527,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ intentConfirmed: true, signature }),
     }),
+  downloadExternalSigningPdf: async () => {
+    const artifacts = await request('/public/session/artifacts', z.array(AgreementArtifactSchema)); const artifact = artifacts.find((item) => item.kind === 'signing_pdf');
+    if (!artifact) throw new Error('The frozen signing PDF is unavailable.'); return download(`/public/session/artifacts/${artifact.id}/content`);
+  },
   nominateSignatory: (input: { name: string; email: string; title?: string }) =>
     request(
       "/public/session/nominate",

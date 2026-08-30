@@ -2451,6 +2451,7 @@ function AgreementDetail({
           signer={owner}
           busy={busy === "sign"}
           onClose={() => setSigning(false)}
+          onDownload={() => void api.downloadSigningPdf(agreement.id).catch((cause) => onError(cause instanceof Error ? cause.message : 'Could not download the frozen PDF.'))}
           onSign={(signature) =>
             void mutate(
               () => api.sign(agreement.id, owner.id, signature),

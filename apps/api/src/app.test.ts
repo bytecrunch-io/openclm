@@ -6,6 +6,7 @@ import { hashInvitationToken } from './external-auth.js';
 import { deliverWebhookOutbox } from './webhooks.js';
 import { config } from './config.js';
 import { validateSealedPdf } from './pdf-seal.js';
+import type { AgreementArtifact } from '@bytecrunch/contracts-domain';
 
 async function testApp() {
   const repository = new MemoryRepository();
@@ -27,6 +28,13 @@ class UnavailableRepository extends MemoryRepository {
 }
 
 describe('contracts API vertical slice', () => {
+  it('returns one canonical artifact across concurrent idempotent finalization writes', async () => {
+    const repository = new MemoryRepository(); const createdAt = new Date().toISOString();
+    const base = { tenantId: 'bytecrunch', agreementId: 'agr_artifact_race', kind: 'executed_pdf' as const, revision: 1, contentSha256: 'a'.repeat(64), artifactSha256: 'b'.repeat(64), mediaType: 'application/pdf', fileName: 'executed.pdf', storageDriver: 'database' as const, storageKey: null, contentBase64: 'eA==', retentionUntil: null, legalHold: false, createdAt };
+    const [first, second] = await Promise.all([repository.createAgreementArtifact({ ...base, id: 'artifact_first' } satisfies AgreementArtifact), repository.createAgreementArtifact({ ...base, id: 'artifact_second' } satisfies AgreementArtifact)]);
+    expect(first.id).toBe(second.id); expect(await repository.listAgreementArtifacts('bytecrunch', 'agr_artifact_race')).toHaveLength(1);
+  });
+
   it('protects and exposes Prometheus metrics', async () => {
     const app = await testApp(); expect((await app.request('/metrics')).status).toBe(401);
     const response = await app.request('/metrics', { headers: { authorization: `Bearer ${config.METRICS_TOKEN}` } });
@@ -419,8 +427,9 @@ describe('contracts API vertical slice', () => {
     await app.request('/public/session/return-review', { method: 'POST', headers: { 'content-type': 'application/json', cookie }, body: JSON.stringify({ message: 'No changes requested.' }) });
     const prepared = await app.request(`/v1/agreements/${created.id}/prepare-for-signature`, { method: 'POST' });
     expect(await prepared.json()).toMatchObject({ status: 'out_for_signature', signatureNotificationsSentAt: null });
-    const ownerSigned = await app.request(`/v1/agreements/${created.id}/sign`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ participantId: created.createdByParticipantId, intentConfirmed: true }) });
-    expect(await ownerSigned.json()).toMatchObject({ status: 'partially_signed', signatureNotificationsSentAt: expect.any(String) });
+    const ownerSignRequest = () => app.request(`/v1/agreements/${created.id}/sign`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ participantId: created.createdByParticipantId, intentConfirmed: true }) });
+    const concurrentOwnerResults = await Promise.all([ownerSignRequest(), ownerSignRequest()]); expect(concurrentOwnerResults.map((item) => item.status).sort()).toEqual([200, 409]);
+    const ownerSigned = concurrentOwnerResults.find((item) => item.status === 200)!; expect(await ownerSigned.json()).toMatchObject({ status: 'partially_signed', signatureNotificationsSentAt: expect.any(String) });
     expect(await repository.listSignatureEvidence('bytecrunch', created.id)).toMatchObject([{ participantId: created.createdByParticipantId, status: 'active', signature: { provider: 'development_witness' } }]);
     const completed = await app.request('/public/session/sign', { method: 'POST', headers: { 'content-type': 'application/json', cookie }, body: JSON.stringify({ intentConfirmed: true }) });
     expect(await completed.json()).toMatchObject({ agreement: { status: 'executed' } });

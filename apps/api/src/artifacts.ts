@@ -45,8 +45,7 @@ async function storeArtifact(
     legalHold: false,
     createdAt: now(),
   });
-  await repository.createAgreementArtifact(artifact);
-  return artifact;
+  return repository.createAgreementArtifact(artifact);
 }
 
 async function storeJsonArtifact(repository: Repository, agreement: Agreement, kind: AgreementArtifact['kind'], fileName: string, body: unknown) {
@@ -123,6 +122,7 @@ export async function ensureCompletionManifest(
   );
   if (existing) return existing;
   if (!agreement.signingEnvelope || !['active', 'executed'].includes(agreement.signingEnvelope.status)) throw new Error('The executed agreement has no valid frozen signing envelope.');
+  if (!agreement.verificationCode) { agreement.verificationCode = randomBytes(24).toString('base64url'); await repository.saveAgreement(agreement); }
   const sealedAt = agreement.executedAt ?? now();
   let executedPdf = artifacts.find((item) => item.kind === 'executed_pdf' && item.revision === agreement.revision && item.contentSha256 === agreement.contentSha256);
   let sealed: Awaited<ReturnType<typeof sealPdf>> | null = null;
@@ -133,7 +133,7 @@ export async function ensureCompletionManifest(
   const sealProfile = sealed?.profile ?? validation.profile; const sealProvider = sealed?.provider ?? (config.PDF_SEAL_MODE === 'p12' ? 'deployment_p12' : 'development_ephemeral');
   let completionCertificate = artifacts.find((item) => item.kind === 'completion_certificate' && item.revision === agreement.revision && item.contentSha256 === agreement.contentSha256);
   completionCertificate ??= await storeArtifact(repository, agreement, 'completion_certificate', `${safeName(agreement.title)}-completion-certificate.pdf`, 'application/pdf', await renderCompletionCertificatePdf(agreement, executedSha256, `${sealProfile} · ${sealProvider}`));
-  agreement.signingEnvelope.status = 'executed'; agreement.verificationCode ??= randomBytes(24).toString('base64url'); await repository.saveAgreement(agreement);
+  agreement.signingEnvelope.status = 'executed'; await repository.saveAgreement(agreement);
   const evidence = await repository.listSignatureEvidence(agreement.tenantId, agreement.id);
   return storeJsonArtifact(
     repository,

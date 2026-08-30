@@ -43,6 +43,11 @@ describe("production configuration", () => {
     ).toThrow(/development signature witness/i);
   });
 
+  it('accepts production platform signing only with a deployment PKCS#12 seal', () => {
+    expect(parseConfig({ ...productionEnvironment, SIGNING_MODE: 'platform', PDF_SEAL_MODE: 'p12', PDF_SEAL_P12_PATH: '/run/secrets/contracts-seal.p12', PDF_SEAL_P12_PASSWORD: 'secret-manager-value' })).toMatchObject({ SIGNING_MODE: 'platform', PDF_SEAL_MODE: 'p12' });
+    expect(() => parseConfig({ ...productionEnvironment, SIGNING_MODE: 'platform', PDF_SEAL_MODE: 'p12' })).toThrow(/PKCS#12 seal/i);
+  });
+
   it("rejects production without persistent storage", () => {
     const { DATABASE_URL: _, ...environment } = productionEnvironment;
     expect(() => parseConfig(environment)).toThrow(/PostgreSQL storage/i);
