@@ -13,6 +13,7 @@ import {
 import { currentUser } from "../auth.js";
 import { config } from "../config.js";
 import { createInvitationToken } from "../external-auth.js";
+import { replayNotificationDelivery } from "../notifications.js";
 import type { Repository } from "../repository.js";
 import { assertWebhookUrlAllowed, replayWebhookDelivery } from "../webhooks.js";
 
@@ -120,6 +121,19 @@ export function registerPlatformRoutes(
       }),
     );
     return context.json({ updated: unread.length });
+  });
+
+  app.get("/v1/notification-deliveries", async (context) => {
+    const requestedLimit = Number(context.req.query("limit") ?? "50");
+    if (!Number.isInteger(requestedLimit) || requestedLimit < 1)
+      return context.json({ error: "invalid_query", message: "limit must be a positive integer." }, 400);
+    return context.json(await repository.listNotificationDeliveries(currentUser(context).tenantId, Math.min(200, requestedLimit)));
+  });
+
+  app.post("/v1/notification-deliveries/:deliveryId/replay", async (context) => {
+    const delivery = await replayNotificationDelivery(repository, currentUser(context).tenantId, context.req.param("deliveryId"));
+    if (!delivery) return context.json({ error: "not_found", message: "Notification delivery not found." }, 404);
+    return context.json(delivery);
   });
 
   app.get("/v1/integrations", async (context) =>

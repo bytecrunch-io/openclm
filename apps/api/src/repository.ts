@@ -57,6 +57,11 @@ export interface WebhookEndpoint {
   createdAt: string;
 }
 
+export interface DeliveryQueueStats {
+  notification: { pending: number; failed: number; deadLetter: number; oldestQueuedAt: string | null };
+  webhook: { pending: number; failed: number; deadLetter: number; oldestQueuedAt: string | null };
+}
+
 export interface Repository {
   readonly kind: 'memory' | 'postgres';
   init(): Promise<void>;
@@ -73,7 +78,7 @@ export interface Repository {
   createWebhookDeliveries(deliveries: WebhookDelivery[]): Promise<void>;
   listWebhookDeliveries(tenantId: string, limit: number): Promise<WebhookDelivery[]>;
   getWebhookDelivery(tenantId: string, id: string): Promise<WebhookDelivery | undefined>;
-  listPendingWebhookDeliveries(limit: number): Promise<WebhookDelivery[]>;
+  claimPendingWebhookDeliveries(limit: number): Promise<WebhookDelivery[]>;
   saveWebhookDelivery(delivery: WebhookDelivery): Promise<void>;
   appendAgreementAuditEvent(event: AgreementAuditEvent): Promise<void>;
   listAgreementAuditEvents(tenantId: string, agreementId: string): Promise<AgreementAuditEvent[]>;
@@ -99,8 +104,11 @@ export interface Repository {
   listNotifications(tenantId: string, recipientPersonId: string): Promise<Notification[]>;
   saveNotification(notification: Notification): Promise<void>;
   createNotification(notification: Notification, outbox: NotificationOutbox): Promise<void>;
-  listPendingOutbox(limit: number): Promise<NotificationOutbox[]>;
+  listNotificationDeliveries(tenantId: string, limit: number): Promise<NotificationOutbox[]>;
+  getNotificationDelivery(tenantId: string, id: string): Promise<NotificationOutbox | undefined>;
+  claimPendingOutbox(limit: number): Promise<NotificationOutbox[]>;
   saveOutbox(item: NotificationOutbox): Promise<void>;
+  deliveryQueueStats(): Promise<DeliveryQueueStats>;
   findOrCreateAccountByIdentity(provider: 'dev' | 'oidc', issuer: string, subject: string, email: string, displayName: string): Promise<Account>;
   findOrCreateAccountByEmail(email: string, displayName: string): Promise<Account>;
   findAccountByEmail(email: string): Promise<Account | undefined>;
@@ -280,8 +288,10 @@ export class MemoryRepository implements Repository {
     return value ? structuredClone(value) : undefined;
   }
 
-  async listPendingWebhookDeliveries(limit: number): Promise<WebhookDelivery[]> {
-    return this.webhookDeliveries.filter((item) => ['pending', 'failed', 'sending'].includes(item.status) && item.nextAttemptAt <= now()).sort((a, b) => a.nextAttemptAt.localeCompare(b.nextAttemptAt)).slice(0, limit).map((item) => structuredClone(item));
+  async claimPendingWebhookDeliveries(limit: number): Promise<WebhookDelivery[]> {
+    const claimed = this.webhookDeliveries.filter((item) => ['pending', 'failed', 'sending'].includes(item.status) && item.nextAttemptAt <= now()).sort((a, b) => a.nextAttemptAt.localeCompare(b.nextAttemptAt)).slice(0, limit);
+    for (const item of claimed) { item.status = 'sending'; item.attempts += 1; item.nextAttemptAt = new Date(Date.now() + 60_000).toISOString(); }
+    return claimed.map((item) => structuredClone(item));
   }
 
   async saveWebhookDelivery(delivery: WebhookDelivery): Promise<void> {
@@ -342,8 +352,19 @@ export class MemoryRepository implements Repository {
   async listNotifications(tenantId: string, recipientPersonId: string) { return this.notifications.filter((item) => item.tenantId === tenantId && item.recipientPersonId === recipientPersonId).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map((item) => structuredClone(item)); }
   async saveNotification(notification: Notification) { const index = this.notifications.findIndex((item) => item.id === notification.id); if (index < 0) throw new Error('Notification not found.'); this.notifications[index] = NotificationSchema.parse(notification); }
   async createNotification(notification: Notification, outbox: NotificationOutbox) { this.notifications.push(NotificationSchema.parse(notification)); this.notificationOutbox.push(NotificationOutboxSchema.parse(outbox)); }
-  async listPendingOutbox(limit: number) { return this.notificationOutbox.filter((item) => ['pending', 'failed'].includes(item.status) && item.nextAttemptAt <= now()).slice(0, limit).map((item) => structuredClone(item)); }
+  async listNotificationDeliveries(tenantId: string, limit: number) { const ids = new Set(this.notifications.filter((item) => item.tenantId === tenantId).map((item) => item.id)); return this.notificationOutbox.filter((item) => ids.has(item.notificationId)).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, limit).map((item) => structuredClone(item)); }
+  async getNotificationDelivery(tenantId: string, id: string) { const ids = new Set(this.notifications.filter((item) => item.tenantId === tenantId).map((item) => item.id)); const item = this.notificationOutbox.find((value) => value.id === id && ids.has(value.notificationId)); return item ? structuredClone(item) : undefined; }
+  async claimPendingOutbox(limit: number) { const claimed = this.notificationOutbox.filter((item) => ['pending', 'failed', 'sending'].includes(item.status) && item.nextAttemptAt <= now()).sort((a, b) => a.nextAttemptAt.localeCompare(b.nextAttemptAt)).slice(0, limit); for (const item of claimed) { item.status = 'sending'; item.attempts += 1; item.nextAttemptAt = new Date(Date.now() + 60_000).toISOString(); } return claimed.map((item) => structuredClone(item)); }
   async saveOutbox(item: NotificationOutbox) { const index = this.notificationOutbox.findIndex((value) => value.id === item.id); if (index < 0) throw new Error('Outbox item not found.'); this.notificationOutbox[index] = NotificationOutboxSchema.parse(item); }
+  async deliveryQueueStats(): Promise<DeliveryQueueStats> {
+    const summarize = <T extends { status: string; createdAt: string }>(items: T[]) => ({
+      pending: items.filter((item) => item.status === 'pending').length,
+      failed: items.filter((item) => item.status === 'failed').length,
+      deadLetter: items.filter((item) => item.status === 'dead_letter').length,
+      oldestQueuedAt: items.filter((item) => ['pending', 'failed', 'sending'].includes(item.status)).sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0]?.createdAt ?? null,
+    });
+    return { notification: summarize(this.notificationOutbox), webhook: summarize(this.webhookDeliveries) };
+  }
   async findOrCreateAccountByIdentity(provider: 'dev' | 'oidc', issuer: string, subject: string, email: string, displayName: string) {
     const identity = this.authIdentities.find((item) => item.provider === provider && item.issuer === issuer && item.subject === subject);
     if (identity) return structuredClone(this.accounts.find((item) => item.id === identity.accountId)!);
@@ -600,9 +621,16 @@ export class PostgresRepository extends MemoryRepository {
     return result.rows[0] ? WebhookDeliverySchema.parse(result.rows[0].payload) : undefined;
   }
 
-  override async listPendingWebhookDeliveries(limit: number): Promise<WebhookDelivery[]> {
-    const result = await this.pool.query("SELECT payload FROM webhook_deliveries WHERE status IN ('pending','failed','sending') AND next_attempt_at <= now() ORDER BY next_attempt_at LIMIT $1", [limit]);
-    return result.rows.map((row) => WebhookDeliverySchema.parse(row.payload));
+  override async claimPendingWebhookDeliveries(limit: number): Promise<WebhookDelivery[]> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const result = await client.query("SELECT id,payload FROM webhook_deliveries WHERE status IN ('pending','failed','sending') AND next_attempt_at <= now() ORDER BY next_attempt_at FOR UPDATE SKIP LOCKED LIMIT $1", [limit]);
+      const claimed = result.rows.map((row) => { const item = WebhookDeliverySchema.parse(row.payload); item.status = 'sending'; item.attempts += 1; item.nextAttemptAt = new Date(Date.now() + 60_000).toISOString(); return item; });
+      for (const item of claimed) await client.query('UPDATE webhook_deliveries SET payload=$1,status=$2,next_attempt_at=$3 WHERE id=$4', [JSON.stringify(item), item.status, item.nextAttemptAt, item.id]);
+      await client.query('COMMIT');
+      return claimed;
+    } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
   }
 
   override async saveWebhookDelivery(delivery: WebhookDelivery): Promise<void> {
@@ -671,8 +699,17 @@ export class PostgresRepository extends MemoryRepository {
   override async listNotifications(tenantId: string, recipientPersonId: string) { const result = await this.pool.query('SELECT payload FROM notifications WHERE tenant_id=$1 AND recipient_person_id=$2 ORDER BY created_at DESC LIMIT 100',[tenantId,recipientPersonId]); return result.rows.map((row) => NotificationSchema.parse(row.payload)); }
   override async saveNotification(notification: Notification) { NotificationSchema.parse(notification); await this.pool.query('UPDATE notifications SET payload=$1 WHERE id=$2',[JSON.stringify(notification),notification.id]); }
   override async createNotification(notification: Notification, outbox: NotificationOutbox) { NotificationSchema.parse(notification); NotificationOutboxSchema.parse(outbox); const client = await this.pool.connect(); try { await client.query('BEGIN'); await client.query('INSERT INTO notifications (id,tenant_id,recipient_person_id,payload) VALUES ($1,$2,$3,$4)',[notification.id,notification.tenantId,notification.recipientPersonId,JSON.stringify(notification)]); await client.query('INSERT INTO notification_outbox (id,notification_id,status,next_attempt_at,payload) VALUES ($1,$2,$3,$4,$5)',[outbox.id,outbox.notificationId,outbox.status,outbox.nextAttemptAt,JSON.stringify(outbox)]); await client.query('COMMIT'); } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); } }
-  override async listPendingOutbox(limit: number) { const result = await this.pool.query("SELECT payload FROM notification_outbox WHERE status IN ('pending','failed') AND next_attempt_at <= now() ORDER BY next_attempt_at LIMIT $1",[limit]); return result.rows.map((row) => NotificationOutboxSchema.parse(row.payload)); }
+  override async listNotificationDeliveries(tenantId: string, limit: number) { const result = await this.pool.query('SELECT outbox.payload FROM notification_outbox outbox JOIN notifications notification ON notification.id=outbox.notification_id WHERE notification.tenant_id=$1 ORDER BY outbox.created_at DESC LIMIT $2', [tenantId, limit]); return result.rows.map((row) => NotificationOutboxSchema.parse(row.payload)); }
+  override async getNotificationDelivery(tenantId: string, id: string) { const result = await this.pool.query('SELECT outbox.payload FROM notification_outbox outbox JOIN notifications notification ON notification.id=outbox.notification_id WHERE notification.tenant_id=$1 AND outbox.id=$2', [tenantId, id]); return result.rows[0] ? NotificationOutboxSchema.parse(result.rows[0].payload) : undefined; }
+  override async claimPendingOutbox(limit: number) { const client = await this.pool.connect(); try { await client.query('BEGIN'); const result = await client.query("SELECT id,payload FROM notification_outbox WHERE status IN ('pending','failed','sending') AND next_attempt_at <= now() ORDER BY next_attempt_at FOR UPDATE SKIP LOCKED LIMIT $1", [limit]); const claimed = result.rows.map((row) => { const item = NotificationOutboxSchema.parse(row.payload); item.status = 'sending'; item.attempts += 1; item.nextAttemptAt = new Date(Date.now() + 60_000).toISOString(); return item; }); for (const item of claimed) await client.query('UPDATE notification_outbox SET payload=$1,status=$2,next_attempt_at=$3 WHERE id=$4', [JSON.stringify(item), item.status, item.nextAttemptAt, item.id]); await client.query('COMMIT'); return claimed; } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); } }
   override async saveOutbox(item: NotificationOutbox) { NotificationOutboxSchema.parse(item); await this.pool.query('UPDATE notification_outbox SET payload=$1,status=$2,next_attempt_at=$3 WHERE id=$4',[JSON.stringify(item),item.status,item.nextAttemptAt,item.id]); }
+  override async deliveryQueueStats(): Promise<DeliveryQueueStats> {
+    const summarize = async (table: 'notification_outbox' | 'webhook_deliveries') => {
+      const result = await this.pool.query(`SELECT count(*) FILTER (WHERE status='pending')::int AS pending, count(*) FILTER (WHERE status='failed')::int AS failed, count(*) FILTER (WHERE status='dead_letter')::int AS dead_letter, min(created_at) FILTER (WHERE status IN ('pending','failed','sending')) AS oldest_queued_at FROM ${table}`);
+      const row = result.rows[0]; return { pending: row.pending, failed: row.failed, deadLetter: row.dead_letter, oldestQueuedAt: row.oldest_queued_at ? new Date(row.oldest_queued_at).toISOString() : null };
+    };
+    const [notification, webhook] = await Promise.all([summarize('notification_outbox'), summarize('webhook_deliveries')]); return { notification, webhook };
+  }
   override async findOrCreateAccountByIdentity(provider: 'dev' | 'oidc', issuer: string, subject: string, email: string, displayName: string) {
     const found = await this.pool.query('SELECT account.payload FROM auth_identities identity JOIN accounts account ON account.id=identity.account_id WHERE identity.provider=$1 AND identity.issuer=$2 AND identity.subject=$3', [provider, issuer, subject]);
     if (found.rows[0]) return AccountSchema.parse(found.rows[0].payload);

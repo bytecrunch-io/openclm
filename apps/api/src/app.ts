@@ -255,7 +255,7 @@ export function createApp(repository: Repository): Hono {
   });
 
   app.get('/health', (context) => context.json({ status: 'ok', version: '0.1.0', storage: repository.kind }));
-  app.get('/metrics', (context) => context.req.header('authorization') === `Bearer ${config.METRICS_TOKEN}` ? context.text(renderMetrics(), 200, { 'content-type': 'text/plain; version=0.0.4' }) : context.json({ error: 'unauthorized', message: 'A metrics bearer token is required.' }, 401));
+  app.get('/metrics', async (context) => context.req.header('authorization') === `Bearer ${config.METRICS_TOKEN}` ? context.text(renderMetrics(await repository.deliveryQueueStats()), 200, { 'content-type': 'text/plain; version=0.0.4' }) : context.json({ error: 'unauthorized', message: 'A metrics bearer token is required.' }, 401));
   app.get('/health/ready', async (context) => {
     const checks = { persistentStorage: repository.kind === 'postgres', storageReachable: await repository.healthCheck(), artifactStorage: await artifactStorage().healthCheck(), externalArtifactStorage: artifactStorage().driver !== 'database', oidc: config.AUTH_MODE === 'oidc', safeSigningConfiguration: config.SIGNING_MODE !== 'development' };
     const ready = Object.values(checks).every(Boolean);
@@ -367,7 +367,7 @@ export function createApp(repository: Repository): Hono {
       : path.startsWith('/v1/agreements') ? (method === 'GET' ? 'agreements.read' : path.endsWith('/sign') ? 'agreements.sign' : 'agreements.write')
       : path.startsWith('/v1/notifications') || path.startsWith('/v1/conditions') ? 'agreements.read'
       : path.startsWith('/v1/integration-sessions') ? 'agreements.write'
-      : path.startsWith('/v1/integrations') || path.startsWith('/v1/webhooks') || path.startsWith('/v1/webhook-deliveries') ? 'entity.manage'
+      : path.startsWith('/v1/integrations') || path.startsWith('/v1/webhooks') || path.startsWith('/v1/webhook-deliveries') || path.startsWith('/v1/notification-deliveries') ? 'entity.manage'
       : path.startsWith('/v1/entity-members') ? 'members.manage'
       : undefined;
     if (requiredPermission && !activeMembership.permissions.includes(requiredPermission)) return context.json({ error: 'forbidden', message: `Your role cannot perform '${requiredPermission}' for this customer entity.` }, 403);

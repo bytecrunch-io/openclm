@@ -429,6 +429,11 @@ model CreateIntegrationSession {
 model IntegrationSessionResult { agreementId: string; expiresAt: utcDateTime; handoffUrl: url; }
 model ExchangeIntegrationResult { accepted: true; returnUrl: url; }
 model Notification { id: string; tenantId: string; recipientPersonId: string; recipientEmail: string; type: string; title: string; body: string; agreementId: string; threadId: string | null; actorName: string; readAt: utcDateTime | null; createdAt: utcDateTime; }
+model NotificationDelivery {
+  id: string; notificationId: string; recipientEmail: string; subject: string; body: string; actionUrl: url;
+  status: "pending" | "sending" | "delivered" | "failed" | "dead_letter"; attempts: int32;
+  nextAttemptAt: utcDateTime; lastError: string | null; createdAt: utcDateTime; deliveredAt: utcDateTime | null;
+}
 model ExternalView {
   agreement: Agreement;
   participant: Participant;
@@ -574,6 +579,13 @@ interface NotificationOperations {
   @get list(): Notification[];
   @post @route("/{notificationId}/read") read(@path notificationId: string): Notification | ErrorResponse;
   @post @route("/read-all") readAll(): { updated: int32; };
+}
+
+@route("/v1/notification-deliveries")
+@useAuth(ContractsOAuth2)
+interface NotificationDeliveryOperations {
+  @get list(@query limit?: int32): NotificationDelivery[];
+  @post @route("/{deliveryId}/replay") replay(@path deliveryId: string): NotificationDelivery | ErrorResponse;
 }
 
 @route("/v1/webhooks")

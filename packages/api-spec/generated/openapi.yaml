@@ -1692,6 +1692,58 @@ paths:
             - templates:read
             - templates:write
             - webhooks:manage
+  /v1/notification-deliveries:
+    get:
+      operationId: NotificationDeliveryOperations_list
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+          explode: false
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/NotificationDelivery'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+  /v1/notification-deliveries/{deliveryId}/replay:
+    post:
+      operationId: NotificationDeliveryOperations_replay
+      parameters:
+        - name: deliveryId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/NotificationDelivery'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
   /v1/notifications:
     get:
       operationId: NotificationOperations_list
@@ -3144,6 +3196,61 @@ components:
         createdAt:
           type: string
           format: date-time
+    NotificationDelivery:
+      type: object
+      required:
+        - id
+        - notificationId
+        - recipientEmail
+        - subject
+        - body
+        - actionUrl
+        - status
+        - attempts
+        - nextAttemptAt
+        - lastError
+        - createdAt
+        - deliveredAt
+      properties:
+        id:
+          type: string
+        notificationId:
+          type: string
+        recipientEmail:
+          type: string
+        subject:
+          type: string
+        body:
+          type: string
+        actionUrl:
+          type: string
+          format: uri
+        status:
+          type: string
+          enum:
+            - pending
+            - sending
+            - delivered
+            - failed
+            - dead_letter
+        attempts:
+          type: integer
+          format: int32
+        nextAttemptAt:
+          type: string
+          format: date-time
+        lastError:
+          anyOf:
+            - type: string
+            - type: 'null'
+        createdAt:
+          type: string
+          format: date-time
+        deliveredAt:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: 'null'
     OnboardParticipant:
       type: object
       required:

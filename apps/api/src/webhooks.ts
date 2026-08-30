@@ -127,13 +127,9 @@ export async function emitAgreementEvent(
 export async function deliverWebhookOutbox(
   repository: Repository,
 ): Promise<number> {
-  const deliveries = await repository.listPendingWebhookDeliveries(25);
+  const deliveries = await repository.claimPendingWebhookDeliveries(25);
   let delivered = 0;
   for (const item of deliveries) {
-    item.status = "sending";
-    item.attempts += 1;
-    item.nextAttemptAt = new Date(Date.now() + 60_000).toISOString();
-    await repository.saveWebhookDelivery(item);
     try {
       await assertWebhookUrlAllowed(item.url);
       const timestamp = Math.floor(Date.now() / 1000).toString();

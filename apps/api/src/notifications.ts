@@ -21,14 +21,21 @@ export function participantsForMentions(agreement: Agreement, mentions: Array<{ 
 }
 
 export async function deliverNotificationOutbox(repository: Repository): Promise<number> {
-  const items = await repository.listPendingOutbox(25); let delivered = 0;
+  const items = await repository.claimPendingOutbox(25); let delivered = 0;
   for (const item of items) {
-    item.status = 'sending'; item.attempts += 1; await repository.saveOutbox(item);
     try { await sendNotificationEmail({ email: item.recipientEmail, subject: item.subject, body: item.body, actionUrl: item.actionUrl }); item.status = 'delivered'; item.deliveredAt = now(); item.lastError = null; delivered += 1; }
     catch (error) { item.status = item.attempts >= config.DELIVERY_MAX_ATTEMPTS ? 'dead_letter' : 'failed'; item.lastError = error instanceof Error ? error.message : 'Delivery failed'; item.nextAttemptAt = new Date(Date.now() + Math.min(60, 2 ** item.attempts) * 60_000).toISOString(); }
     await repository.saveOutbox(item);
   }
   return delivered;
+}
+
+export async function replayNotificationDelivery(repository: Repository, tenantId: string, deliveryId: string) {
+  const delivery = await repository.getNotificationDelivery(tenantId, deliveryId);
+  if (!delivery) return undefined;
+  delivery.status = 'pending'; delivery.nextAttemptAt = now(); delivery.lastError = null;
+  await repository.saveOutbox(delivery);
+  return delivery;
 }
 
 export function startNotificationWorker(repository: Repository): () => void {

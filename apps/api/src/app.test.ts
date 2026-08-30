@@ -29,7 +29,20 @@ describe('contracts API vertical slice', () => {
   it('protects and exposes Prometheus metrics', async () => {
     const app = await testApp(); expect((await app.request('/metrics')).status).toBe(401);
     const response = await app.request('/metrics', { headers: { authorization: `Bearer ${config.METRICS_TOKEN}` } });
-    expect(response.status).toBe(200); expect(await response.text()).toContain('bytecrunch_http_requests_total');
+    expect(response.status).toBe(200); const metrics = await response.text(); expect(metrics).toContain('bytecrunch_http_requests_total'); expect(metrics).toContain('bytecrunch_delivery_queue_items');
+  });
+
+  it('claims deliveries once and lets entity administrators inspect and replay email dead letters', async () => {
+    const repository = new MemoryRepository(); await repository.init(); const app = createApp(repository); const createdAt = new Date().toISOString();
+    await repository.createNotification(
+      { id: 'note_delivery_test', tenantId: 'bytecrunch', recipientPersonId: 'person_delivery_test', recipientEmail: 'recipient@example.com', type: 'review.assigned', title: 'Review ready', body: 'Please review.', agreementId: 'agr_delivery_test', threadId: null, actorName: 'Admin', readAt: null, createdAt },
+      { id: 'out_delivery_test', notificationId: 'note_delivery_test', recipientEmail: 'recipient@example.com', subject: 'Review ready', body: 'Please review.', actionUrl: 'http://localhost:3000/invite', status: 'pending', attempts: 0, nextAttemptAt: createdAt, lastError: null, createdAt, deliveredAt: null },
+    );
+    const firstClaim = await repository.claimPendingOutbox(1); const secondClaim = await repository.claimPendingOutbox(1);
+    expect(firstClaim).toMatchObject([{ id: 'out_delivery_test', status: 'sending', attempts: 1 }]); expect(secondClaim).toEqual([]);
+    firstClaim[0]!.status = 'dead_letter'; firstClaim[0]!.lastError = 'SMTP rejected the message'; await repository.saveOutbox(firstClaim[0]!);
+    const listed = await app.request('/v1/notification-deliveries'); expect(await listed.json()).toMatchObject([{ id: 'out_delivery_test', status: 'dead_letter' }]);
+    const replayed = await app.request('/v1/notification-deliveries/out_delivery_test/replay', { method: 'POST' }); expect(await replayed.json()).toMatchObject({ status: 'pending', lastError: null });
   });
 
   it('enforces a shared rate-limit counter', async () => {
