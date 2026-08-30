@@ -17,6 +17,7 @@ import {
   RecipientInboxItemSchema,
   type Agreement,
   type CreateAgreement,
+  type CreateTemplate,
   type CreateSuggestion,
   type SignatureInput,
 } from '@bytecrunch/contracts-domain';
@@ -78,6 +79,7 @@ export const api = {
   openRecipientAgreement: (accessId: string) => request('/public/recipient/open', z.object({ opened: z.literal(true) }), { method: 'POST', body: JSON.stringify({ accessId }) }),
   logoutRecipient: () => request('/public/recipient/logout', z.object({ ok: z.literal(true) }), { method: 'POST' }),
   templates: () => request('/v1/templates', z.array(TemplateSchema)),
+  createTemplate: (input: CreateTemplate) => request('/v1/templates', TemplateSchema, { method: 'POST', body: JSON.stringify(input) }),
   agreements: () => request('/v1/agreements', z.array(AgreementSchema)),
   agreement: (id: string) => request(`/v1/agreements/${id}`, AgreementSchema),
   createAgreement: (input: CreateAgreement) => request('/v1/agreements', AgreementSchema, { method: 'POST', body: JSON.stringify(CreateAgreementSchema.parse(input)) }),

@@ -30,7 +30,7 @@ Customer entity membership must never be inferred from agreement onboarding. A r
 
 A verified SSO user with no memberships can create their first independent customer entity and becomes its administrator. This is customer onboarding for the hosted or self-hosted product; it does not create a ByteCrunch subsidiary or place the customer beneath a ByteCrunch workspace. A user arriving through an entity invitation accepts that scoped membership instead.
 
-Templates, agreements, sender details, members, and policies follow the active entity. A future personal action inbox should span memberships so an entity switch cannot hide a required signature.
+Templates, agreements, sender details, members, and policies follow the active entity. The template library therefore shows and versions only templates owned by the selected customer entity; publishing an edit creates a new immutable version rather than changing agreements already in progress. The personal action inbox spans memberships so an entity switch cannot hide a required signature.
 
 ## Customer-entity invitation flow
 

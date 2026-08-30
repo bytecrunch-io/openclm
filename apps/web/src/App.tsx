@@ -1,18 +1,18 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { browserSupportsWebAuthn, startAuthentication, startRegistration } from '@simplewebauthn/browser';
 import type { PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/browser';
 import {
   ArrowRight, Bell, Check, ChevronRight, CircleUserRound, FileCheck2, FileClock, FilePenLine,
-  Building2, FilePlus2, Files, Inbox, KeyRound, LayoutDashboard, LogOut, Mail, Moon, Plus, Settings, ShieldCheck, Sun, UserPlus, UsersRound, Webhook, X,
+  BookOpen, Braces, Building2, FilePlus2, Files, History, Inbox, KeyRound, LayoutDashboard, LogOut, Mail, Moon, Plus, Save, Settings, ShieldCheck, Sun, UserPlus, UsersRound, Webhook, X,
 } from 'lucide-react';
-import type { Agreement, CreateAgreement, Notification, Template } from '@bytecrunch/contracts-domain';
+import type { Agreement, CreateAgreement, CreateTemplate, Notification, Template } from '@bytecrunch/contracts-domain';
 import logo from './assets/logomark.svg';
 import { api, statusLabel, type EntityMemberList, type EntityRole, type Passkey, type RecipientInboxItem, type User } from './api';
 import ExternalPortal from './ExternalPortal';
 import { BusyMark, DirectContractEditor, DocumentCommentCard, RedlineCard, SIGNATURE_BLOCKS_PLACEHOLDER, SelectableContract, type DraftSaveState, type TextSelection } from './ReviewWorkspace';
 import { NextActionBanner, SignatureBlocks, SignatureCeremony } from './SigningExperience';
 
-type View = 'dashboard' | 'my-work' | 'agreements' | 'members' | 'settings';
+type View = 'dashboard' | 'my-work' | 'agreements' | 'templates' | 'members' | 'settings';
 
 function App() {
   if (window.location.pathname === '/invite') return <ExternalPortal />;
@@ -90,6 +90,7 @@ function AdminApp() {
           <NavButton icon={<LayoutDashboard />} active={view === 'dashboard'} onClick={() => { setView('dashboard'); setSelected(undefined); }}>Overview</NavButton>
           <NavButton icon={<Inbox />} active={view === 'my-work'} onClick={() => { setView('my-work'); setSelected(undefined); }}>My work</NavButton>
           <NavButton icon={<Files />} active={view === 'agreements'} onClick={() => setView('agreements')}>Agreements</NavButton>
+          {activeMembership?.permissions.includes('templates.read') && <NavButton icon={<BookOpen />} active={view === 'templates'} onClick={() => { setView('templates'); setSelected(undefined); }}>Templates</NavButton>}
           {activeMembership?.permissions.includes('members.manage') && <NavButton icon={<UsersRound />} active={view === 'members'} onClick={() => { setView('members'); setSelected(undefined); }}>People</NavButton>}
           <NavButton icon={<Settings />} active={view === 'settings'} onClick={() => { setView('settings'); setSelected(undefined); }}>Integrations</NavButton>
         </nav>
@@ -117,10 +118,11 @@ function AdminApp() {
         {view === 'agreements' && (selected
           ? <AgreementDetail agreement={selected} user={user!} onBack={() => setSelected(undefined)} onUpdate={(agreement) => { setSelected(agreement); setAgreements((items) => items.map((item) => item.id === agreement.id ? agreement : item)); }} onError={setError} />
           : <AgreementList agreements={agreements} onOpen={openAgreement} />)}
+        {view === 'templates' && user && <TemplateWorkspace key={user.activeEntityId} templates={templates} entityName={activeMembership?.entity.legalName ?? 'Customer entity'} canWrite={Boolean(activeMembership?.permissions.includes('templates.write'))} onCreated={(template) => setTemplates((items) => [template, ...items])} onError={setError} />}
         {view === 'members' && user && <MemberSettings user={user} onError={setError} />}
         {view === 'settings' && <IntegrationSettings />}
       </main>
-      {creating && <CreateAgreementModal templates={templates} onClose={() => setCreating(false)} onCreated={(agreement) => { setAgreements((items) => [agreement, ...items]); setCreating(false); openAgreement(agreement); }} onError={setError} />}
+      {creating && <CreateAgreementModal templates={latestTemplates(templates)} onClose={() => setCreating(false)} onCreated={(agreement) => { setAgreements((items) => [agreement, ...items]); setCreating(false); openAgreement(agreement); }} onError={setError} />}
       {creatingEntity && <CreateEntityModal onClose={() => setCreatingEntity(false)} onCreated={(entityId) => { api.selectEntity(entityId); setCreatingEntity(false); setSelected(undefined); void refresh(); }} onError={setError} />}
     </div>
   );
@@ -181,6 +183,29 @@ function Metric({ label, value, icon }: { label: string; value: number; icon: Re
 
 function AgreementList({ agreements, onOpen }: { agreements: Agreement[]; onOpen: (agreement: Agreement) => void }) {
   return <div className="page"><div className="page-heading"><div><span className="bc-eyebrow bc-text-blue">// REPOSITORY</span><h1>Agreements</h1><p>The current record of every negotiation and execution.</p></div></div><AgreementTable agreements={agreements} onOpen={onOpen} /></div>;
+}
+
+function latestTemplates(templates: Template[]): Template[] {
+  return [...templates].sort((left, right) => right.version - left.version || right.createdAt.localeCompare(left.createdAt)).filter((template, index, items) => items.findIndex((item) => item.key === template.key) === index);
+}
+
+const templateVariables = ['{{sender.legal_name}}', '{{sender.business_address}}', '{{counterparty.legal_name}}', '{{counterparty.business_address}}', '{{signature_blocks}}'] as const;
+
+function TemplateWorkspace({ templates, entityName, canWrite, onCreated, onError }: { templates: Template[]; entityName: string; canWrite: boolean; onCreated: (template: Template) => void; onError: (message: string) => void }) {
+  const latest = latestTemplates(templates); const [selectedKey, setSelectedKey] = useState(latest[0]?.key); const [editor, setEditor] = useState<{ base?: Template }>(); const selected = latest.find((item) => item.key === selectedKey) ?? latest[0]; const versions = selected ? templates.filter((item) => item.key === selected.key).sort((left, right) => right.version - left.version) : [];
+  return <div className="page template-page"><div className="page-heading"><div><span className="bc-eyebrow bc-text-orange">// {entityName.toUpperCase()} · TEMPLATES</span><h1>Reusable agreements.</h1><p>Templates belong only to the customer entity you’re acting for. Published versions remain immutable so existing agreements never change underneath their participants.</p></div>{canWrite && <button className="button button-accent" onClick={() => setEditor({})}><Plus /> New template</button>}</div>{latest.length === 0 ? <div className="work-empty"><BookOpen /><p>No templates exist for {entityName}.</p>{canWrite && <button className="button button-accent" onClick={() => setEditor({})}>Create the first template</button>}</div> : <div className="template-workspace"><aside className="template-library"><header><span className="bc-eyebrow">// LIBRARY</span><b>{String(latest.length).padStart(2, '0')}</b></header>{latest.map((template) => <button key={template.key} className={selected?.key === template.key ? 'active' : ''} onClick={() => setSelectedKey(template.key)}><BookOpen /><span><strong>{template.name}</strong><small>{template.key} · latest v{template.version}</small></span></button>)}</aside>{selected && <section className="template-detail"><header><div><span className="bc-eyebrow bc-text-blue">// ACTIVE VERSION</span><h2>{selected.name}</h2><p>{selected.description || 'No description provided.'}</p></div>{canWrite && <button className="button button-secondary" onClick={() => setEditor({ base: selected })}>Edit as new version <History /></button>}</header><div className="template-meta"><span>Key <b>{selected.key}</b></span><span>Version <b>{selected.version}</b></span><span>Published <b>{new Date(selected.createdAt).toLocaleDateString()}</b></span></div><TemplatePreview content={selected.content} /><div className="template-history"><span className="bc-eyebrow">// VERSION HISTORY</span>{versions.map((version) => <div key={version.id}><span>v{version.version}</span><p>{version.name}</p><time>{new Date(version.createdAt).toLocaleString()}</time></div>)}</div></section>}</div>}{editor && <TemplateEditorModal entityName={entityName} {...(editor.base ? { base: editor.base } : {})} existingKeys={latest.map((item) => item.key)} onClose={() => setEditor(undefined)} onSave={async (input) => { try { const created = await api.createTemplate(input); onCreated(created); setSelectedKey(created.key); setEditor(undefined); } catch (cause) { onError(cause instanceof Error ? cause.message : 'Could not publish the template.'); throw cause; } }} />}</div>;
+}
+
+function TemplatePreview({ content }: { content: string }) {
+  const parts = content.split(/(\{\{[a-z0-9_.]+\}\})/g); return <article className="template-preview"><span className="bc-eyebrow">// DOCUMENT PREVIEW</span><div>{parts.map((part, index) => part === '{{signature_blocks}}' ? <section className="template-signature-placeholder" key={index}><span>Signature blocks</span><div><i /><i /></div></section> : /^\{\{.+\}\}$/.test(part) ? <mark key={index}>{part}</mark> : <span key={index}>{part}</span>)}</div></article>;
+}
+
+function TemplateEditorModal({ base, entityName, existingKeys, onClose, onSave }: { base?: Template; entityName: string; existingKeys: string[]; onClose: () => void; onSave: (input: CreateTemplate) => Promise<void> }) {
+  const starter = `AGREEMENT\n\nThis agreement is made between {{sender.legal_name}} and {{counterparty.legal_name}}.\n\n1. Terms\nAdd the operative terms here.\n\n{{signature_blocks}}`; const [name, setName] = useState(base?.name ?? ''); const [key, setKey] = useState(base?.key ?? ''); const [description, setDescription] = useState(base?.description ?? ''); const [content, setContent] = useState(base?.content ?? starter); const [busy, setBusy] = useState(false); const [error, setError] = useState<string>(); const textArea = useRef<HTMLTextAreaElement>(null); const suggestedKey = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  function insertVariable(variable: string) { const field = textArea.current; if (!field) { setContent((value) => `${value}${variable}`); return; } const start = field.selectionStart; const end = field.selectionEnd; setContent((value) => `${value.slice(0, start)}${variable}${value.slice(end)}`); requestAnimationFrame(() => { field.focus(); field.setSelectionRange(start + variable.length, start + variable.length); }); }
+  async function submit(event: FormEvent) { event.preventDefault(); try { setBusy(true); setError(undefined); await onSave({ key, name, description, content }); } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not publish the template.'); } finally { setBusy(false); } }
+  const createsExistingVersion = !base && existingKeys.includes(key);
+  return <div className="modal-backdrop template-editor-backdrop" role="presentation" onMouseDown={busy ? undefined : onClose}><section className="modal template-editor-modal" role="dialog" aria-modal="true" aria-labelledby="template-editor-title" onMouseDown={(event) => event.stopPropagation()}><header><div><span className="bc-eyebrow bc-text-orange">// {entityName.toUpperCase()}</span><h2 id="template-editor-title">{base ? `Create ${base.name} v${base.version + 1}` : 'Create a template'}</h2></div><button disabled={busy} className="icon-button" onClick={onClose}><X /></button></header><form onSubmit={(event) => void submit(event)}><div className="template-editor-fields"><div className="form-split"><label>Template name<input required value={name} onChange={(event) => { const previous = suggestedKey(name); setName(event.target.value); if (!base && (!key || key === previous)) setKey(suggestedKey(event.target.value)); }} placeholder="Mutual NDA" /></label><label>Template key<input required disabled={Boolean(base)} pattern="[a-z0-9]+(?:-[a-z0-9]+)*" value={key} onChange={(event) => setKey(event.target.value.toLowerCase())} placeholder="mutual-nda" /></label></div><label>Description<textarea maxLength={500} rows={2} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="When should this template be used?" /></label>{createsExistingVersion && <div className="template-version-note"><History /> This key already exists. Publishing will create its next immutable version.</div>}</div><div className="template-editor-grid"><section><div className="template-editor-toolbar"><span><Braces /> Insert variable</span>{templateVariables.map((variable) => <button type="button" key={variable} onClick={() => insertVariable(variable)}>{variable.replace(/[{}]/g, '')}</button>)}</div><label>Document content<textarea ref={textArea} required value={content} onChange={(event) => setContent(event.target.value)} spellCheck rows={28} /></label>{!content.includes('{{signature_blocks}}') && <div className="template-warning">This template has no signature block placeholder. Signatures can still be collected, but they will not appear inside the document.</div>}</section><TemplatePreview content={content} /></div>{error && <div className="inline-error">{error}</div>}<footer><button type="button" disabled={busy} className="button button-secondary" onClick={onClose}>Cancel</button><button disabled={busy} className="button button-accent">{busy ? <><BusyMark /> Publishing…</> : <><Save /> {base || createsExistingVersion ? 'Publish new version' : 'Publish template'}</>}</button></footer></form></section></div>;
 }
 
 function AgreementTable({ agreements, onOpen }: { agreements: Agreement[]; onOpen: (agreement: Agreement) => void }) {

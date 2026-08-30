@@ -15,7 +15,8 @@ This pass adds an explicit next-action layer, touch-friendly typed/drawn signing
 | Area | Assessment | Notes |
 | --- | --- | --- |
 | Visual identity | Strong | Consistent Bytecrunch type, color, grid, hairlines, motion, and button treatment. |
-| Creation | Good | Optional entity details and multiple participants are clear; template previews are still missing. |
+| Creation | Good | Optional entity details and multiple participants are clear; the agreement picker uses each entity's latest template version. |
+| Template management | Good | The active entity has a permission-aware library, document preview, variable insertion, and immutable version history. |
 | Onboarding | Good | Identity, entity, capacity, and authority are explained before review. |
 | Review turns | Strong | Draft work is quiet and editable; hand-back creates a single summary. |
 | Redlining | Good | The active reviewer edits a clean private draft directly in the document; saving derives a synchronized sidebar diff. Granular structured-document operations remain future work. |
@@ -50,6 +51,8 @@ This pass adds an explicit next-action layer, touch-friendly typed/drawn signing
 - Added first-run onboarding for a verified SSO user with no memberships, clearly framing the new entity as an independent customer tenant.
 - Added a prioritized **My work** inbox across customer entities and a recipient inbox that can be recovered with a privacy-preserving email code.
 - Added passkey enrollment after verified recipient access and a prominent passkey return path, while retaining email code as recovery.
+- Added an entity-scoped **Templates** workspace with document previews, supported-variable insertion, and immutable version history.
+- Made agreement creation show only the latest version of each template while preserving the chosen version in existing agreements.
 
 ## Prioritized findings
 
@@ -75,7 +78,7 @@ This pass adds an explicit next-action layer, touch-friendly typed/drawn signing
 
 ### P2 — refinement
 
-1. Add a template preview and required-signature summary during creation; ordered routing should remain an optional advanced workflow.
+1. Add a required-signature summary during creation; ordered routing should remain an optional advanced workflow.
 2. Add keyboard shortcuts and previous/next navigation for large redline sets.
 3. Separate “activity” from “needs action” in notifications and allow agreement-level notification preferences.
 4. Improve narrow-screen agreement tables into stacked rows instead of horizontal scrolling.

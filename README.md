@@ -4,7 +4,7 @@ Open-source agreement infrastructure for review, redlining, execution, and integ
 
 ## What works
 
-- Versioned contract templates
+- Entity-owned contract templates with an in-app library, document preview, supported-variable palette, and immutable version history
 - Agreement creation from representative emails; internal person IDs are assigned automatically
 - Draft, review, signing, and executed lifecycle states
 - Anchored, attributed redlines with word-level diffs, threaded replies, and accept/reject resolution
@@ -85,6 +85,8 @@ Everything runs locally. There is no required hosted database, identity provider
 
 To exercise multi-entity membership, select **Add entity** next to **Acting for**. Creating and switching to it gives that customer entity its own template copy, agreements, sender identity, and data boundary.
 
+To manage templates, choose the customer entity under **Acting for**, then open **Templates**. Administrators and template managers can create a template or publish an edited draft as its next immutable version. Existing agreements retain the exact template version they started with; new agreements use the latest version for the selected entity. Members with template read access can inspect the library and version history without changing it.
+
 In a non-development OIDC deployment, a verified user with no invitation or existing memberships sees first-run customer-entity onboarding after sign-in. Invited users skip that setup and accept only the entity and roles named in their invitation.
 
 To exercise entity administration, open **People**, invite a second Keycloak user, select one or more roles, and open the resulting email in Mailpit. The recipient can return through the same invitation after signing in with the verified invited address. Role changes and suspension apply only to the selected customer entity; the final active administrator cannot remove their own administrative access.
@@ -95,7 +97,7 @@ An automated equivalent runs against the Docker services:
 npm run e2e:local
 ```
 
-The automated tests cover multi-entity selection and isolation, durable invite claiming, single-use return challenges, non-enumerating recipient code login, cross-entity inboxes, multiple participants without external IDs, entity onboarding, private draft editing, consolidated notifications, owner resolution, and document-bound signatures. The Docker flow additionally covers Mailpit delivery, OAuth2 client credentials, and integration-scoped handoff/status verification.
+The automated tests cover multi-entity selection and isolation, entity-owned template versioning and agreement snapshots, durable invite claiming, single-use return challenges, non-enumerating recipient code login, cross-entity inboxes, multiple participants without external IDs, entity onboarding, private draft editing, consolidated notifications, owner resolution, and document-bound signatures. The Docker flow additionally covers Mailpit delivery, OAuth2 client credentials, and integration-scoped handoff/status verification.
 
 ## Run application code directly
 
