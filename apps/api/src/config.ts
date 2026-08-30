@@ -14,7 +14,7 @@ try {
 const ConfigSchema = z
   .object({
     NODE_ENV: z
-      .enum(["development", "test", "production"])
+      .enum(["development", "test", "staging", "production"])
       .default("development"),
     PORT: z.coerce.number().int().positive().default(3001),
     WEB_URL: z.string().url().default("http://localhost:3000"),
@@ -46,6 +46,8 @@ const ConfigSchema = z
     ARTIFACT_STORAGE_PATH: z.string().min(1).default("./var/artifacts"),
     RATE_LIMIT_SECRET: z.string().min(32).default("local-rate-limit-secret-change-me"),
     TRUST_PROXY: z.enum(["true", "false"]).default("false"),
+    METRICS_TOKEN: z.string().min(32).default("local-metrics-token-change-me-now"),
+    DELIVERY_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(100).default(10),
     SMTP_HOST: z.string().optional(),
     SMTP_PORT: z.coerce.number().int().positive().default(1025),
     SMTP_FROM: z
@@ -94,6 +96,8 @@ const ConfigSchema = z
       "database", "ARTIFACT_STORAGE_DRIVER", "Production artifacts must use a storage adapter outside the application database.");
     require(!value.RATE_LIMIT_SECRET.includes(
       "local-") && !value.RATE_LIMIT_SECRET.includes("change-"), "RATE_LIMIT_SECRET", "Use a unique production rate-limit key secret.");
+    require(!value.METRICS_TOKEN.includes(
+      "local-") && !value.METRICS_TOKEN.includes("change-"), "METRICS_TOKEN", "Use a unique production metrics bearer token.");
   });
 
 export function parseConfig(environment: NodeJS.ProcessEnv) {

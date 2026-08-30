@@ -18,6 +18,9 @@ Bytecrunch Contracts now has a production-oriented application boundary, but it 
 - Integration condition evaluation is scoped by customer entity, integration, and opaque subject. Unlinked subjects return unmet conditions without exposing agreement data.
 - Staff signing is bound to the authenticated account's own creator-participant record; external subject identifiers cannot be used at the staff signing boundary.
 - Artifact bytes use a provider-neutral, content-addressed storage capability with integrity verification. Production rejects inline database storage; the filesystem/PVC adapter is available for deployment testing.
+- Prometheus request/latency/process metrics are bearer-protected, and delivery attempts become explicit dead letters after a configurable bound.
+- Dependency audit, CodeQL, secret/misconfiguration scanning, container scanning, and automated dependency updates are configured in GitHub Actions.
+- The operations runbook defines deployment modes, monitoring, secret rotation, backup/restore drills, and incident response.
 
 ## Release gates still open
 
@@ -36,12 +39,12 @@ The European Commission distinguishes simple, advanced, and qualified electronic
 
 ### Operations and security
 
-- Put secrets in a managed secret store and document rotation procedures.
-- Run PostgreSQL backup/restore drills and object-store recovery tests.
-- Add metrics, tracing, alerting, queue-depth/age alerts, and webhook dead-letter operations.
-- Add dependency, container, SAST, DAST, and secret scanning to CI.
+- Configure the deployment's managed secret store and execute the documented rotation procedures.
+- Execute and record PostgreSQL/artifact recovery drills in the selected infrastructure.
+- Add distributed tracing, queue-depth/age metrics, notification dead-letter administration, and production alert rules in the selected observability platform.
+- Run authenticated DAST against staging; CI already covers dependency, CodeQL, secret/misconfiguration, and container scanning.
 - Complete resource-level authorization tests, abuse/rate-limit controls, formal accessibility testing, privacy review, threat modelling, penetration testing, and an external security review.
-- Select an open-source license and establish a private security contact with a disclosure SLA.
+- Establish a private security contact with a disclosure SLA. The code is licensed AGPL-3.0-only.
 
 ## Production configuration
 
@@ -60,6 +63,8 @@ SESSION_SECRET=<unique 32+ character secret>
 WEBHOOK_SIGNING_SECRET=<unique 32+ character secret>
 RATE_LIMIT_SECRET=<unique 32+ character secret>
 TRUST_PROXY=true
+METRICS_TOKEN=<unique 32+ character secret>
+DELIVERY_MAX_ATTEMPTS=10
 SMTP_HOST=...
 SIGNING_MODE=disabled
 ARTIFACT_STORAGE_DRIVER=filesystem

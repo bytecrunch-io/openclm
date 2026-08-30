@@ -69,6 +69,8 @@ services:
       ARTIFACT_STORAGE_PATH: /var/lib/bytecrunch/artifacts
       RATE_LIMIT_SECRET: local-compose-rate-limit-secret-change-in-production
       TRUST_PROXY: "false"
+      METRICS_TOKEN: local-compose-metrics-token-change-in-production
+      DELIVERY_MAX_ATTEMPTS: 10
       SMTP_HOST: mailpit
       SMTP_PORT: 1025
     ports:

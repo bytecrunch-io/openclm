@@ -25,7 +25,7 @@ export async function deliverNotificationOutbox(repository: Repository): Promise
   for (const item of items) {
     item.status = 'sending'; item.attempts += 1; await repository.saveOutbox(item);
     try { await sendNotificationEmail({ email: item.recipientEmail, subject: item.subject, body: item.body, actionUrl: item.actionUrl }); item.status = 'delivered'; item.deliveredAt = now(); item.lastError = null; delivered += 1; }
-    catch (error) { item.status = 'failed'; item.lastError = error instanceof Error ? error.message : 'Delivery failed'; item.nextAttemptAt = new Date(Date.now() + Math.min(60, 2 ** item.attempts) * 60_000).toISOString(); }
+    catch (error) { item.status = item.attempts >= config.DELIVERY_MAX_ATTEMPTS ? 'dead_letter' : 'failed'; item.lastError = error instanceof Error ? error.message : 'Delivery failed'; item.nextAttemptAt = new Date(Date.now() + Math.min(60, 2 ** item.attempts) * 60_000).toISOString(); }
     await repository.saveOutbox(item);
   }
   return delivered;

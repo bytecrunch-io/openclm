@@ -3871,6 +3871,7 @@ components:
             - sending
             - delivered
             - failed
+            - dead_letter
         attempts:
           type: integer
           format: int32

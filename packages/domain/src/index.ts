@@ -394,7 +394,7 @@ export const NotificationSchema = z.object({
 export type Notification = z.infer<typeof NotificationSchema>;
 export const NotificationOutboxSchema = z.object({
   id: z.string().min(1), notificationId: z.string().min(1), recipientEmail: z.string().email(), subject: z.string().min(1), body: z.string().min(1),
-  actionUrl: z.string().url(), status: z.enum(['pending', 'sending', 'delivered', 'failed']), attempts: z.number().int().nonnegative(),
+  actionUrl: z.string().url(), status: z.enum(['pending', 'sending', 'delivered', 'failed', 'dead_letter']), attempts: z.number().int().nonnegative(),
   nextAttemptAt: z.string().datetime(), lastError: z.string().nullable(), createdAt: z.string().datetime(), deliveredAt: z.string().datetime().nullable(),
 });
 export type NotificationOutbox = z.infer<typeof NotificationOutboxSchema>;
@@ -402,7 +402,7 @@ export type NotificationOutbox = z.infer<typeof NotificationOutboxSchema>;
 export const WebhookDeliverySchema = z.object({
   id: z.string().min(1), tenantId: z.string().min(1), endpointId: z.string().min(1),
   eventId: z.string().min(1), eventType: z.string().min(1), url: z.string().url(), payload: z.string().min(1),
-  status: z.enum(['pending', 'sending', 'delivered', 'failed']), attempts: z.number().int().nonnegative(),
+  status: z.enum(['pending', 'sending', 'delivered', 'failed', 'dead_letter']), attempts: z.number().int().nonnegative(),
   nextAttemptAt: z.string().datetime(), responseStatus: z.number().int().nullable(), lastError: z.string().nullable(),
   createdAt: z.string().datetime(), deliveredAt: z.string().datetime().nullable(),
 });

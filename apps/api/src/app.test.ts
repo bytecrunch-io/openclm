@@ -4,6 +4,7 @@ import { createApp } from './app.js';
 import { MemoryRepository } from './repository.js';
 import { hashInvitationToken } from './external-auth.js';
 import { deliverWebhookOutbox } from './webhooks.js';
+import { config } from './config.js';
 
 async function testApp() {
   const repository = new MemoryRepository();
@@ -25,6 +26,12 @@ class UnavailableRepository extends MemoryRepository {
 }
 
 describe('contracts API vertical slice', () => {
+  it('protects and exposes Prometheus metrics', async () => {
+    const app = await testApp(); expect((await app.request('/metrics')).status).toBe(401);
+    const response = await app.request('/metrics', { headers: { authorization: `Bearer ${config.METRICS_TOKEN}` } });
+    expect(response.status).toBe(200); expect(await response.text()).toContain('bytecrunch_http_requests_total');
+  });
+
   it('enforces a shared rate-limit counter', async () => {
     const repository = new MemoryRepository(); await repository.init();
     expect(await repository.consumeRateLimit('test-client', 2, 60)).toMatchObject({ allowed: true, remaining: 1 });

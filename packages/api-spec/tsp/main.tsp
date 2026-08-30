@@ -309,7 +309,7 @@ model WebhookDelivery {
   eventType: string;
   url: url;
   payload: string;
-  status: "pending" | "sending" | "delivered" | "failed";
+  status: "pending" | "sending" | "delivered" | "failed" | "dead_letter";
   attempts: int32;
   nextAttemptAt: utcDateTime;
   responseStatus: int32 | null;

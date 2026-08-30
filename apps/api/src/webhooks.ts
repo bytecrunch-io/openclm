@@ -162,7 +162,7 @@ export async function deliverWebhookOutbox(
       item.lastError = null;
       delivered += 1;
     } catch (error) {
-      item.status = "failed";
+      item.status = item.attempts >= config.DELIVERY_MAX_ATTEMPTS ? "dead_letter" : "failed";
       item.lastError =
         error instanceof Error
           ? error.message.slice(0, 1000)

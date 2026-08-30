@@ -54,6 +54,7 @@ import { clearRecipientSession, createRecipientLoginCode, currentRecipientSessio
 import { ensureCompletionManifest, ensureSigningSnapshot, publicArtifact, readArtifactContent } from './artifacts.js';
 import { artifactStorage } from './artifact-storage.js';
 import { rateLimit } from './rate-limit.js';
+import { metricsMiddleware, renderMetrics } from './metrics.js';
 import { signingProvider } from './signing.js';
 
 function isoNow(): string { return new Date().toISOString(); }
@@ -242,6 +243,7 @@ function openSigningRevision(agreement: Agreement, completingReviewSide: 'sender
 export function createApp(repository: Repository): Hono {
   const app = new Hono();
   app.use('*', logger());
+  app.use('*', metricsMiddleware);
   app.use('*', secureHeaders());
   app.use('*', cors({ origin: config.WEB_URL, credentials: true }));
   app.use('*', async (context, next) => {
@@ -253,6 +255,7 @@ export function createApp(repository: Repository): Hono {
   });
 
   app.get('/health', (context) => context.json({ status: 'ok', version: '0.1.0', storage: repository.kind }));
+  app.get('/metrics', (context) => context.req.header('authorization') === `Bearer ${config.METRICS_TOKEN}` ? context.text(renderMetrics(), 200, { 'content-type': 'text/plain; version=0.0.4' }) : context.json({ error: 'unauthorized', message: 'A metrics bearer token is required.' }, 401));
   app.get('/health/ready', async (context) => {
     const checks = { persistentStorage: repository.kind === 'postgres', storageReachable: await repository.healthCheck(), artifactStorage: await artifactStorage().healthCheck(), externalArtifactStorage: artifactStorage().driver !== 'database', oidc: config.AUTH_MODE === 'oidc', safeSigningConfiguration: config.SIGNING_MODE !== 'development' };
     const ready = Object.values(checks).every(Boolean);

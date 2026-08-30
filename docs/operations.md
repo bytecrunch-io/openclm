@@ -1,0 +1,58 @@
+# Operations runbook
+
+## Deployment modes
+
+- Local development uses Compose, local Keycloak, Mailpit, PostgreSQL, and the development signature witness.
+- A deployed test environment uses `NODE_ENV=staging`, real HTTPS/OIDC/SMTP/PostgreSQL, isolated test data, and may use the development witness. Every screen and test agreement must be labelled non-production operationally.
+- Production uses `NODE_ENV=production`. Configuration fails closed, inline artifact storage is rejected, and the development witness cannot start. Keep `SIGNING_MODE=disabled` until the selected production signing adapter is installed and reviewed.
+
+Never promote a staging database, signing key, invitation, or artifact volume into production.
+
+## Health and monitoring
+
+- `/health` is the liveness probe.
+- `/health/ready` actively checks PostgreSQL and artifact storage and verifies deployment safety settings.
+- `/metrics` exposes Prometheus text format and requires `Authorization: Bearer $METRICS_TOKEN`.
+- Alert on readiness failures, 5xx rate, p95 latency, process restarts/memory, SMTP failures, webhook failures/dead letters, PostgreSQL capacity/replication lag, artifact-volume capacity, certificate expiry, and backup age.
+
+Webhook and email delivery stop retrying after `DELIVERY_MAX_ATTEMPTS`. Webhook dead letters are visible through the entity-scoped delivery API and can be replayed after remediation. Notification dead-letter administration should be added before a large hosted rollout.
+
+## Backup and recovery
+
+Back up PostgreSQL and artifact storage as one recovery set. Artifacts are content-addressed, so restoration can be verified against metadata digests.
+
+Example PostgreSQL backup:
+
+```bash
+pg_dump --format=custom --no-owner --file=contracts.dump "$DATABASE_URL"
+pg_restore --list contracts.dump
+```
+
+For filesystem storage, snapshot or copy the complete `ARTIFACT_STORAGE_PATH` using the volume provider's consistent snapshot mechanism. A cloud adapter must use its provider's versioning/retention and inventory export.
+
+Recovery drill:
+
+1. Restore PostgreSQL into an isolated database.
+2. Restore artifacts into an isolated storage namespace.
+3. Start the same application version with outbound email/webhooks blocked.
+4. Verify readiness, tenant counts, agreement lifecycle history, and a sample of artifact SHA-256 headers.
+5. Exercise recipient return access and export an executed evidence package.
+6. Record recovery point, recovery time, operator, discrepancies, and corrective actions.
+
+Run the drill before launch and at least quarterly. A backup is not accepted until a restoration drill succeeds.
+
+## Secret rotation
+
+Store secrets in the deployment platform's managed secret facility. Restrict access and audit reads. Rotate OIDC, SMTP, metrics, rate-limit, session, webhook, signing-provider, and storage credentials independently.
+
+Rotating `SESSION_SECRET` invalidates active staff and recipient sessions. Plan a maintenance notice. Webhook-secret rotation requires a dual-key verification window in consumers; the application currently has one active webhook key, so coordinate the cutover. Never log invitation tokens, login codes, session cookies, or artifact content in production.
+
+## Incident response
+
+1. Preserve logs, lifecycle events, evidence metadata, and affected artifact hashes.
+2. Revoke exposed invitations/sessions and rotate the relevant credential.
+3. Disable signing or outbound delivery if evidence integrity may be affected.
+4. Identify affected tenants and legal/privacy notification obligations.
+5. Restore only from a verified recovery point and publish a post-incident report.
+
+Independent penetration testing, privacy/legal review, and jurisdiction-specific signing review remain external launch activities; record their scope, findings, remediation, and acceptance owner.
