@@ -24,7 +24,7 @@ This pass adds an explicit next-action layer, touch-friendly typed/drawn signing
 | Signing ceremony | Good for local development | Typed/drawn marks, touch input, intent confirmation, exact hash, and visible blocks are present. |
 | Production signing assurance | Not production-ready | No signing provider, sealed PDF/PAdES, immutable evidence ledger, identity assurance policy, or downloadable completion certificate. |
 | Mobile | Good baseline | Review and touch signing reflow to one column; long-document navigation still needs a mobile progress pattern. |
-| Accessibility | Fair | Typed signing, global focus styling, reduced-motion support, and an accessible signing dialog are present; remaining overlays and document semantics still need a full screen-reader pass. |
+| Accessibility | Fair | Typed signing, global focus styling, reduced-motion support, and shared accessible dialog behavior are present; document semantics and complete workflows still need a full screen-reader pass. |
 | Multi-entity identity | Good | Global accounts, explicit customer-entity context, isolated data, durable recipient access, member administration, and cross-entity personal inboxes are implemented. |
 
 ## Changes completed in this pass
@@ -86,7 +86,7 @@ This pass adds an explicit next-action layer, touch-friendly typed/drawn signing
 3. Separate “activity” from “needs action” in notifications and allow agreement-level notification preferences.
 4. Improve narrow-screen agreement tables into stacked rows instead of horizontal scrolling.
 5. Add empty states for no feedback, no redlines, and signatures not yet requested.
-6. Migrate the remaining legacy overlays to the shared dialog primitive and add live-region announcements to every async action.
+6. Add automated keyboard and screen-reader regression coverage for dialogs, and live-region announcements to every async action.
 7. Run formal WCAG contrast, keyboard, screen-reader, zoom, reduced-motion, and touch-target testing.
 
 ## Next-action state model

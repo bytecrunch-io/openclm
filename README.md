@@ -141,7 +141,7 @@ The opaque subject is never collected in the normal standalone UI. Integration i
 | Path | Responsibility |
 | --- | --- |
 | `apps/web` | React standalone app, recipient portal, component library, and themes |
-| `apps/api` | Hono HTTP API, authentication, notifications, and repository adapters |
+| `apps/api` | Hono composition root, route families, authentication, notifications, and repository adapters |
 | `packages/domain` | Zod schemas, role policy, and agreement lifecycle invariants |
 | `packages/api-spec` | TypeSpec source and generated OpenAPI document |
 | `infra` | Local PostgreSQL and Keycloak configuration |

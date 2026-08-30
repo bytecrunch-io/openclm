@@ -27,7 +27,7 @@ Do not set classes on `document.documentElement` from page components. Use `useT
 
 - Use `Button` for standard actions. Its `busy` state combines disabling, `aria-busy`, consistent copy, and the Bytecrunch 4×4 loading mark.
 - Use `IconButton` for icon-only actions; its required `label` supplies an accessible name and tooltip.
-- Use `Dialog` for overlays. It handles Escape, initial focus, focus containment, focus restoration, backdrop dismissal, and body scroll locking.
+- Use `Dialog` for every overlay. The current template, agreement, entity, review, signature, and reopen-review flows all share its Escape handling, initial focus, focus containment, focus restoration, backdrop dismissal, body scroll locking, and busy-state close protection.
 - Use `Input`, `Textarea`, and `Select` for new forms so labels, descriptions, errors, and ARIA relationships stay synchronized. `Card`, `Badge`, and `Eyebrow` provide the remaining common display primitives.
 - Keep destructive actions explicit and use the danger variant only after the consequence is clear.
 - Use native form controls and labels. Validation messages should use `role="alert"`; background status should use a polite live region.
