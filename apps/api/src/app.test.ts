@@ -21,6 +21,12 @@ class FailingLifecycleRepository extends MemoryRepository {
 }
 
 describe('contracts API vertical slice', () => {
+  it('rejects state-changing browser requests from an untrusted origin', async () => {
+    const app = await testApp();
+    const response = await app.request('/v1/agreements', { method: 'POST', headers: { origin: 'https://attacker.example', 'content-type': 'application/json' }, body: '{}' });
+    expect(response.status).toBe(403); expect(await response.json()).toMatchObject({ error: 'forbidden_origin' });
+  });
+
   it('does not persist a lifecycle transition when its event transaction fails', async () => {
     const repository = new FailingLifecycleRepository(); await repository.init(); const app = createApp(repository);
     const createdResponse = await app.request('/v1/agreements', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: 'Atomic NDA', templateKey: 'mutual-nda', participants: [], metadata: {}, parties: [{ role: 'counterparty', entity: {}, minimumSignatures: 1, participants: [{ email: 'atomic@example.com', role: 'signatory', required: true }] }] }) });
@@ -161,7 +167,7 @@ describe('contracts API vertical slice', () => {
     expect((await app.request('/v1/agreements', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: 'Auditable NDA', templateKey: 'mutual-nda', participants: [], metadata: {}, parties: [{ role: 'counterparty', entity: {}, minimumSignatures: 1, participants: [{ email: 'audit@example.com', role: 'signatory', required: true }] }] }) })).status).toBe(201);
     const deliveries = await repository.listWebhookDeliveries('bytecrunch', 10); expect(deliveries).toHaveLength(1); expect(deliveries[0]).toMatchObject({ eventType: 'agreement.created', status: 'pending', attempts: 0 });
     const eventPayload = JSON.parse(deliveries[0]!.payload) as { data: { agreementId: string } }; const audit = await repository.listAgreementAuditEvents('bytecrunch', eventPayload.data.agreementId); expect(audit).toEqual([expect.objectContaining({ type: 'agreement.created', revision: 1, eventSha256: expect.stringMatching(/^[a-f0-9]{64}$/) })]);
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 204 })); expect(await deliverWebhookOutbox(repository)).toBe(1); expect(fetchMock).toHaveBeenCalledWith('https://events.example/contracts', expect.objectContaining({ headers: expect.objectContaining({ 'x-bytecrunch-delivery': deliveries[0]!.id, 'x-bytecrunch-signature': expect.stringMatching(/^v1=[a-f0-9]{64}$/) }) })); fetchMock.mockRestore();
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 204 })); expect(await deliverWebhookOutbox(repository)).toBe(1); expect(fetchMock).toHaveBeenCalledWith('https://events.example/contracts', expect.objectContaining({ redirect: 'error', headers: expect.objectContaining({ 'x-bytecrunch-delivery': deliveries[0]!.id, 'x-bytecrunch-signature': expect.stringMatching(/^v1=[a-f0-9]{64}$/) }) })); fetchMock.mockRestore();
     const delivered = (await repository.listWebhookDeliveries('bytecrunch', 10))[0]!; expect(delivered).toMatchObject({ status: 'delivered', attempts: 1, responseStatus: 204 });
     delivered.status = 'failed'; delivered.lastError = 'Test failure'; await repository.saveWebhookDelivery(delivered);
     const replayed = await app.request(`/v1/webhook-deliveries/${deliveries[0]!.id}/replay`, { method: 'POST' }); expect(replayed.status).toBe(200); expect(await replayed.json()).toMatchObject({ status: 'pending', lastError: null });

@@ -4,4 +4,6 @@ This repository is not yet suitable for production contract execution or certifi
 
 Please report suspected vulnerabilities privately to the project maintainers. Do not include active invitation links, recipient codes, passkey material, session cookies, contract contents, personal data, or production credentials in a public issue.
 
+Browser mutations are restricted to the configured application origin. Production webhook URLs require HTTPS, are checked against local/private destinations, and cannot redirect; production infrastructure must still enforce outbound network policy to mitigate DNS rebinding and parser discrepancies.
+
 Before a hosted release, the project needs a dedicated security contact and disclosure SLA, secret rotation procedures, dependency and container scanning, normalized append-only signing evidence, retention controls, backup/restore testing, and an external security review. Track the concrete gates in [production readiness](./docs/production-readiness.md).

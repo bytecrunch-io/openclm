@@ -242,6 +242,13 @@ export function createApp(repository: Repository): Hono {
   app.use('*', logger());
   app.use('*', secureHeaders());
   app.use('*', cors({ origin: config.WEB_URL, credentials: true }));
+  app.use('*', async (context, next) => {
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(context.req.method)) {
+      const origin = context.req.header('origin');
+      if (origin && origin !== new URL(config.WEB_URL).origin) return context.json({ error: 'forbidden_origin', message: 'This request origin is not allowed.' }, 403);
+    }
+    return next();
+  });
 
   app.get('/health', (context) => context.json({ status: 'ok', version: '0.1.0', storage: repository.kind }));
   app.get('/health/ready', (context) => {

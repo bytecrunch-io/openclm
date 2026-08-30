@@ -142,6 +142,7 @@ export async function deliverWebhookOutbox(
         .digest("hex");
       const response = await fetch(item.url, {
         method: "POST",
+        redirect: "error",
         headers: {
           "content-type": "application/json",
           "user-agent": "Bytecrunch-Contracts-Webhook/0.1",
