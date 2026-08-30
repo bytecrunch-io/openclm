@@ -45,7 +45,7 @@ import type {
   Notification,
   Template,
 } from "@bytecrunch/contracts-domain";
-import logo from "./assets/logomark.svg";
+import logo from "./assets/logo.svg";
 import {
   api,
   statusLabel,
@@ -789,7 +789,7 @@ function RecipientInboxPage() {
     return (
       <main className="recipient-inbox-page">
         <div className="portal-loading">
-          <div className="loading-line" />
+          <BusyMark />
         </div>
       </main>
     );
@@ -2900,7 +2900,7 @@ function MembershipInvitationPage() {
           </>
         ) : !error ? (
           <div className="portal-loading">
-            <div className="loading-line" />
+            <BusyMark />
           </div>
         ) : null}
         {error && <div className="inline-error">{error}</div>}

@@ -10,7 +10,7 @@ import {
   UserPlus,
   X,
 } from "lucide-react";
-import logo from "./assets/logomark.svg";
+import logo from "./assets/logo.svg";
 import { api, statusLabel, type ExternalView } from "./api";
 import {
   DirectContractEditor,
@@ -101,7 +101,7 @@ export default function ExternalPortal() {
     return (
       <PortalFrame>
         <div className="portal-loading">
-          <div className="loading-line" />
+          <BusyMark />
           <span className="bc-eyebrow">// OPENING SECURE INVITATION</span>
         </div>
       </PortalFrame>

@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-20 -20 130 130" role="img" aria-label="ByteCrunch logo loading">
+  <style>
+    .grid-group {
+    transform-origin: 43px 43px;
+    animation: spin-grid 1.6s cubic-bezier(0.68, -0.55, 0.27, 1.55) infinite;
+    }
+
+    .block {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: explode 1.6s ease-in-out infinite;
+    }
+
+    /* Quadrant translation targets */
+    .q-tl { --tx: -8px; --ty: -8px; }
+    .q-tr { --tx: 8px;  --ty: -8px; }
+    .q-bl { --tx: -8px; --ty: 8px;  }
+    .q-br { --tx: 8px;  --ty: 8px;  }
+
+    @keyframes spin-grid {
+    0%   { transform: translate(2px, 2px) scale(1) rotate(0deg); }
+    50%  { transform: translate(2px, 2px) scale(0.85) rotate(180deg); }
+    100% { transform: translate(2px, 2px) scale(1) rotate(360deg); }
+    }
+
+    @keyframes explode {
+    0%, 100% { transform: translate(0, 0) scale(1) rotate(0deg); }
+    50%      { transform: translate(var(--tx), var(--ty)) scale(0.7) rotate(90deg); }
+    }
+  </style>
+
+  <rect x="-20" y="-20" width="130" height="130" fill="none"/>
+  <g class="grid-group">
+    <rect class="block q-tl" x="0" y="0" width="20" height="20" fill="#1a1a1a" stroke="#4a4a4a" stroke-width="0.5"/>
+    <rect class="block q-tl" x="22" y="0" width="20" height="20" fill="#ed650f" stroke="#4a4a4a" stroke-width="0.5"/>
+    <rect class="block q-tr" x="44" y="0" width="20" height="20" fill="#1a1a1a" stroke="#4a4a4a" stroke-width="0.5"/>
+    <rect class="block q-tr" x="66" y="0" width="20" height="20" fill="#1a1a1a" stroke="#4a4a4a" stroke-width="0.5"/>
+
+    <rect class="block q-tl" x="0" y="22" width="20" height="20" fill="#1a1a1a" stroke="#4a4a4a" stroke-width="0.5"/>
+    <rect class="block q-tl" x="22" y="22" width="20" height="20" fill="#1a1a1a" stroke="#4a4a4a" stroke-width="0.5"/>
+    <rect class="block q-tr" x="44" y="22" width="20" height="20" fill="#ed650f" stroke="#4a4a4a" stroke-width="0.5"/>
+    <rect class="block q-tr" x="66" y="22" width="20" height="20" fill="#1a1a1a" stroke="#4a4a4a" stroke-width="0.5"/>
+
+    <rect class="block q-bl" x="0" y="44" width="20" height="20" fill="#1a1a1a" stroke="#4a4a4a" stroke-width="0.5"/>
+    <rect class="block q-bl" x="22" y="44" width="20" height="20" fill="#05a9ef" stroke="#4a4a4a" stroke-width="0.5"/>
+    <rect class="block q-br" x="44" y="44" width="20" height="20" fill="#1a1a1a" stroke="#4a4a4a" stroke-width="0.5"/>
+    <rect class="block q-br" x="66" y="44" width="20" height="20" fill="#1a1a1a" stroke="#4a4a4a" stroke-width="0.5"/>
+
+    <rect class="block q-bl" x="0" y="66" width="20" height="20" fill="#1a1a1a" stroke="#4a4a4a" stroke-width="0.5"/>
+    <rect class="block q-bl" x="22" y="66" width="20" height="20" fill="#1a1a1a" stroke="#4a4a4a" stroke-width="0.5"/>
+    <rect class="block q-br" x="44" y="66" width="20" height="20" fill="#05a9ef" stroke="#4a4a4a" stroke-width="0.5"/>
+    <rect class="block q-br" x="66" y="66" width="20" height="20" fill="#05a9ef" stroke="#4a4a4a" stroke-width="0.5"/>
+  </g>
+</svg>

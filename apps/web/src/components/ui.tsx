@@ -1,5 +1,6 @@
 import { Monitor, Moon, Sun, X } from 'lucide-react';
 import { useEffect, useId, useRef, type ButtonHTMLAttributes, type HTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react';
+import loader from '../assets/loader.svg';
 import { useTheme, type ThemePreference } from '../theme';
 
 export function cx(...classes: Array<string | false | null | undefined>): string {
@@ -7,7 +8,7 @@ export function cx(...classes: Array<string | false | null | undefined>): string
 }
 
 export function BusyMark() {
-  return <span className="busy-mark" aria-hidden="true">{Array.from({ length: 16 }, (_, index) => <i key={index} />)}</span>;
+  return <img className="busy-mark" src={loader} alt="" aria-hidden="true" />;
 }
 
 export function Eyebrow({ color = 'default', className, ...props }: HTMLAttributes<HTMLSpanElement> & { color?: 'default' | 'orange' | 'blue' }) {
