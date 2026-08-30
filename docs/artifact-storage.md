@@ -17,6 +17,8 @@ An adapter implements three operations:
 
 Cloud-specific concerns stay inside the adapter. A GCS adapter may use generations and retention policies; OCI may use Object Storage retention rules; an S3-compatible adapter may use object lock; and an Arweave adapter may return a transaction identifier as the opaque key. An adapter must not report a successful write until the durability level required by the deployment has been reached.
 
+Permanent networks such as Arweave are not interchangeable with deletable object stores. Contract artifacts contain personal and commercially sensitive information, while privacy, erasure, legal-hold, and retention duties can conflict with irreversible public persistence. An Arweave adapter therefore needs a separately approved threat/privacy model—normally including client-side envelope encryption and off-chain key control—and legal review must confirm whether loss of a decryption key satisfies the applicable disposal obligation. Do not upload plaintext agreement artifacts to a public permanent network.
+
 `ARTIFACT_RETENTION_DAYS` records the earliest permitted disposal date on every artifact; the default is seven years. The application has no automatic deletion path and therefore retains artifacts after that date until an authorised policy process is implemented. `legalHold` is reserved in metadata and must prevent disposal when a future adapter adds deletion. Infrastructure retention must be at least as long as the recorded application retention.
 
 The current filesystem adapter is sufficient for deployment testing with a backed-up volume. Before relying on evidence retention, select a backend and add its adapter plus provider-specific integration tests and infrastructure policy checks.
