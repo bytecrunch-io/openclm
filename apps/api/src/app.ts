@@ -508,12 +508,12 @@ export function createApp(repository: Repository): Hono {
     const input = ResolveSuggestionSchema.parse(await context.req.json()); const session = currentExternalSession(context); const agreement = await requiredAgreement(repository, session.tenantId, session.agreementId);
     assertActiveReviewSide(agreement, 'counterparty'); const suggestion = agreement.suggestions.find((item) => item.id === context.req.param('suggestionId'));
     if (!suggestion) return context.json({ error: 'not_found', message: 'Suggestion not found.' }, 404);
-    resolveSuggestionDecision(agreement, suggestion, input.resolution); await repository.saveAgreement(agreement); await emitAgreementEvent(repository, 'agreement.suggestion.resolved', agreement); return context.json(await externalView(repository, session));
+    resolveSuggestionDecision(agreement, suggestion, input.resolution); await emitAgreementEvent(repository, 'agreement.suggestion.resolved', agreement); return context.json(await externalView(repository, session));
   });
 
   app.post('/public/session/return-review', externalSessionMiddleware(), async (context) => {
     const input = SendReviewSchema.parse(await context.req.json()); const session = currentExternalSession(context); const agreement = await requiredAgreement(repository, session.tenantId, session.agreementId); const participant = agreement.participants.find((item) => item.id === session.participantId);
-    if (!participant || agreement.reviewAssignedTo !== 'counterparty') throw new Error('This review is not assigned to you.'); assertIncomingSuggestionsResolved(agreement); const submittedRound = agreement.reviewRound; const redlineCount = agreement.suggestions.filter((item) => item.reviewRound === submittedRound).length; const commentCount = agreement.documentComments.filter((item) => item.reviewRound === submittedRound).length; assignReview(agreement, 'sender', participant.name, input.message); participant.status = 'reviewed'; await repository.saveAgreement(agreement); await notifyParticipants(repository, agreement, { type: 'review.returned', actorName: participant.name, actorParticipantId: participant.id, recipientParticipantIds: creatorRecipients(agreement), title: `Review returned: ${agreement.title}`, body: `${participant.name} returned their review with ${redlineCount} redline${redlineCount === 1 ? '' : 's'} and ${commentCount} general comment${commentCount === 1 ? '' : 's'}.${input.message ? ` ${input.message}` : ''}` }); await emitAgreementEvent(repository, 'agreement.sent_for_review', agreement); return context.json(await externalView(repository, session));
+    if (!participant || agreement.reviewAssignedTo !== 'counterparty') throw new Error('This review is not assigned to you.'); assertIncomingSuggestionsResolved(agreement); const submittedRound = agreement.reviewRound; const redlineCount = agreement.suggestions.filter((item) => item.reviewRound === submittedRound).length; const commentCount = agreement.documentComments.filter((item) => item.reviewRound === submittedRound).length; assignReview(agreement, 'sender', participant.name, input.message); participant.status = 'reviewed'; await emitAgreementEvent(repository, 'agreement.sent_for_review', agreement); await notifyParticipants(repository, agreement, { type: 'review.returned', actorName: participant.name, actorParticipantId: participant.id, recipientParticipantIds: creatorRecipients(agreement), title: `Review returned: ${agreement.title}`, body: `${participant.name} returned their review with ${redlineCount} redline${redlineCount === 1 ? '' : 's'} and ${commentCount} general comment${commentCount === 1 ? '' : 's'}.${input.message ? ` ${input.message}` : ''}` }); return context.json(await externalView(repository, session));
   });
 
   app.post('/public/session/approve-for-signature', externalSessionMiddleware(), async (context) => {
@@ -523,7 +523,7 @@ export function createApp(repository: Repository): Hono {
     if (agreement.reviewAssignedTo !== 'counterparty') throw new Error('This review is not assigned to you.');
     const actorId = participant.personId ?? participant.id; const hasDraftWork = agreement.suggestions.some((item) => item.status === 'open' && item.reviewRound === agreement.reviewRound && item.authorSubjectId === actorId) || agreement.documentComments.some((item) => item.status === 'open' && item.reviewRound === agreement.reviewRound && item.authorId === actorId);
     if (hasDraftWork) throw new Error('Send your changes for review before signing.');
-    openSigningRevision(agreement, 'counterparty'); await repository.saveAgreement(agreement); await ensureSigningSnapshot(repository, agreement); await emitAgreementEvent(repository, 'agreement.ready_for_signature', agreement); return context.json(await externalView(repository, session));
+    openSigningRevision(agreement, 'counterparty'); await emitAgreementEvent(repository, 'agreement.ready_for_signature', agreement); await ensureSigningSnapshot(repository, agreement); return context.json(await externalView(repository, session));
   });
 
   app.post('/public/session/reopen-review', externalSessionMiddleware(), async (context) => {
@@ -537,9 +537,8 @@ export function createApp(repository: Repository): Hono {
       signer.signature = null; signer.signedAt = null; signer.status = 'reviewed';
     }
     transition(agreement, 'in_review'); agreement.executedAt = null; agreement.signatureNotificationsSentAt = null; agreement.parties.forEach((party) => { party.status = party.role === 'counterparty' ? 'reviewing' : 'ready'; }); assignReview(agreement, 'counterparty', participant.name, 'Reopened signing revision to propose additional changes.');
-    await repository.saveAgreement(agreement);
-    await notifyParticipants(repository, agreement, { type: 'signature.invalidated', actorName: participant.name, actorParticipantId: participant.id, recipientParticipantIds: signed.map((item) => item.id).filter((id) => id !== participant.id), title: `Signature voided: ${agreement.title}`, body: `${participant.name} reopened the agreement for review. ${signed.length} signature${signed.length === 1 ? '' : 's'} were voided because the document may change.` });
     await emitAgreementEvent(repository, 'agreement.signature_invalidated', agreement);
+    await notifyParticipants(repository, agreement, { type: 'signature.invalidated', actorName: participant.name, actorParticipantId: participant.id, recipientParticipantIds: signed.map((item) => item.id).filter((id) => id !== participant.id), title: `Signature voided: ${agreement.title}`, body: `${participant.name} reopened the agreement for review. ${signed.length} signature${signed.length === 1 ? '' : 's'} were voided because the document may change.` });
     return context.json(await externalView(repository, session));
   });
 
@@ -558,10 +557,9 @@ export function createApp(repository: Repository): Hono {
       if (participant.partyId && isPartySignatureComplete(agreement, participant.partyId)) agreement.parties.find((party) => party.id === participant.partyId)!.status = 'executed';
       if (agreement.status === 'out_for_signature') transition(agreement, 'partially_signed');
     }
-    const releaseSignatureRequests = agreement.status !== 'executed' && !agreement.signatureNotificationsSentAt; if (releaseSignatureRequests) agreement.signatureNotificationsSentAt = isoNow(); await repository.saveAgreement(agreement); if (agreement.status === 'executed') await ensureCompletionManifest(repository, agreement);
+    const releaseSignatureRequests = agreement.status !== 'executed' && !agreement.signatureNotificationsSentAt; if (releaseSignatureRequests) agreement.signatureNotificationsSentAt = isoNow(); await emitAgreementEvent(repository, agreement.status === 'executed' ? 'agreement.executed' : 'agreement.partially_signed', agreement); if (agreement.status === 'executed') await ensureCompletionManifest(repository, agreement);
     const ownerStillNeedsToSign = agreement.createdByParticipantId !== null && agreement.participants.find((item) => item.id === agreement.createdByParticipantId)?.status !== 'signed';
     await notifyParticipants(repository, agreement, { type: agreement.status === 'executed' ? 'agreement.executed' : releaseSignatureRequests ? 'signature.requested' : 'signature.completed', actorName: participant.name, actorParticipantId: participant.id, recipientParticipantIds: agreement.status === 'executed' ? agreement.participants.map((item) => item.id) : creatorRecipients(agreement), title: agreement.status === 'executed' ? `Agreement executed: ${agreement.title}` : ownerStillNeedsToSign ? `Your signature is required: ${agreement.title}` : `${participant.name} signed ${agreement.title}`, body: agreement.status === 'executed' ? 'Every required signature has been collected.' : ownerStillNeedsToSign ? `${participant.name} signed. You can add your signature at any time while the remaining signatures are collected.` : `${participant.name} signed. Other required signatures are still outstanding.` });
-    await emitAgreementEvent(repository, agreement.status === 'executed' ? 'agreement.executed' : 'agreement.partially_signed', agreement);
     return context.json(await externalView(repository, session));
   });
 
@@ -599,8 +597,8 @@ export function createApp(repository: Repository): Hono {
       const senderParty = { id: `party_${randomUUID()}`, role: 'sender' as const, status: 'ready' as const, minimumSignatures: 1, entity: { id: senderEntity.id, externalId: null, legalName: senderEntity.legalName, businessAddress: senderEntity.businessAddress, registrationNumber: senderEntity.registrationNumber, jurisdiction: senderEntity.jurisdiction, verificationStatus: 'confirmed' as const, proposedDetails: null } };
       agreement.parties.unshift(senderParty);
       const creator = { id: `part_${randomUUID()}`, personId: user.id, externalSubjectId: null, email: user.email, name: user.name, role: 'signatory' as const, required: true, status: 'reviewed' as const, signedAt: null, signature: null, partyId: senderParty.id, title: null, capacity: 'authorized_representative' as const, authorityConfirmed: true, onboardingCompletedAt: isoNow(), permissions: ['read', 'comment', 'suggest', 'sign'] as Array<'read' | 'comment' | 'suggest' | 'sign'> };
-      agreement.participants.push(creator); agreement.createdByParticipantId = creator.id; await repository.saveAgreement(agreement);
-      materializePartyVariables(agreement); await repository.saveAgreement(agreement);
+      agreement.participants.push(creator); agreement.createdByParticipantId = creator.id;
+      materializePartyVariables(agreement);
     }
     await emitAgreementEvent(repository, 'agreement.created', agreement);
     return context.json(agreement, 201);
@@ -627,7 +625,6 @@ export function createApp(repository: Repository): Hono {
   app.post('/v1/agreements/:agreementId/review', async (context) => {
     const agreement = await requiredAgreement(repository, currentUser(context).tenantId, context.req.param('agreementId'));
     assignReview(agreement, 'counterparty', currentUser(context).name);
-    await repository.saveAgreement(agreement);
     await emitAgreementEvent(repository, 'agreement.sent_for_review', agreement);
     return context.json(agreement);
   });
@@ -635,7 +632,7 @@ export function createApp(repository: Repository): Hono {
   app.post('/v1/agreements/:agreementId/send-review', async (context) => {
     const input = SendReviewSchema.parse(await context.req.json()); const user = currentUser(context); const agreement = await requiredAgreement(repository, user.tenantId, context.req.param('agreementId'));
     assertActiveReviewSide(agreement, 'sender'); assertIncomingSuggestionsResolved(agreement);
-    const redlineCount = agreement.suggestions.filter((item) => item.status === 'open').length; const commentCount = agreement.documentComments.filter((item) => item.status === 'open').length; assignReview(agreement, 'counterparty', user.name, input.message); await repository.saveAgreement(agreement); await notifyParticipants(repository, agreement, { type: 'review.assigned', actorName: user.name, actorParticipantId: agreement.createdByParticipantId ?? undefined, recipientParticipantIds: counterpartyRecipients(agreement), title: `Review ready: ${agreement.title}`, body: `${user.name} handed the agreement back for your next review. ${redlineCount} redline${redlineCount === 1 ? '' : 's'} and ${commentCount} general comment${commentCount === 1 ? '' : 's'} remain open.${input.message ? ` ${input.message}` : ''}` }); await emitAgreementEvent(repository, 'agreement.sent_for_review', agreement); return context.json(agreement);
+    const redlineCount = agreement.suggestions.filter((item) => item.status === 'open').length; const commentCount = agreement.documentComments.filter((item) => item.status === 'open').length; assignReview(agreement, 'counterparty', user.name, input.message); await emitAgreementEvent(repository, 'agreement.sent_for_review', agreement); await notifyParticipants(repository, agreement, { type: 'review.assigned', actorName: user.name, actorParticipantId: agreement.createdByParticipantId ?? undefined, recipientParticipantIds: counterpartyRecipients(agreement), title: `Review ready: ${agreement.title}`, body: `${user.name} handed the agreement back for your next review. ${redlineCount} redline${redlineCount === 1 ? '' : 's'} and ${commentCount} general comment${commentCount === 1 ? '' : 's'} remain open.${input.message ? ` ${input.message}` : ''}` }); return context.json(agreement);
   });
 
   app.get('/v1/agreements/:agreementId/invitations', async (context) => {
@@ -649,8 +646,6 @@ export function createApp(repository: Repository): Hono {
     const agreement = await requiredAgreement(repository, user.tenantId, context.req.param('agreementId'));
     if (agreement.status === 'draft' || agreement.reviewAssignedTo === null) assignReview(agreement, 'counterparty', user.name);
     const result = await createAndSendInvitation(repository, agreement, context.req.param('participantId'), user.name);
-    await repository.saveAgreement(agreement);
-    await emitAgreementEvent(repository, 'agreement.sent_for_review', agreement);
     return context.json(result, 201);
   });
 
@@ -707,7 +702,6 @@ export function createApp(repository: Repository): Hono {
     const suggestion = agreement.suggestions.find((item) => item.id === context.req.param('suggestionId'));
     if (!suggestion) return context.json({ error: 'not_found', message: 'Suggestion not found.' }, 404);
     resolveSuggestionDecision(agreement, suggestion, input.resolution);
-    await repository.saveAgreement(agreement);
     await emitAgreementEvent(repository, 'agreement.suggestion.resolved', agreement);
     return context.json(agreement);
   });
@@ -722,10 +716,9 @@ export function createApp(repository: Repository): Hono {
     if (['draft', 'in_review'].includes(agreement.status)) openSigningRevision(agreement);
     else if (!['out_for_signature', 'partially_signed'].includes(agreement.status)) throw new Error('This agreement cannot request signatures in its current state.');
     agreement.signatureNotificationsSentAt = isoNow();
-    await repository.saveAgreement(agreement);
+    await emitAgreementEvent(repository, 'agreement.ready_for_signature', agreement);
     await ensureSigningSnapshot(repository, agreement);
     await notifyParticipants(repository, agreement, { type: 'signature.requested', actorName: currentUser(context).name, actorParticipantId: agreement.createdByParticipantId ?? undefined, recipientParticipantIds: unsignedSignatoryRecipients(agreement, agreement.createdByParticipantId ?? undefined), title: `Signature requested: ${agreement.title}`, body: 'Review is complete. The final revision is ready for signature; required signatories may sign in any order.' });
-    await emitAgreementEvent(repository, 'agreement.ready_for_signature', agreement);
     return context.json(agreement);
   });
 
@@ -765,10 +758,9 @@ export function createApp(repository: Repository): Hono {
       transition(agreement, 'partially_signed');
     }
     const releaseSignatureRequests = agreement.status !== 'executed' && !agreement.signatureNotificationsSentAt; if (releaseSignatureRequests) agreement.signatureNotificationsSentAt = isoNow();
-    await repository.saveAgreement(agreement);
+    await emitAgreementEvent(repository, agreement.status === 'executed' ? 'agreement.executed' : 'agreement.partially_signed', agreement);
     if (agreement.status === 'executed') await ensureCompletionManifest(repository, agreement);
     await notifyParticipants(repository, agreement, { type: agreement.status === 'executed' ? 'agreement.executed' : releaseSignatureRequests ? 'signature.requested' : 'signature.completed', actorName: participant.name, actorParticipantId: participant.id, recipientParticipantIds: agreement.status === 'executed' ? agreement.participants.map((item) => item.id) : unsignedSignatoryRecipients(agreement, participant.id), title: agreement.status === 'executed' ? `Agreement executed: ${agreement.title}` : releaseSignatureRequests ? `Signature requested: ${agreement.title}` : `${participant.name} signed ${agreement.title}`, body: agreement.status === 'executed' ? 'Every required signature has been collected.' : releaseSignatureRequests ? `${participant.name} signed the final revision. Your signature is now requested.` : 'Their signature is complete. Other required signatories may sign now.' });
-    await emitAgreementEvent(repository, agreement.status === 'executed' ? 'agreement.executed' : 'agreement.partially_signed', agreement);
     return context.json(agreement);
   });
 
@@ -819,7 +811,7 @@ async function createAndSendInvitation(repository: Repository, agreement: Agreem
     expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), acceptedAt: null, acceptedByAccountId: null, recoverySentAt: null,
   });
   await repository.createInvitation(invitation);
-  if (participant.status === 'not_invited' || participant.status === 'invited') participant.status = 'invited'; agreement.updatedAt = isoNow(); await repository.saveAgreement(agreement);
+  if (participant.status === 'not_invited' || participant.status === 'invited') participant.status = 'invited'; agreement.updatedAt = isoNow(); await emitAgreementEvent(repository, 'agreement.sent_for_review', agreement);
   const invitationUrl = `${config.WEB_URL}/invite?token=${encodeURIComponent(token)}`;
   await sendInvitationEmail({ email: participant.email, name: participant.name, agreementTitle: agreement.title, inviterName, invitationUrl });
   return { ...publicInvitation(invitation), invitationUrl };

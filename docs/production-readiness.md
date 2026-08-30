@@ -10,6 +10,7 @@ Bytecrunch Contracts now has a production-oriented application boundary, but it 
 - Entering signing freezes an immutable, hashed JSON snapshot. Execution creates a downloadable completion manifest containing active and invalidated signature evidence.
 - `/health` reports liveness. `/health/ready` reports whether persistent storage, OIDC, and a non-development signing mode are present.
 - Agreement lifecycle events are written to an append-only table with their revision, status, content hash, timestamp, and event digest.
+- Lifecycle aggregate updates, audit-event appends, and webhook-outbox inserts share one PostgreSQL transaction.
 - Webhook deliveries use a persistent outbox, exponential retry, delivery IDs, response/error history, administrative inspection, and manual replay.
 - Production webhook registration and delivery require HTTPS and reject hostnames or resolved addresses that point at local/private networks. Production infrastructure should additionally restrict API egress at the network layer.
 - Integration condition evaluation is scoped by customer entity, integration, and opaque subject. Unlinked subjects return unmet conditions without exposing agreement data.
@@ -25,7 +26,7 @@ The European Commission distinguishes simple, advanced, and qualified electronic
 ### Evidence and persistence
 
 - Move the provider-attributed signature evidence currently retained in agreement snapshots/manifests into normalized immutable relational records, including callback evidence and artifact references.
-- Make agreement mutation, audit append, and webhook enqueue one database transaction. The current event/outbox records are durable but are appended immediately after the aggregate save.
+- Make initial agreement creation, invitation issuance, notification enqueue, and signing-artifact creation participate in explicit workflow transactions. Lifecycle aggregate updates, audit appends, and webhook enqueue are already atomic, but these adjacent records currently use separate transactions and require idempotent recovery.
 - Add immutable object storage with retention locks for source, final, executed, and certificate artifacts.
 - Define retention, deletion, legal-hold, export, and data-residency policies.
 

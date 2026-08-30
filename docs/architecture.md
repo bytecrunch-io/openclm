@@ -54,7 +54,7 @@ Signature orchestration now runs through a provider interface. The included prov
 
 The initial PostgreSQL repository stores validated aggregate snapshots in JSONB. Lifecycle audit events and webhook delivery attempts now use separate append-only/persistent tables. Before high-volume production use, extract participants, immutable revisions, signing evidence, and signing envelopes into relational append-only tables.
 
-Webhook delivery has a persistent retry queue, delivery history, SSRF-oriented production URL checks, and manual replay. Agreement mutation, audit append, and webhook enqueue are not yet one database transaction; close that atomicity gap and add dead-letter operations before production use.
+Webhook delivery has a persistent retry queue, delivery history, SSRF-oriented production URL checks, and manual replay. Every lifecycle transition commits its agreement aggregate, audit event, and webhook deliveries in one PostgreSQL transaction. Initial agreement/invitation creation, notification enqueue, and signing-artifact creation remain adjacent idempotent workflows rather than one transaction; add explicit recovery and dead-letter operations before production use.
 
 ## Codebase boundaries
 

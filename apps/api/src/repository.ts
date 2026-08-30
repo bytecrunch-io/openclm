@@ -78,6 +78,7 @@ export interface Repository {
   createAgreementArtifact(artifact: AgreementArtifact): Promise<void>;
   listAgreementArtifacts(tenantId: string, agreementId: string): Promise<AgreementArtifact[]>;
   getAgreementArtifact(tenantId: string, agreementId: string, artifactId: string): Promise<AgreementArtifact | undefined>;
+  commitAgreementEvent(agreement: Agreement, event: AgreementAuditEvent, deliveries: WebhookDelivery[]): Promise<void>;
   createInvitation(invitation: Invitation): Promise<void>;
   getInvitationByTokenHash(tokenHash: string): Promise<Invitation | undefined>;
   getInvitation(id: string): Promise<Invitation | undefined>;
@@ -300,6 +301,17 @@ export class MemoryRepository implements Repository {
   async getAgreementArtifact(tenantId: string, agreementId: string, artifactId: string): Promise<AgreementArtifact | undefined> {
     const value = this.agreementArtifacts.find((item) => item.tenantId === tenantId && item.agreementId === agreementId && item.id === artifactId);
     return value ? structuredClone(value) : undefined;
+  }
+
+  async commitAgreementEvent(agreement: Agreement, event: AgreementAuditEvent, deliveries: WebhookDelivery[]): Promise<void> {
+    const parsedAgreement = AgreementSchema.parse(agreement);
+    const parsedEvent = AgreementAuditEventSchema.parse(event);
+    const parsedDeliveries = deliveries.map((item) => WebhookDeliverySchema.parse(item));
+    const agreementIndex = this.agreements.findIndex((item) => item.id === parsedAgreement.id && item.tenantId === parsedAgreement.tenantId);
+    if (agreementIndex < 0) throw new Error('Agreement not found.');
+    this.agreements[agreementIndex] = structuredClone(parsedAgreement);
+    if (!this.agreementAuditEvents.some((item) => item.id === parsedEvent.id)) this.agreementAuditEvents.push(parsedEvent);
+    this.webhookDeliveries.push(...parsedDeliveries);
   }
 
   async createInvitation(invitation: Invitation): Promise<void> { this.invitations.push(InvitationSchema.parse(invitation)); }
@@ -599,6 +611,21 @@ export class PostgresRepository extends MemoryRepository {
   override async getAgreementArtifact(tenantId: string, agreementId: string, artifactId: string): Promise<AgreementArtifact | undefined> {
     const result = await this.pool.query('SELECT payload FROM agreement_artifacts WHERE tenant_id=$1 AND agreement_id=$2 AND id=$3', [tenantId, agreementId, artifactId]);
     return result.rows[0] ? AgreementArtifactSchema.parse(result.rows[0].payload) : undefined;
+  }
+
+  override async commitAgreementEvent(agreement: Agreement, event: AgreementAuditEvent, deliveries: WebhookDelivery[]): Promise<void> {
+    AgreementSchema.parse(agreement); AgreementAuditEventSchema.parse(event); deliveries.forEach((item) => WebhookDeliverySchema.parse(item));
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const saved = await client.query('UPDATE agreements SET payload=$1,updated_at=now() WHERE id=$2 AND tenant_id=$3', [JSON.stringify(agreement), agreement.id, agreement.tenantId]);
+      if (saved.rowCount !== 1) throw new Error('Agreement was not found.');
+      await client.query('INSERT INTO agreement_audit_events (id,tenant_id,agreement_id,event_type,payload,created_at) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (id) DO NOTHING', [event.id, event.tenantId, event.agreementId, event.type, JSON.stringify(event), event.createdAt]);
+      for (const delivery of deliveries) await client.query('INSERT INTO webhook_deliveries (id,tenant_id,endpoint_id,event_id,status,next_attempt_at,payload) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (endpoint_id,event_id) DO NOTHING', [delivery.id, delivery.tenantId, delivery.endpointId, delivery.eventId, delivery.status, delivery.nextAttemptAt, JSON.stringify(delivery)]);
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK'); throw error;
+    } finally { client.release(); }
   }
 
   override async createInvitation(invitation: Invitation): Promise<void> {

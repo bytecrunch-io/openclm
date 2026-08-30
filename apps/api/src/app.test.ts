@@ -11,7 +11,27 @@ async function testApp() {
   return createApp(repository);
 }
 
+class FailingLifecycleRepository extends MemoryRepository {
+  failLifecycleCommits = false;
+
+  override async commitAgreementEvent(...args: Parameters<MemoryRepository['commitAgreementEvent']>): Promise<void> {
+    if (this.failLifecycleCommits) throw new Error('Simulated lifecycle commit failure.');
+    await super.commitAgreementEvent(...args);
+  }
+}
+
 describe('contracts API vertical slice', () => {
+  it('does not persist a lifecycle transition when its event transaction fails', async () => {
+    const repository = new FailingLifecycleRepository(); await repository.init(); const app = createApp(repository);
+    const createdResponse = await app.request('/v1/agreements', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: 'Atomic NDA', templateKey: 'mutual-nda', participants: [], metadata: {}, parties: [{ role: 'counterparty', entity: {}, minimumSignatures: 1, participants: [{ email: 'atomic@example.com', role: 'signatory', required: true }] }] }) });
+    const created = await createdResponse.json() as { id: string };
+    repository.failLifecycleCommits = true;
+    const response = await app.request(`/v1/agreements/${created.id}/review`, { method: 'POST' });
+    expect(response.status).toBe(409);
+    expect(await repository.getAgreement('bytecrunch', created.id)).toMatchObject({ status: 'draft', reviewAssignedTo: null });
+    expect(await repository.listAgreementAuditEvents('bytecrunch', created.id)).toHaveLength(1);
+  });
+
   it('creates internal people for multiple participants without external IDs', async () => {
     const app = await testApp();
     const response = await app.request('/v1/agreements', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({

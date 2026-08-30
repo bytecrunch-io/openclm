@@ -89,8 +89,7 @@ export async function emitAgreementEvent(
     },
   };
   const payload = JSON.stringify(event);
-  await repository.appendAgreementAuditEvent(
-    AgreementAuditEventSchema.parse({
+  const auditEvent = AgreementAuditEventSchema.parse({
       id: eventId,
       tenantId: agreement.tenantId,
       agreementId: agreement.id,
@@ -100,14 +99,11 @@ export async function emitAgreementEvent(
       contentSha256: agreement.contentSha256,
       eventSha256: createHash("sha256").update(payload).digest("hex"),
       createdAt,
-    }),
-  );
+  });
   const endpoints = (await repository.listWebhooks(agreement.tenantId)).filter(
     (endpoint) => endpoint.events.includes(type),
   );
-  if (endpoints.length === 0) return;
-  await repository.createWebhookDeliveries(
-    endpoints.map((endpoint) =>
+  const deliveries = endpoints.map((endpoint) =>
       WebhookDeliverySchema.parse({
         id: `whd_${randomUUID()}`,
         tenantId: agreement.tenantId,
@@ -124,8 +120,8 @@ export async function emitAgreementEvent(
         createdAt,
         deliveredAt: null,
       }),
-    ),
-  );
+    );
+  await repository.commitAgreementEvent(agreement, auditEvent, deliveries);
 }
 
 export async function deliverWebhookOutbox(
