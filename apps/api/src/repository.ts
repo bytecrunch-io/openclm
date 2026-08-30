@@ -61,6 +61,7 @@ export interface Repository {
   readonly kind: 'memory' | 'postgres';
   init(): Promise<void>;
   healthCheck(): Promise<boolean>;
+  consumeRateLimit(key: string, limit: number, windowSeconds: number): Promise<{ allowed: boolean; remaining: number; resetAt: string }>;
   listTemplates(tenantId: string): Promise<Template[]>;
   createTemplate(tenantId: string, input: CreateTemplate): Promise<Template>;
   listAgreements(tenantId: string): Promise<Agreement[]>;
@@ -164,6 +165,7 @@ export class MemoryRepository implements Repository {
   protected recipientLoginChallenges: RecipientLoginChallenge[] = [];
   protected passkeyCredentials: PasskeyCredential[] = [];
   protected passkeyChallenges: PasskeyChallenge[] = [];
+  protected rateLimits = new Map<string, { count: number; resetAt: string }>();
 
   async init(): Promise<void> {
     if (!this.customerEntities.some((entity) => entity.id === 'bytecrunch')) {
@@ -178,6 +180,11 @@ export class MemoryRepository implements Repository {
   }
 
   async healthCheck(): Promise<boolean> { return true; }
+  async consumeRateLimit(key: string, limit: number, windowSeconds: number) {
+    const current = this.rateLimits.get(key); const timestamp = Date.now();
+    const entry = !current || new Date(current.resetAt).getTime() <= timestamp ? { count: 1, resetAt: new Date(timestamp + windowSeconds * 1000).toISOString() } : { ...current, count: current.count + 1 };
+    this.rateLimits.set(key, entry); return { allowed: entry.count <= limit, remaining: Math.max(0, limit - entry.count), resetAt: entry.resetAt };
+  }
 
   async listTemplates(tenantId: string): Promise<Template[]> {
     return this.templates.filter((template) => template.id.startsWith(`${tenantId}:`)).map((template) => structuredClone(template));
@@ -459,6 +466,8 @@ export class PostgresRepository extends MemoryRepository {
       CREATE TABLE IF NOT EXISTS passkey_credentials (id text PRIMARY KEY, account_id text NOT NULL, payload jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
       CREATE INDEX IF NOT EXISTS passkey_credentials_account_idx ON passkey_credentials (account_id);
       CREATE TABLE IF NOT EXISTS passkey_challenges (id text PRIMARY KEY, payload jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
+      CREATE TABLE IF NOT EXISTS rate_limits (key text PRIMARY KEY, count integer NOT NULL, reset_at timestamptz NOT NULL);
+      CREATE INDEX IF NOT EXISTS rate_limits_expiry_idx ON rate_limits (reset_at);
     `);
     const platformEntity = CustomerEntitySchema.parse({ id: 'bytecrunch', slug: 'bytecrunch', legalName: 'ByteCrunch ApS', businessAddress: null, registrationNumber: null, jurisdiction: 'DK', createdAt: now() });
     await this.pool.query('INSERT INTO customer_entities (id,slug,payload) VALUES ($1,$2,$3) ON CONFLICT (id) DO NOTHING', [platformEntity.id, platformEntity.slug, JSON.stringify(platformEntity)]);
@@ -495,6 +504,12 @@ export class PostgresRepository extends MemoryRepository {
 
   override async healthCheck(): Promise<boolean> {
     try { await this.pool.query('SELECT 1'); return true; } catch { return false; }
+  }
+
+  override async consumeRateLimit(key: string, limit: number, windowSeconds: number) {
+    const resetAt = new Date(Date.now() + windowSeconds * 1000).toISOString();
+    const result = await this.pool.query(`INSERT INTO rate_limits (key,count,reset_at) VALUES ($1,1,$2) ON CONFLICT (key) DO UPDATE SET count=CASE WHEN rate_limits.reset_at <= now() THEN 1 ELSE rate_limits.count + 1 END, reset_at=CASE WHEN rate_limits.reset_at <= now() THEN EXCLUDED.reset_at ELSE rate_limits.reset_at END RETURNING count, reset_at`, [key, resetAt]);
+    const count = Number(result.rows[0].count); return { allowed: count <= limit, remaining: Math.max(0, limit - count), resetAt: new Date(result.rows[0].reset_at).toISOString() };
   }
 
   override async listTemplates(tenantId: string): Promise<Template[]> {

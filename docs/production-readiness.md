@@ -14,6 +14,7 @@ Bytecrunch Contracts now has a production-oriented application boundary, but it 
 - Webhook deliveries use a persistent outbox, exponential retry, delivery IDs, response/error history, administrative inspection, and manual replay.
 - Production webhook registration and delivery require HTTPS and reject hostnames or resolved addresses that point at local/private networks. Production infrastructure should additionally restrict API egress at the network layer.
 - Webhook delivery refuses redirects, and browser state-changing requests with an `Origin` header must match the configured application origin.
+- Sensitive public authentication and token-exchange routes use a PostgreSQL-backed rate limiter shared by all API replicas. Forwarded client-address headers are ignored unless `TRUST_PROXY=true` is explicitly configured behind a sanitising proxy.
 - Integration condition evaluation is scoped by customer entity, integration, and opaque subject. Unlinked subjects return unmet conditions without exposing agreement data.
 - Staff signing is bound to the authenticated account's own creator-participant record; external subject identifiers cannot be used at the staff signing boundary.
 - Artifact bytes use a provider-neutral, content-addressed storage capability with integrity verification. Production rejects inline database storage; the filesystem/PVC adapter is available for deployment testing.
@@ -57,6 +58,8 @@ OIDC_CLIENT_SECRET=...
 OIDC_REDIRECT_URI=https://api.contracts.example.com/auth/callback
 SESSION_SECRET=<unique 32+ character secret>
 WEBHOOK_SIGNING_SECRET=<unique 32+ character secret>
+RATE_LIMIT_SECRET=<unique 32+ character secret>
+TRUST_PROXY=true
 SMTP_HOST=...
 SIGNING_MODE=disabled
 ARTIFACT_STORAGE_DRIVER=filesystem

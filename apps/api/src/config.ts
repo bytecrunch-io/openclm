@@ -44,6 +44,8 @@ const ConfigSchema = z
     SIGNING_MODE: z.enum(["development", "disabled"]).default("development"),
     ARTIFACT_STORAGE_DRIVER: z.enum(["database", "filesystem"]).default("database"),
     ARTIFACT_STORAGE_PATH: z.string().min(1).default("./var/artifacts"),
+    RATE_LIMIT_SECRET: z.string().min(32).default("local-rate-limit-secret-change-me"),
+    TRUST_PROXY: z.enum(["true", "false"]).default("false"),
     SMTP_HOST: z.string().optional(),
     SMTP_PORT: z.coerce.number().int().positive().default(1025),
     SMTP_FROM: z
@@ -90,6 +92,8 @@ const ConfigSchema = z
       "development", "SIGNING_MODE", "The development signature witness cannot run in production. Set signing to disabled until a certified provider is configured.");
     require(value.ARTIFACT_STORAGE_DRIVER !==
       "database", "ARTIFACT_STORAGE_DRIVER", "Production artifacts must use a storage adapter outside the application database.");
+    require(!value.RATE_LIMIT_SECRET.includes(
+      "local-") && !value.RATE_LIMIT_SECRET.includes("change-"), "RATE_LIMIT_SECRET", "Use a unique production rate-limit key secret.");
   });
 
 export function parseConfig(environment: NodeJS.ProcessEnv) {

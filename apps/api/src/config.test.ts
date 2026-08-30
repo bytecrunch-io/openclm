@@ -16,6 +16,7 @@ const productionEnvironment = {
   SIGNING_MODE: "disabled",
   ARTIFACT_STORAGE_DRIVER: "filesystem",
   ARTIFACT_STORAGE_PATH: "/var/lib/bytecrunch/artifacts",
+  RATE_LIMIT_SECRET: "unique-rate-limit-secret-1234567890abcdef",
 } satisfies NodeJS.ProcessEnv;
 
 describe("production configuration", () => {

@@ -25,6 +25,13 @@ class UnavailableRepository extends MemoryRepository {
 }
 
 describe('contracts API vertical slice', () => {
+  it('enforces a shared rate-limit counter', async () => {
+    const repository = new MemoryRepository(); await repository.init();
+    expect(await repository.consumeRateLimit('test-client', 2, 60)).toMatchObject({ allowed: true, remaining: 1 });
+    expect(await repository.consumeRateLimit('test-client', 2, 60)).toMatchObject({ allowed: true, remaining: 0 });
+    expect(await repository.consumeRateLimit('test-client', 2, 60)).toMatchObject({ allowed: false, remaining: 0 });
+  });
+
   it('reports failed storage connectivity through readiness', async () => {
     const repository = new UnavailableRepository(); await repository.init(); const response = await createApp(repository).request('/health/ready');
     expect(response.status).toBe(503); expect(await response.json()).toMatchObject({ status: 'not_ready', checks: { storageReachable: false, safeSigningConfiguration: false } });

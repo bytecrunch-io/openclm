@@ -67,6 +67,8 @@ services:
       SIGNING_MODE: development
       ARTIFACT_STORAGE_DRIVER: filesystem
       ARTIFACT_STORAGE_PATH: /var/lib/bytecrunch/artifacts
+      RATE_LIMIT_SECRET: local-compose-rate-limit-secret-change-in-production
+      TRUST_PROXY: "false"
       SMTP_HOST: mailpit
       SMTP_PORT: 1025
     ports:

@@ -53,6 +53,7 @@ import { registerEntityRoutes } from './routes/entities.js';
 import { clearRecipientSession, createRecipientLoginCode, currentRecipientSession, recipientSessionMiddleware, setRecipientSession, verifyRecipientLoginCode } from './recipient-auth.js';
 import { ensureCompletionManifest, ensureSigningSnapshot, publicArtifact, readArtifactContent } from './artifacts.js';
 import { artifactStorage } from './artifact-storage.js';
+import { rateLimit } from './rate-limit.js';
 import { signingProvider } from './signing.js';
 
 function isoNow(): string { return new Date().toISOString(); }
@@ -265,6 +266,12 @@ export function createApp(repository: Repository): Hono {
       return context.json({ error: 'spec_not_generated', message: 'Run npm run api:generate first.' }, 404);
     }
   });
+  app.use('/public/recipient-auth/request', rateLimit(repository, { namespace: 'recipient-auth-request', limit: 10, windowSeconds: 900 }));
+  app.use('/public/recipient-auth/verify', rateLimit(repository, { namespace: 'recipient-auth-verify', limit: 30, windowSeconds: 900 }));
+  app.use('/public/recipient-auth/passkey/verify', rateLimit(repository, { namespace: 'passkey-verify', limit: 30, windowSeconds: 900 }));
+  app.use('/public/invitations/exchange', rateLimit(repository, { namespace: 'invitation-exchange', limit: 60, windowSeconds: 900 }));
+  app.use('/public/access/exchange', rateLimit(repository, { namespace: 'access-exchange', limit: 60, windowSeconds: 900 }));
+  app.use('/public/integration-sessions/exchange', rateLimit(repository, { namespace: 'integration-exchange', limit: 60, windowSeconds: 900 }));
   registerAuthRoutes(app);
   app.get('/public/entity-member-invitations/preview', async (context) => {
     const token = context.req.query('token'); if (!token || token.length < 20) return context.json({ error: 'invalid_invitation', message: 'The membership invitation is invalid.' }, 400);
