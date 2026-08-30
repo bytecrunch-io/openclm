@@ -181,4 +181,4 @@ Production configuration now fails closed, lifecycle events are append-only, lif
 
 ## License
 
-No license has been selected. Choose the server and SDK licensing strategy before describing the project as generally available open source or accepting external contributions.
+Bytecrunch Contracts is licensed under the [GNU Affero General Public License v3.0](./LICENSE). If you run a modified version as a network service, the AGPL requires offering its corresponding source to users of that service. Commercial licensing can be offered separately by the copyright holder.

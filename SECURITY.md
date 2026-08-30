@@ -8,4 +8,4 @@ Browser mutations are restricted to the configured application origin. Productio
 
 Public sign-in and token exchanges use a database-backed limiter so replicas share counters. Only enable `TRUST_PROXY` when the edge proxy removes client-supplied forwarding headers and writes its own trusted client address.
 
-Before a hosted release, the project needs a dedicated security contact and disclosure SLA, secret rotation procedures, dependency and container scanning, normalized append-only signing evidence, retention controls, backup/restore testing, and an external security review. Track the concrete gates in [production readiness](./docs/production-readiness.md).
+CI runs dependency auditing, CodeQL, filesystem secret/misconfiguration scanning, and API/web container scanning. Before a hosted release, the project still needs a dedicated private security contact and disclosure SLA, secret rotation procedures, normalized append-only signing evidence, retention controls, backup/restore testing, and an external security review. Track the concrete gates in [production readiness](./docs/production-readiness.md).
