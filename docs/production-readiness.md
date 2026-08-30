@@ -16,6 +16,7 @@ Bytecrunch Contracts now has a production-oriented application boundary, but it 
 - Webhook delivery refuses redirects, and browser state-changing requests with an `Origin` header must match the configured application origin.
 - Integration condition evaluation is scoped by customer entity, integration, and opaque subject. Unlinked subjects return unmet conditions without exposing agreement data.
 - Staff signing is bound to the authenticated account's own creator-participant record; external subject identifiers cannot be used at the staff signing boundary.
+- Artifact bytes use a provider-neutral, content-addressed storage capability with integrity verification. Production rejects inline database storage; the filesystem/PVC adapter is available for deployment testing.
 
 ## Release gates still open
 
@@ -29,7 +30,7 @@ The European Commission distinguishes simple, advanced, and qualified electronic
 
 - Move the provider-attributed signature evidence currently retained in agreement snapshots/manifests into normalized immutable relational records, including callback evidence and artifact references.
 - Make initial agreement creation, invitation issuance, notification enqueue, and signing-artifact creation participate in explicit workflow transactions. Lifecycle aggregate updates, audit appends, and webhook enqueue are already atomic, but these adjacent records currently use separate transactions and require idempotent recovery.
-- Add immutable object storage with retention locks for source, final, executed, and certificate artifacts.
+- Select and implement the deployment's durable storage adapter and infrastructure retention policy. The application boundary is provider-neutral; filesystem/PVC is built in, while GCS, OCI, S3-compatible object lock, or Arweave require provider-specific adapters and recovery tests.
 - Define retention, deletion, legal-hold, export, and data-residency policies.
 
 ### Operations and security
@@ -58,6 +59,8 @@ SESSION_SECRET=<unique 32+ character secret>
 WEBHOOK_SIGNING_SECRET=<unique 32+ character secret>
 SMTP_HOST=...
 SIGNING_MODE=disabled
+ARTIFACT_STORAGE_DRIVER=filesystem
+ARTIFACT_STORAGE_PATH=/var/lib/bytecrunch/artifacts
 ```
 
 `SIGNING_MODE=disabled` is the only safe production setting currently available. Introducing another value must require a real provider implementation and provider-specific readiness checks, not merely a configuration change.

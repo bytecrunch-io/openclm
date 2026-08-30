@@ -43,7 +43,7 @@ It is designed to work as a standalone product first. Each customer legal entity
 - Local PostgreSQL, Keycloak, Mailpit, API, and web application through Docker Compose
 - System, light, and dark Bytecrunch themes
 
-More detail is available in [architecture](./docs/architecture.md), [identity and access](./docs/identity-and-access.md), the [design system](./docs/design-system.md), the [UX audit](./docs/ux-audit.md), and the [production-readiness checklist](./docs/production-readiness.md).
+More detail is available in [architecture](./docs/architecture.md), [identity and access](./docs/identity-and-access.md), [artifact storage](./docs/artifact-storage.md), the [design system](./docs/design-system.md), the [UX audit](./docs/ux-audit.md), and the [production-readiness checklist](./docs/production-readiness.md).
 
 ## Architecture
 

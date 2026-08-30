@@ -14,6 +14,8 @@ const productionEnvironment = {
   WEBHOOK_SIGNING_SECRET: "unique-webhook-secret-1234567890abcdef",
   SMTP_HOST: "smtp.example.com",
   SIGNING_MODE: "disabled",
+  ARTIFACT_STORAGE_DRIVER: "filesystem",
+  ARTIFACT_STORAGE_PATH: "/var/lib/bytecrunch/artifacts",
 } satisfies NodeJS.ProcessEnv;
 
 describe("production configuration", () => {
@@ -34,5 +36,9 @@ describe("production configuration", () => {
   it("rejects production without persistent storage", () => {
     const { DATABASE_URL: _, ...environment } = productionEnvironment;
     expect(() => parseConfig(environment)).toThrow(/PostgreSQL storage/i);
+  });
+
+  it("rejects production artifacts stored inline in the database", () => {
+    expect(() => parseConfig({ ...productionEnvironment, ARTIFACT_STORAGE_DRIVER: "database" })).toThrow(/outside the application database/i);
   });
 });

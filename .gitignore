@@ -6,5 +6,6 @@ dist/
 .env.local
 coverage/
 *.log
+var/
 .DS_Store
 packages/api-spec/generated/@typespec/

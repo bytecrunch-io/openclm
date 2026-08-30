@@ -5,9 +5,9 @@ import {
   type AgreementArtifact,
 } from "@bytecrunch/contracts-domain";
 import type { Repository } from "./repository.js";
+import { artifactStorage } from "./artifact-storage.js";
 
 const now = () => new Date().toISOString();
-const encode = (value: string) => Buffer.from(value, "utf8").toString("base64");
 const sha256 = (value: string) =>
   createHash("sha256").update(value).digest("hex");
 const safeName = (value: string) =>
@@ -25,6 +25,9 @@ async function storeJsonArtifact(
   body: unknown,
 ): Promise<AgreementArtifact> {
   const content = `${JSON.stringify(body, null, 2)}\n`;
+  const artifactSha256 = sha256(content);
+  const key = `${agreement.tenantId}/${agreement.id}/${kind}/${artifactSha256}-${fileName.replace(/[^a-zA-Z0-9._-]/g, '-')}`;
+  const stored = await artifactStorage().put(key, new TextEncoder().encode(content), artifactSha256);
   const artifact = AgreementArtifactSchema.parse({
     id: `artifact_${randomUUID()}`,
     tenantId: agreement.tenantId,
@@ -32,10 +35,13 @@ async function storeJsonArtifact(
     kind,
     revision: agreement.revision,
     contentSha256: agreement.contentSha256,
-    artifactSha256: sha256(content),
+    artifactSha256,
     mediaType: "application/json",
     fileName,
-    contentBase64: encode(content),
+    storageDriver: artifactStorage().driver,
+    ...stored,
+    retentionUntil: null,
+    legalHold: false,
     createdAt: now(),
   });
   await repository.createAgreementArtifact(artifact);
@@ -142,7 +148,11 @@ export async function ensureCompletionManifest(
 
 export function publicArtifact(
   artifact: AgreementArtifact,
-): Omit<AgreementArtifact, "contentBase64"> {
-  const { contentBase64: _, ...metadata } = artifact;
+): Omit<AgreementArtifact, "contentBase64" | "storageKey"> {
+  const { contentBase64: _, storageKey: __, ...metadata } = artifact;
   return metadata;
+}
+
+export async function readArtifactContent(artifact: AgreementArtifact): Promise<Uint8Array> {
+  return artifactStorage().get({ storageKey: artifact.storageKey, contentBase64: artifact.contentBase64, expectedSha256: artifact.artifactSha256 });
 }

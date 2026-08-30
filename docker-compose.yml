@@ -65,10 +65,14 @@ services:
       SESSION_SECRET: local-compose-session-secret-change-in-production
       WEBHOOK_SIGNING_SECRET: local-webhook-secret
       SIGNING_MODE: development
+      ARTIFACT_STORAGE_DRIVER: filesystem
+      ARTIFACT_STORAGE_PATH: /var/lib/bytecrunch/artifacts
       SMTP_HOST: mailpit
       SMTP_PORT: 1025
     ports:
       - "3001:3001"
+    volumes:
+      - artifact-data:/var/lib/bytecrunch/artifacts
     depends_on:
       postgres:
         condition: service_healthy
@@ -88,3 +92,4 @@ services:
 
 volumes:
   postgres-data:
+  artifact-data:

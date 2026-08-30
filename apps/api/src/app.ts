@@ -51,7 +51,8 @@ import { notifyParticipants } from './notifications.js';
 import { registerPlatformRoutes } from './routes/platform.js';
 import { registerEntityRoutes } from './routes/entities.js';
 import { clearRecipientSession, createRecipientLoginCode, currentRecipientSession, recipientSessionMiddleware, setRecipientSession, verifyRecipientLoginCode } from './recipient-auth.js';
-import { ensureCompletionManifest, ensureSigningSnapshot, publicArtifact } from './artifacts.js';
+import { ensureCompletionManifest, ensureSigningSnapshot, publicArtifact, readArtifactContent } from './artifacts.js';
+import { artifactStorage } from './artifact-storage.js';
 import { signingProvider } from './signing.js';
 
 function isoNow(): string { return new Date().toISOString(); }
@@ -252,7 +253,7 @@ export function createApp(repository: Repository): Hono {
 
   app.get('/health', (context) => context.json({ status: 'ok', version: '0.1.0', storage: repository.kind }));
   app.get('/health/ready', async (context) => {
-    const checks = { persistentStorage: repository.kind === 'postgres', storageReachable: await repository.healthCheck(), oidc: config.AUTH_MODE === 'oidc', safeSigningConfiguration: config.SIGNING_MODE !== 'development' };
+    const checks = { persistentStorage: repository.kind === 'postgres', storageReachable: await repository.healthCheck(), artifactStorage: await artifactStorage().healthCheck(), externalArtifactStorage: artifactStorage().driver !== 'database', oidc: config.AUTH_MODE === 'oidc', safeSigningConfiguration: config.SIGNING_MODE !== 'development' };
     const ready = Object.values(checks).every(Boolean);
     return context.json({ status: ready ? 'ready' : 'not_ready', checks }, ready ? 200 : 503);
   });
@@ -434,7 +435,7 @@ export function createApp(repository: Repository): Hono {
   app.get('/public/session/artifacts/:artifactId/content', externalSessionMiddleware(), async (context) => {
     const session = currentExternalSession(context); await requiredAgreement(repository, session.tenantId, session.agreementId); const artifact = await repository.getAgreementArtifact(session.tenantId, session.agreementId, context.req.param('artifactId'));
     if (!artifact) return context.json({ error: 'not_found', message: 'Agreement artifact not found.' }, 404);
-    return context.body(new Uint8Array(Buffer.from(artifact.contentBase64, 'base64')), 200, { 'content-type': artifact.mediaType, 'content-disposition': `attachment; filename="${artifact.fileName}"`, 'x-content-sha256': artifact.artifactSha256 });
+    return context.body(Uint8Array.from(await readArtifactContent(artifact)), 200, { 'content-type': artifact.mediaType, 'content-disposition': `attachment; filename="${artifact.fileName}"`, 'x-content-sha256': artifact.artifactSha256 });
   });
 
   app.post('/public/session/onboarding', externalSessionMiddleware(), async (context) => {
@@ -626,7 +627,7 @@ export function createApp(repository: Repository): Hono {
   app.get('/v1/agreements/:agreementId/artifacts/:artifactId/content', async (context) => {
     const user = currentUser(context); await requiredAgreement(repository, user.tenantId, context.req.param('agreementId')); const artifact = await repository.getAgreementArtifact(user.tenantId, context.req.param('agreementId'), context.req.param('artifactId'));
     if (!artifact) return context.json({ error: 'not_found', message: 'Agreement artifact not found.' }, 404);
-    return context.body(new Uint8Array(Buffer.from(artifact.contentBase64, 'base64')), 200, { 'content-type': artifact.mediaType, 'content-disposition': `attachment; filename="${artifact.fileName}"`, 'x-content-sha256': artifact.artifactSha256 });
+    return context.body(Uint8Array.from(await readArtifactContent(artifact)), 200, { 'content-type': artifact.mediaType, 'content-disposition': `attachment; filename="${artifact.fileName}"`, 'x-content-sha256': artifact.artifactSha256 });
   });
 
   app.post('/v1/agreements/:agreementId/review', async (context) => {

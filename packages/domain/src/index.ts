@@ -419,7 +419,9 @@ export const AgreementArtifactSchema = z.object({
   id: z.string().min(1), tenantId: z.string().min(1), agreementId: z.string().min(1),
   kind: z.enum(['signing_snapshot', 'completion_manifest']), revision: z.number().int().positive(),
   contentSha256: z.string().length(64), artifactSha256: z.string().length(64), mediaType: z.string().min(1).max(120),
-  fileName: z.string().min(1).max(255), contentBase64: z.string().min(1), createdAt: z.string().datetime(),
+  fileName: z.string().min(1).max(255), storageDriver: z.enum(['database', 'filesystem']).default('database'),
+  storageKey: z.string().min(1).nullable().default(null), contentBase64: z.string().min(1).nullable().default(null),
+  retentionUntil: z.string().datetime().nullable().default(null), legalHold: z.boolean().default(false), createdAt: z.string().datetime(),
 });
 export type AgreementArtifact = z.infer<typeof AgreementArtifactSchema>;
 

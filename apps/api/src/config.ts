@@ -42,6 +42,8 @@ const ConfigSchema = z
       .default("local-only-session-secret-change-me"),
     WEBHOOK_SIGNING_SECRET: z.string().min(8).default("local-webhook-secret"),
     SIGNING_MODE: z.enum(["development", "disabled"]).default("development"),
+    ARTIFACT_STORAGE_DRIVER: z.enum(["database", "filesystem"]).default("database"),
+    ARTIFACT_STORAGE_PATH: z.string().min(1).default("./var/artifacts"),
     SMTP_HOST: z.string().optional(),
     SMTP_PORT: z.coerce.number().int().positive().default(1025),
     SMTP_FROM: z
@@ -86,6 +88,8 @@ const ConfigSchema = z
       "local-development-secret", "OIDC_CLIENT_SECRET", "Use the deployed OIDC client secret.");
     require(value.SIGNING_MODE !==
       "development", "SIGNING_MODE", "The development signature witness cannot run in production. Set signing to disabled until a certified provider is configured.");
+    require(value.ARTIFACT_STORAGE_DRIVER !==
+      "database", "ARTIFACT_STORAGE_DRIVER", "Production artifacts must use a storage adapter outside the application database.");
   });
 
 export function parseConfig(environment: NodeJS.ProcessEnv) {
