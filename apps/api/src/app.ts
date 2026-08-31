@@ -31,6 +31,7 @@ import {
   UpdateReviewDraftSchema,
   SignAgreementSchema,
   SendReviewSchema,
+  requiredEntityFieldsForTemplate,
   assertReadyForSignature,
   canTransition,
   isExecutionComplete,
@@ -472,6 +473,11 @@ export function createApp(repository: Repository): Hono {
     const input = OnboardParticipantSchema.parse(await context.req.json());
     const session = currentExternalSession(context);
     const agreement = await requiredAgreement(repository, session.tenantId, session.agreementId);
+    const template = (await repository.listTemplates(session.tenantId)).find((item) => item.key === agreement.templateKey && item.version === agreement.templateVersion);
+    const requiredEntityFields = requiredEntityFieldsForTemplate(template?.content ?? agreement.content, 'counterparty');
+    if (requiredEntityFields.includes('businessAddress') && !input.entity.businessAddress?.trim()) {
+      throw new Error('Business address is required because this agreement template uses the counterparty business address.');
+    }
     const participant = agreement.participants.find((item) => item.id === session.participantId);
     if (!participant) throw new Error('Participant not found.');
     participant.name = input.name; participant.title = input.title; participant.capacity = input.capacity;
@@ -924,7 +930,9 @@ async function externalView(repository: Repository, session: { tenantId: string;
   const participant = agreement.participants.find((item) => item.id === session.participantId);
   if (!participant) throw new Error('Participant not found.');
   const party = agreement.parties.find((item) => item.id === participant.partyId) ?? null;
-  return { agreement: agreementForReviewSide(agreement, 'counterparty'), participant, party };
+  const template = (await repository.listTemplates(session.tenantId)).find((item) => item.key === agreement.templateKey && item.version === agreement.templateVersion);
+  const requiredEntityFields = requiredEntityFieldsForTemplate(template?.content ?? agreement.content, party?.role ?? 'counterparty');
+  return { agreement: agreementForReviewSide(agreement, 'counterparty'), participant, party, requiredEntityFields };
 }
 
 function agreementForReviewSide(agreement: Agreement, viewerSide: 'sender' | 'counterparty'): Agreement {

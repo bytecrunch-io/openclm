@@ -2994,6 +2994,7 @@ components:
         - agreement
         - participant
         - party
+        - requiredEntityFields
       properties:
         agreement:
           $ref: '#/components/schemas/Agreement'
@@ -3003,6 +3004,12 @@ components:
           anyOf:
             - $ref: '#/components/schemas/AgreementParty'
             - type: 'null'
+        requiredEntityFields:
+          type: array
+          items:
+            type: string
+            enum:
+              - businessAddress
     HealthResponse:
       type: object
       required:

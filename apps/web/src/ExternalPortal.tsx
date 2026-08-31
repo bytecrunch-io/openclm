@@ -207,6 +207,7 @@ function Onboarding({
   const [jurisdiction, setJurisdiction] = useState(
     view.party?.entity.jurisdiction ?? "",
   );
+  const businessAddressRequired = view.requiredEntityFields.includes("businessAddress");
   function submit(event: FormEvent) {
     event.preventDefault();
     onSubmit({
@@ -276,11 +277,13 @@ function Onboarding({
         <label>
           Business address
           <textarea
+            required={businessAddressRequired}
             value={businessAddress}
             onChange={(e) => setBusinessAddress(e.target.value)}
-            placeholder="Street, city, postal code, country (optional)"
+            placeholder={businessAddressRequired ? "Street, city, postal code, country" : "Street, city, postal code, country (optional)"}
             rows={3}
           />
+          {businessAddressRequired && <small>Required because the agreement includes your entity’s business address.</small>}
         </label>
         <div className="form-split">
           <label>

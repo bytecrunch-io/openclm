@@ -28,6 +28,31 @@ class UnavailableRepository extends MemoryRepository {
 }
 
 describe('contracts API vertical slice', () => {
+  it('requires a counterparty address during onboarding when the template uses it', async () => {
+    const repository = new MemoryRepository(); await repository.init();
+    await repository.createTemplate('bytecrunch', { key: 'address-required', name: 'Address-required NDA', description: '', content: 'This agreement is between {{sender.legal_name}} and {{counterparty.legal_name}}, with offices at {{counterparty.business_address}}.\n\n{{signature_blocks}}' });
+    const app = createApp(repository);
+    const createdResponse = await app.request('/v1/agreements', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({
+      title: 'Address-required NDA', templateKey: 'address-required', participants: [], metadata: {},
+      parties: [{ role: 'counterparty', entity: {}, minimumSignatures: 1, participants: [{ email: 'address@example.com', role: 'signatory', required: true }] }],
+    }) });
+    const created = await createdResponse.json() as { id: string; participants: Array<{ id: string }> };
+    const invitationResponse = await app.request(`/v1/agreements/${created.id}/participants/${created.participants[0]!.id}/invite`, { method: 'POST' });
+    const invitation = await invitationResponse.json() as { invitationUrl: string };
+    const token = new URL(invitation.invitationUrl).searchParams.get('token')!;
+    const exchange = await app.request('/public/invitations/exchange', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token }) });
+    const headers = { 'content-type': 'application/json', cookie: exchange.headers.get('set-cookie')!.split(';')[0]! };
+    const details = { name: 'Address Tester', title: 'Director', capacity: 'director', authorityConfirmed: true, entity: { legalName: 'Address Ltd' } };
+
+    const missing = await app.request('/public/session/onboarding', { method: 'POST', headers, body: JSON.stringify(details) });
+    expect(missing.status).toBe(409);
+    expect(await missing.json()).toMatchObject({ message: expect.stringMatching(/business address is required/i) });
+
+    const completed = await app.request('/public/session/onboarding', { method: 'POST', headers, body: JSON.stringify({ ...details, entity: { ...details.entity, businessAddress: '42 Required Street, Copenhagen' } }) });
+    expect(completed.status).toBe(200);
+    expect(await completed.json()).toMatchObject({ agreement: { content: expect.stringContaining('42 Required Street, Copenhagen') }, requiredEntityFields: ['businessAddress'] });
+  });
+
   it('returns one canonical artifact across concurrent idempotent finalization writes', async () => {
     const repository = new MemoryRepository(); const createdAt = new Date().toISOString();
     const base = { tenantId: 'bytecrunch', agreementId: 'agr_artifact_race', kind: 'executed_pdf' as const, revision: 1, contentSha256: 'a'.repeat(64), artifactSha256: 'b'.repeat(64), mediaType: 'application/pdf', fileName: 'executed.pdf', storageDriver: 'database' as const, storageKey: null, contentBase64: 'eA==', retentionUntil: null, legalHold: false, createdAt };

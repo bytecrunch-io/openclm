@@ -457,6 +457,7 @@ model ExternalView {
   agreement: Agreement;
   participant: Participant;
   party: AgreementParty | null;
+  requiredEntityFields: "businessAddress"[];
 }
 
 @route("/health")

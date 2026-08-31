@@ -38,12 +38,13 @@ import {
   Webhook,
   X,
 } from "lucide-react";
-import type {
-  Agreement,
-  CreateAgreement,
-  CreateTemplate,
-  Notification,
-  Template,
+import {
+  requiredEntityFieldsForTemplate,
+  type Agreement,
+  type CreateAgreement,
+  type CreateTemplate,
+  type Notification,
+  type Template,
 } from "@bytecrunch/contracts-domain";
 import logo from "./assets/logo.svg";
 import {
@@ -2557,6 +2558,8 @@ function CreateAgreementModal({
     { id: crypto.randomUUID(), name: "", email: "", role: "signatory" },
   ]);
   const [minimumSignatures, setMinimumSignatures] = useState(1);
+  const selectedTemplate = templates.find((template) => template.key === templateKey);
+  const counterpartyAddressRequired = requiredEntityFieldsForTemplate(selectedTemplate?.content ?? "", "counterparty").includes("businessAddress");
   const updateInvitee = (id: string, patch: Partial<Invitee>) =>
     setInvitees((items) =>
       items.map((item) => (item.id === id ? { ...item, ...patch } : item)),
@@ -2678,9 +2681,10 @@ function CreateAgreementModal({
           <textarea
             value={businessAddress}
             onChange={(event) => setBusinessAddress(event.target.value)}
-            placeholder="Street, city, postal code, country (optional)"
+            placeholder={counterpartyAddressRequired ? "Prefill now or let the recipient provide it" : "Street, city, postal code, country (optional)"}
             rows={3}
           />
+          {counterpartyAddressRequired && <small>This template includes the counterparty address. You may prefill it now; otherwise the recipient must provide it during onboarding.</small>}
         </label>
         <div className="form-split">
           <label>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AgreementSchema, assertReadyForSignature, canTransition, isExecutionComplete, permissionsForEntityRoles } from './index.js';
+import { AgreementSchema, assertReadyForSignature, canTransition, isExecutionComplete, permissionsForEntityRoles, requiredEntityFieldsForTemplate } from './index.js';
 
 const agreement = AgreementSchema.parse({
   id: 'agr_test', tenantId: 'org_test', externalId: null, title: 'NDA',
@@ -29,5 +29,17 @@ describe('agreement lifecycle', () => {
   it('derives stable permissions from entity role bundles', () => {
     expect(permissionsForEntityRoles(['viewer', 'template_manager'])).toEqual(['templates.read', 'agreements.read', 'templates.write']);
     expect(permissionsForEntityRoles(['administrator'])).toContain('members.manage');
+  });
+
+  it('derives entity requirements from party-specific template placeholders', () => {
+    const content = '{{sender.legal_name}}, at {{sender.business_address}}, agrees with {{counterparty.legal_name}}.';
+    expect(requiredEntityFieldsForTemplate(content, 'sender')).toEqual(['businessAddress']);
+    expect(requiredEntityFieldsForTemplate(content, 'counterparty')).toEqual([]);
+  });
+
+  it('does not allow signing while a required address placeholder is unresolved', () => {
+    agreement.content = 'Offices at {{counterparty.business_address}}';
+    expect(() => assertReadyForSignature(agreement)).toThrow(/required business address/i);
+    agreement.content = 'Terms';
   });
 });

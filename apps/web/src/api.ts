@@ -18,6 +18,7 @@ import {
   AccountSchema,
   EntityRoleSchema,
   RecipientInboxItemSchema,
+  RequiredEntityFieldSchema,
   type Agreement,
   type CreateAgreement,
   type CreateTemplate,
@@ -38,6 +39,7 @@ const ExternalViewSchema = z.object({
   agreement: AgreementSchema,
   participant: ParticipantSchema,
   party: AgreementPartySchema.nullable(),
+  requiredEntityFields: z.array(RequiredEntityFieldSchema),
 });
 const EntityMemberListSchema = z.object({
   members: z.array(

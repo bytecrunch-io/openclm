@@ -231,6 +231,13 @@ export const TemplateSchema = z.object({
 });
 export type Template = z.infer<typeof TemplateSchema>;
 
+export const RequiredEntityFieldSchema = z.enum(['businessAddress']);
+export type RequiredEntityField = z.infer<typeof RequiredEntityFieldSchema>;
+
+export function requiredEntityFieldsForTemplate(content: string, partyRole: 'sender' | 'counterparty'): RequiredEntityField[] {
+  return content.includes(`{{${partyRole}.business_address}}`) ? ['businessAddress'] : [];
+}
+
 export const ParticipantSchema = z.object({
   id: z.string().min(1),
   personId: z.string().min(1).nullable().default(null),
@@ -566,6 +573,8 @@ export function assertReadyForSignature(agreement: Agreement, completingReviewSi
     throw new Error('All suggestions must be resolved before signing can begin.');
   }
   if (agreement.documentComments.some((comment) => comment.status === 'open')) throw new Error('All document-level feedback must be resolved before signing can begin.');
+  const unresolvedAddress = ['{{sender.business_address}}', '{{counterparty.business_address}}'].find((placeholder) => agreement.content.includes(placeholder));
+  if (unresolvedAddress) throw new Error(`A required business address is still missing (${unresolvedAddress}). Complete the associated entity details before signing.`);
   if (agreement.createdByParticipantId && agreement.status === 'in_review' && agreement.reviewAssignedTo !== completingReviewSide) throw new Error('The active reviewer must complete their review before signing can begin.');
   if (!agreement.participants.some((participant) => participant.role === 'signatory')) {
     throw new Error('At least one signatory is required.');
