@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PDFDocument } from 'pdf-lib';
-import { AgreementSchema } from '@bytecrunch/contracts-domain';
+import { AgreementSchema, DOCUMENT_PRESENTATION } from '@bytecrunch/contracts-domain';
 import { renderAgreementPdf } from './pdf.js';
 
 const timestamp = '2026-08-30T12:00:00.000Z';
@@ -21,7 +21,10 @@ describe('agreement PDF renderer', () => {
     const first = await renderAgreementPdf(agreement(), true); const second = await renderAgreementPdf(agreement(), true);
     expect(Buffer.from(first).equals(Buffer.from(second))).toBe(true);
     expect(new TextDecoder().decode(first.slice(0, 4))).toBe('%PDF');
-    expect((await PDFDocument.load(first)).getPageCount()).toBeGreaterThan(2);
+    const rendered = await PDFDocument.load(first);
+    expect(rendered.getPageCount()).toBeGreaterThan(2);
+    expect(rendered.getPage(0).getWidth()).toBeCloseTo(DOCUMENT_PRESENTATION.paperWidthPx * 0.75, 2);
+    expect(rendered.getPage(0).getHeight()).toBeCloseTo(841.89, 2);
   });
 
   it('fails explicitly instead of silently corrupting unsupported glyphs', async () => {

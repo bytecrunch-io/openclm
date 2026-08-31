@@ -1,5 +1,27 @@
 import { z } from 'zod';
 
+// One presentation contract drives both the browser document and the frozen PDF.
+// Geometry is expressed in CSS pixels; PDF renderers convert at 96 px = 72 pt.
+export const DOCUMENT_PRESENTATION = Object.freeze({
+  paperBackground: '#f8f6f1',
+  text: '#242424',
+  muted: '#777777',
+  signatureInk: '#111111',
+  signedRule: '#2d805f',
+  paperWidthPx: 794,
+  paddingPx: 72,
+  bodyFontSizePx: 16,
+  lineHeight: 1.75,
+  signatureGapPx: 42,
+  signatureBlockHeightPx: 320,
+});
+
+export function formatDocumentDate(value: string): string {
+  return new Intl.DateTimeFormat('en-GB', {
+    day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC',
+  }).format(new Date(value));
+}
+
 export const AgreementStatusSchema = z.enum([
   'draft',
   'in_review',
