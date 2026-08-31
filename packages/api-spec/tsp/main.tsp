@@ -391,7 +391,15 @@ model ExchangeResult { accepted: true; }
 model RecoveryRequired { accepted: false; verificationRequired: true; message: string; }
 enum EntityRole { administrator, template_manager, contract_manager, signatory, viewer }
 enum EntityPermission { entity_manage: "entity.manage", members_manage: "members.manage", templates_read: "templates.read", templates_write: "templates.write", agreements_read: "agreements.read", agreements_write: "agreements.write", agreements_sign: "agreements.sign" }
-model EntityBranding { displayName: string | null; primaryColor: string; secondaryColor: string; logoDataUrl: string | null; markDataUrl: string | null; }
+model EntityBranding {
+  displayName: string | null;
+  primaryColor: string;
+  secondaryColor: string;
+  @doc("Compact square company symbol used when space is constrained.")
+  logoDataUrl: string | null;
+  @doc("Complete horizontal company lockup containing its symbol and name.")
+  markDataUrl: string | null;
+}
 model CustomerEntity { id: string; slug: string; legalName: string; businessAddress: string | null; registrationNumber: string | null; jurisdiction: string | null; branding: EntityBranding; createdAt: utcDateTime; }
 model CreateCustomerEntity { slug: string; legalName: string; businessAddress?: string; registrationNumber?: string; jurisdiction?: string; }
 enum PluginKey { google_drive: "google-drive", enterprise_oidc: "enterprise-oidc" }

@@ -79,10 +79,12 @@ import {
   SignatureCeremony,
 } from "./SigningExperience";
 import {
+  BrandIdentity,
   BusyMark,
   Dialog,
   IconButton,
   InlineAlert,
+  PlatformCredit,
   ThemeToggle,
 } from "./components";
 
@@ -268,9 +270,7 @@ function AdminApp() {
             setSelected(undefined);
           }}
         >
-          <img src={activeMembership?.entity.branding.markDataUrl ?? logo} alt="" />
-          <span>{activeMembership?.entity.branding.displayName ?? "BYTECRUNCH"}</span>
-          <b>CONTRACTS</b>
+          <BrandIdentity branding={activeMembership?.entity.branding} />
         </button>
         <nav className="side-nav" aria-label="Primary navigation">
           <NavButton
@@ -507,6 +507,7 @@ function AdminApp() {
           />
         )}
       </main>
+      <PlatformCredit />
       {creating && (
         <CreateAgreementModal
           templates={latestTemplates(templates)}
@@ -1206,8 +1207,8 @@ function CustomerEntityOnboarding({
         <span className="bc-eyebrow bc-text-blue">// COMPANY BRAND</span><h2>Make the workspace yours</h2>
         <label>Display name<input required value={branding.displayName ?? ''} onChange={(event) => setBranding((current) => ({ ...current, displayName: event.target.value }))} /></label>
         <div className="form-split"><label>Primary colour<input type="color" value={branding.primaryColor} onChange={(event) => setBranding((current) => ({ ...current, primaryColor: event.target.value }))} /></label><label>Secondary colour<input type="color" value={branding.secondaryColor} onChange={(event) => setBranding((current) => ({ ...current, secondaryColor: event.target.value }))} /></label></div>
-        <div className="form-split"><label>Logo<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) readBrandImage(file, 'logoDataUrl'); }} /><small>Horizontal logo, up to 300 KB.</small></label><label>Logomark<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) readBrandImage(file, 'markDataUrl'); }} /><small>Square mark, up to 300 KB.</small></label></div>
-        <div className="onboarding-brand-preview" style={{ borderColor: branding.primaryColor }}>{branding.markDataUrl ? <img src={branding.markDataUrl} alt="" /> : <img src={logo} alt="" />}<strong>{branding.displayName}</strong></div>
+        <div className="form-split"><label>Logo<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) readBrandImage(file, 'logoDataUrl'); }} /><small>Square company symbol, up to 300 KB.</small></label><label>Logomark<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) readBrandImage(file, 'markDataUrl'); }} /><small>Horizontal logo with company name, up to 300 KB.</small></label></div>
+        <div className="onboarding-brand-preview" style={{ borderColor: branding.primaryColor }}><BrandIdentity branding={branding} /></div>
         {error && <div className="inline-error">{error}</div>}<footer><button type="button" className="button button-secondary" onClick={() => setStep(3)}>Skip for now</button><button disabled={busy} className="button button-accent">{busy ? <><BusyMark /> Saving…</> : <>Continue <ArrowRight /></>}</button></footer>
       </form>}
       {step === 3 && entity && <div className="entity-onboarding-form onboarding-integrations"><PluginManager entity={entity} canManage onError={setError} onboarding onContinue={() => onCreated(entity.id)} />{error && <div className="inline-error">{error}</div>}<button className="text-button" onClick={() => onCreated(entity.id)}>Skip integrations for now</button></div>}
@@ -3432,8 +3433,8 @@ function IntegrationSettings({ entity, canManage, onSaved, onError }: { entity: 
       </div>
       <form className="branding-settings" onSubmit={(event) => void save(event)}>
         <div className="branding-preview" style={{ '--preview-primary': branding.primaryColor, '--preview-secondary': branding.secondaryColor } as CSSProperties}>
-          <div className="branding-preview-mark"><img src={branding.markDataUrl ?? logo} alt="Brand mark preview" /></div>
-          {branding.logoDataUrl ? <img className="branding-preview-logo" src={branding.logoDataUrl} alt="Full logo preview" /> : <strong>{branding.displayName ?? entity.legalName}</strong>}
+          <div className="branding-preview-logo"><img src={branding.logoDataUrl ?? logo} alt="Square logo preview" /></div>
+          {branding.markDataUrl ? <img className="branding-preview-lockup" src={branding.markDataUrl} alt={`${branding.displayName ?? entity.legalName} logomark preview`} /> : <strong>{branding.displayName ?? entity.legalName}</strong>}
           <span>CONTRACTS</span>
         </div>
         <div className="branding-fields">
@@ -3446,8 +3447,8 @@ function IntegrationSettings({ entity, canManage, onSaved, onError }: { entity: 
             <label>Secondary colour<input disabled={!canManage} type="color" value={branding.secondaryColor} onChange={(event) => setBranding((value) => ({ ...value, secondaryColor: event.target.value }))} /></label>
           </div>
           <div className="form-split">
-            <label>Logo<input disabled={!canManage} type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) readImage(file, 'logoDataUrl'); }} /><small>Horizontal logo, up to 300 KB.</small></label>
-            <label>Logomark<input disabled={!canManage} type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) readImage(file, 'markDataUrl'); }} /><small>Square mark, up to 300 KB.</small></label>
+            <label>Logo<input disabled={!canManage} type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) readImage(file, 'logoDataUrl'); }} /><small>Square company symbol, up to 300 KB.</small></label>
+            <label>Logomark<input disabled={!canManage} type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) readImage(file, 'markDataUrl'); }} /><small>Horizontal logo with company name, up to 300 KB.</small></label>
           </div>
           {canManage && <button className="button button-accent" disabled={busy}>{busy ? <><BusyMark /> Saving…</> : <><Save /> Save branding</>}</button>}
         </div>

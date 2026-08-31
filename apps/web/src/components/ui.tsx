@@ -1,6 +1,8 @@
 import { Monitor, Moon, Sun, X } from 'lucide-react';
 import { useEffect, useId, useRef, type ButtonHTMLAttributes, type HTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react';
+import type { EntityBranding } from '@bytecrunch/contracts-domain';
 import loader from '../assets/loader.svg';
+import defaultLogo from '../assets/logo.svg';
 import { useTheme, type ThemePreference } from '../theme';
 
 export function cx(...classes: Array<string | false | null | undefined>): string {
@@ -9,6 +11,31 @@ export function cx(...classes: Array<string | false | null | undefined>): string
 
 export function BusyMark() {
   return <img className="busy-mark" src={loader} alt="" aria-hidden="true" />;
+}
+
+export function BrandIdentity({ branding, className }: { branding?: EntityBranding | null | undefined; className?: string }) {
+  const name = branding?.displayName ?? 'BYTECRUNCH';
+  const squareLogo = branding?.logoDataUrl ?? defaultLogo;
+  return (
+    <span className={cx('brand-identity', className)}>
+      {branding?.markDataUrl ? (
+        <>
+          <img className="brand-lockup-image" src={branding.markDataUrl} alt={name} />
+          <img className="brand-logo-image brand-compact-image" src={squareLogo} alt="" aria-hidden="true" />
+        </>
+      ) : (
+        <>
+          <img className="brand-logo-image" src={squareLogo} alt="" aria-hidden="true" />
+          <strong className="brand-display-name">{name}</strong>
+        </>
+      )}
+      <span className="brand-product-name">CONTRACTS</span>
+    </span>
+  );
+}
+
+export function PlatformCredit() {
+  return <small className="platform-credit">© {new Date().getFullYear()} BYTECRUNCH</small>;
 }
 
 export function Eyebrow({ color = 'default', className, ...props }: HTMLAttributes<HTMLSpanElement> & { color?: 'default' | 'orange' | 'blue' }) {

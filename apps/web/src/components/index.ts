@@ -1,5 +1,6 @@
 export {
   Badge,
+  BrandIdentity,
   BusyMark,
   Button,
   Card,
@@ -8,6 +9,7 @@ export {
   IconButton,
   InlineAlert,
   Input,
+  PlatformCredit,
   Select,
   Textarea,
   ThemeToggle,

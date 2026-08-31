@@ -139,6 +139,8 @@ export const EntityBrandingSchema = z.object({
   displayName: z.string().min(1).max(120).nullable().default(null),
   primaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).default('#ed650f'),
   secondaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).default('#05a9ef'),
+  // The logo is the compact square symbol; the mark is the complete horizontal
+  // company lockup. Field names stay stable for stored/API compatibility.
   logoDataUrl: BrandImageDataUrlSchema.default(null),
   markDataUrl: BrandImageDataUrlSchema.default(null),
 });

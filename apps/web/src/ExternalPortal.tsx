@@ -10,7 +10,6 @@ import {
   UserPlus,
   X,
 } from "lucide-react";
-import logo from "./assets/logo.svg";
 import { api, statusLabel, type ExternalView } from "./api";
 import {
   DirectContractEditor,
@@ -26,7 +25,7 @@ import {
   SignatureBlocks,
   SignatureCeremony,
 } from "./SigningExperience";
-import { BusyMark, Dialog, IconButton } from "./components";
+import { BrandIdentity, BusyMark, Dialog, IconButton, PlatformCredit } from "./components";
 import type { EntityBranding } from "@bytecrunch/contracts-domain";
 
 export default function ExternalPortal() {
@@ -164,11 +163,7 @@ function PortalFrame({ children, branding }: { children: ReactNode; branding?: E
   return (
     <main className="external-shell" style={{ '--bc-orange': branding?.primaryColor, '--bc-blue': branding?.secondaryColor } as CSSProperties}>
       <header className="external-header">
-        <div className="external-brand">
-          <img src={branding?.markDataUrl ?? branding?.logoDataUrl ?? logo} alt="" />
-          <strong>{branding?.displayName ?? "BYTECRUNCH"}</strong>
-          <span>CONTRACTS</span>
-        </div>
+        <BrandIdentity branding={branding} className="external-brand" />
         <div className="external-header-actions">
           <a href="/inbox">All my agreements</a>
           <span className="secure-label">
@@ -177,6 +172,7 @@ function PortalFrame({ children, branding }: { children: ReactNode; branding?: E
         </div>
       </header>
       {children}
+      <PlatformCredit />
     </main>
   );
 }
