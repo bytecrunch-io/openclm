@@ -131,9 +131,29 @@ export const ENTITY_ROLE_PERMISSIONS: Readonly<Record<EntityRole, readonly Entit
 export function permissionsForEntityRoles(roles: readonly EntityRole[]): EntityPermission[] {
   return [...new Set(roles.flatMap((role) => ENTITY_ROLE_PERMISSIONS[role]))];
 }
+function safeSvgDataUrl(value: string): boolean {
+  const match = /^data:image\/svg\+xml;base64,([A-Za-z0-9+/]+=*)$/.exec(value);
+  if (!match) return true;
+  try {
+    const svg = atob(match[1]!);
+    if (!/^\s*(?:<\?xml[^>]*>\s*)?<svg[\s>]/i.test(svg)) return false;
+    if (/<!DOCTYPE|<!ENTITY|<\s*(?:script|foreignObject|iframe|object|embed|audio|video)\b|\bon[a-z]+\s*=|javascript:/i.test(svg)) return false;
+    for (const reference of svg.matchAll(/\b(?:href|src)\s*=\s*(["'])(.*?)\1/gi)) {
+      if (!reference[2]?.trim().startsWith('#')) return false;
+    }
+    for (const reference of svg.matchAll(/url\s*\(\s*["']?([^"')]+)["']?\s*\)/gi)) {
+      if (!reference[1]?.trim().startsWith('#')) return false;
+    }
+    return !/@import\b/i.test(svg);
+  } catch {
+    return false;
+  }
+}
+
 const BrandImageDataUrlSchema = z.string()
-  .regex(/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+=*$/, 'Use a PNG, JPEG, or WebP image.')
   .max(400_000, 'Brand images must be smaller than 300 KB.')
+  .regex(/^data:image\/(?:png|jpeg|webp|svg\+xml);base64,[A-Za-z0-9+/]+=*$/, 'Use a PNG, JPEG, WebP, or SVG image.')
+  .refine(safeSvgDataUrl, 'SVG brand images may only contain self-contained, inactive vector content.')
   .nullable();
 export const EntityBrandingSchema = z.object({
   displayName: z.string().min(1).max(120).nullable().default(null),

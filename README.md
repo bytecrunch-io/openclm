@@ -28,7 +28,7 @@ It is designed to work as a standalone product first. Each customer legal entity
 - Global human accounts with memberships in multiple customer entities
 - Explicit **Acting for** context for templates, agreements, people, and sender details
 - Entity-scoped administrator, template manager, contract manager, signatory, and viewer roles
-- Per-entity display name, colour scheme, square logo, and horizontal company logomark
+- Per-entity display name, colour scheme, square logo, and horizontal company logomark, including safe SVG assets
 - Guided first-company onboarding for legal details, branding, and optional integrations
 - Generic OIDC Authorization Code + PKCE for staff SSO
 - Entity-owned enterprise OIDC connections with company-specific login URLs and verified-domain membership

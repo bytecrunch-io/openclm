@@ -395,9 +395,9 @@ model EntityBranding {
   displayName: string | null;
   primaryColor: string;
   secondaryColor: string;
-  @doc("Compact square company symbol used when space is constrained.")
+  @doc("Compact square company symbol used when space is constrained. Accepts PNG, JPEG, WebP, or safe self-contained SVG data URLs.")
   logoDataUrl: string | null;
-  @doc("Complete horizontal company lockup containing its symbol and name.")
+  @doc("Complete horizontal company lockup containing its symbol and name. Accepts PNG, JPEG, WebP, or safe self-contained SVG data URLs.")
   markDataUrl: string | null;
 }
 model CustomerEntity { id: string; slug: string; legalName: string; businessAddress: string | null; registrationNumber: string | null; jurisdiction: string | null; branding: EntityBranding; createdAt: utcDateTime; }

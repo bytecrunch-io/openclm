@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AgreementSchema, assertReadyForSignature, canTransition, isExecutionComplete, permissionsForEntityRoles, requiredEntityFieldsForTemplate } from './index.js';
+import { AgreementSchema, EntityBrandingSchema, assertReadyForSignature, canTransition, isExecutionComplete, permissionsForEntityRoles, requiredEntityFieldsForTemplate } from './index.js';
 
 const agreement = AgreementSchema.parse({
   id: 'agr_test', tenantId: 'org_test', externalId: null, title: 'NDA',
@@ -41,5 +41,13 @@ describe('agreement lifecycle', () => {
     agreement.content = 'Offices at {{counterparty.business_address}}';
     expect(() => assertReadyForSignature(agreement)).toThrow(/required business address/i);
     agreement.content = 'Terms';
+  });
+
+  it('accepts inactive SVG branding and rejects active SVG content', () => {
+    const dataUrl = (svg: string) => `data:image/svg+xml;base64,${btoa(svg)}`;
+    const branding = { displayName: 'Example', primaryColor: '#112233', secondaryColor: '#445566', markDataUrl: null };
+    expect(EntityBrandingSchema.safeParse({ ...branding, logoDataUrl: dataUrl('<svg xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="brand"/></defs><path fill="url(#brand)" d="M0 0h10v10z"/></svg>') }).success).toBe(true);
+    expect(EntityBrandingSchema.safeParse({ ...branding, logoDataUrl: dataUrl('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>') }).success).toBe(false);
+    expect(EntityBrandingSchema.safeParse({ ...branding, logoDataUrl: dataUrl('<svg xmlns="http://www.w3.org/2000/svg"><image href="https://example.com/tracker.png"/></svg>') }).success).toBe(false);
   });
 });

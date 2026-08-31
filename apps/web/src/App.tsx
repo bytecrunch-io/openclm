@@ -1089,7 +1089,7 @@ function CustomerEntityOnboarding({
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-|-$/g, "");
   const readBrandImage = (file: File, field: 'logoDataUrl' | 'markDataUrl') => {
-    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 300_000) { setError('Use a PNG, JPEG, or WebP image smaller than 300 KB.'); return; }
+    if (!['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'].includes(file.type) || file.size > 300_000) { setError('Use a PNG, JPEG, WebP, or SVG image smaller than 300 KB.'); return; }
     const reader = new FileReader(); reader.onload = () => setBranding((current) => ({ ...current, [field]: String(reader.result) })); reader.readAsDataURL(file);
   };
   async function submitEntity(event: FormEvent) {
@@ -1207,7 +1207,7 @@ function CustomerEntityOnboarding({
         <span className="bc-eyebrow bc-text-blue">// COMPANY BRAND</span><h2>Make the workspace yours</h2>
         <label>Display name<input required value={branding.displayName ?? ''} onChange={(event) => setBranding((current) => ({ ...current, displayName: event.target.value }))} /></label>
         <div className="form-split"><label>Primary colour<input type="color" value={branding.primaryColor} onChange={(event) => setBranding((current) => ({ ...current, primaryColor: event.target.value }))} /></label><label>Secondary colour<input type="color" value={branding.secondaryColor} onChange={(event) => setBranding((current) => ({ ...current, secondaryColor: event.target.value }))} /></label></div>
-        <div className="form-split"><label>Logo<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) readBrandImage(file, 'logoDataUrl'); }} /><small>Square company symbol, up to 300 KB.</small></label><label>Logomark<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) readBrandImage(file, 'markDataUrl'); }} /><small>Horizontal logo with company name, up to 300 KB.</small></label></div>
+        <div className="form-split"><label>Logo<input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" onChange={(event) => { const file = event.target.files?.[0]; if (file) readBrandImage(file, 'logoDataUrl'); }} /><small>Square company symbol, SVG or raster, up to 300 KB.</small></label><label>Logomark<input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" onChange={(event) => { const file = event.target.files?.[0]; if (file) readBrandImage(file, 'markDataUrl'); }} /><small>Horizontal logo with company name, SVG or raster, up to 300 KB.</small></label></div>
         <div className="onboarding-brand-preview" style={{ borderColor: branding.primaryColor }}><BrandIdentity branding={branding} /></div>
         {error && <div className="inline-error">{error}</div>}<footer><button type="button" className="button button-secondary" onClick={() => setStep(3)}>Skip for now</button><button disabled={busy} className="button button-accent">{busy ? <><BusyMark /> Saving…</> : <>Continue <ArrowRight /></>}</button></footer>
       </form>}
@@ -3406,7 +3406,7 @@ function IntegrationSettings({ entity, canManage, onSaved, onError }: { entity: 
   const [branding, setBranding] = useState<EntityBranding>(entity.branding);
   const [busy, setBusy] = useState(false);
   const readImage = (file: File, field: "logoDataUrl" | "markDataUrl") => {
-    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) { onError('Use a PNG, JPEG, or WebP brand image.'); return; }
+    if (!['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'].includes(file.type)) { onError('Use a PNG, JPEG, WebP, or SVG brand image.'); return; }
     if (file.size > 300_000) { onError('Brand images must be smaller than 300 KB.'); return; }
     const reader = new FileReader();
     reader.onload = () => setBranding((value) => ({ ...value, [field]: String(reader.result) }));
@@ -3447,8 +3447,8 @@ function IntegrationSettings({ entity, canManage, onSaved, onError }: { entity: 
             <label>Secondary colour<input disabled={!canManage} type="color" value={branding.secondaryColor} onChange={(event) => setBranding((value) => ({ ...value, secondaryColor: event.target.value }))} /></label>
           </div>
           <div className="form-split">
-            <label>Logo<input disabled={!canManage} type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) readImage(file, 'logoDataUrl'); }} /><small>Square company symbol, up to 300 KB.</small></label>
-            <label>Logomark<input disabled={!canManage} type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) readImage(file, 'markDataUrl'); }} /><small>Horizontal logo with company name, up to 300 KB.</small></label>
+            <label>Logo<input disabled={!canManage} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" onChange={(event) => { const file = event.target.files?.[0]; if (file) readImage(file, 'logoDataUrl'); }} /><small>Square company symbol, SVG or raster, up to 300 KB.</small></label>
+            <label>Logomark<input disabled={!canManage} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" onChange={(event) => { const file = event.target.files?.[0]; if (file) readImage(file, 'markDataUrl'); }} /><small>Horizontal logo with company name, SVG or raster, up to 300 KB.</small></label>
           </div>
           {canManage && <button className="button button-accent" disabled={busy}>{busy ? <><BusyMark /> Saving…</> : <><Save /> Save branding</>}</button>}
         </div>

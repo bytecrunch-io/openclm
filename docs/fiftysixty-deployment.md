@@ -26,7 +26,7 @@ The export plugin queries by agreement ID plus sealed-artifact SHA-256 before up
 
 Copy `deploy/fiftysixty.env.example` to `deploy/.env.fiftysixty` and populate every required platform value. URL-encode the database password when placing it in `DATABASE_URL`. For a clean self-service test, leave the optional `BOOTSTRAP_*` and `EXECUTED_EXPORT_*` values unset, sign in through the platform provider, and create FiftySixty in the three-step onboarding flow. The bootstrap variables remain useful for unattended self-host migrations.
 
-After the initial administrator logs in, open **Settings → Entity branding** to upload the square logo, the horizontal logo-and-name logomark, and select the brand colours. The logomark is used as the primary workspace lockup with the Contracts product label; the square logo is its compact fallback. Images are limited to PNG, JPEG, or WebP under 300 KB and are stored with the entity. Participant contract pages inherit the sender entity's presentation, with a quiet ByteCrunch platform attribution.
+After the initial administrator logs in, open **Settings → Entity branding** to upload the square logo, the horizontal logo-and-name logomark, and select the brand colours. The logomark is used as the primary workspace lockup with the Contracts product label; the square logo is its compact fallback. Images are limited to PNG, JPEG, WebP, or self-contained SVG under 300 KB and are stored with the entity. Active SVG content and external references are rejected. Participant contract pages inherit the sender entity's presentation, with a quiet ByteCrunch platform attribution.
 
 ## 4. Run on EC2
 

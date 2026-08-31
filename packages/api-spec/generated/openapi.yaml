@@ -2893,12 +2893,12 @@ components:
           anyOf:
             - type: string
             - type: 'null'
-          description: Compact square company symbol used when space is constrained.
+          description: Compact square company symbol used when space is constrained. Accepts PNG, JPEG, WebP, or safe self-contained SVG data URLs.
         markDataUrl:
           anyOf:
             - type: string
             - type: 'null'
-          description: Complete horizontal company lockup containing its symbol and name.
+          description: Complete horizontal company lockup containing its symbol and name. Accepts PNG, JPEG, WebP, or safe self-contained SVG data URLs.
     EntityDetails:
       type: object
       required:
