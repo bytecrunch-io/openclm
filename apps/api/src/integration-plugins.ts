@@ -1,132 +1,75 @@
 import { readFile } from 'node:fs/promises';
-import { randomUUID } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from 'node:crypto';
 import { importPKCS8, SignJWT } from 'jose';
-import type { Agreement, AgreementArtifact } from '@bytecrunch/contracts-domain';
+import { z } from 'zod';
+import { PluginInstallationSchema, PublicPluginInstallationSchema, type Agreement, type AgreementArtifact, type PluginInstallation, type PluginKey, type PublicPluginInstallation } from '@bytecrunch/contracts-domain';
 import { config } from './config.js';
+import type { Repository } from './repository.js';
+import { assertExternalUrlAllowed } from './webhooks.js';
 
-export interface ExecutedAgreementExport {
-  provider: string;
-  externalId: string;
-  webUrl: string | null;
+export type PluginField = { key: string; label: string; kind: 'text' | 'url' | 'email' | 'password' | 'textarea' | 'string_list'; required: boolean; secret: boolean; help: string };
+export type PluginManifest = { key: PluginKey; name: string; description: string; capability: 'executed_agreement_export' | 'identity_provider'; fields: PluginField[] };
+export const pluginCatalog: readonly PluginManifest[] = [
+  { key: 'google-drive', name: 'Google Drive', capability: 'executed_agreement_export', description: 'Copy each sealed executed PDF into an entity-owned Google Drive folder.', fields: [
+    { key: 'folderId', label: 'Destination folder ID', kind: 'text', required: true, secret: false, help: 'The folder ID from its Google Drive URL. Shared Drives are supported.' },
+    { key: 'impersonateEmail', label: 'Workspace automation user', kind: 'email', required: false, secret: false, help: 'Optional domain-wide delegation subject. Leave blank for direct Shared Drive access.' },
+    { key: 'serviceAccountJson', label: 'Service-account JSON', kind: 'textarea', required: true, secret: true, help: 'Stored encrypted and never returned by the API.' },
+  ] },
+  { key: 'enterprise-oidc', name: 'Enterprise SSO', capability: 'identity_provider', description: 'Let members enter this entity through its own OpenID Connect provider.', fields: [
+    { key: 'issuerUrl', label: 'Issuer URL', kind: 'url', required: true, secret: false, help: 'The exact issuer in ID tokens.' },
+    { key: 'authorizationEndpoint', label: 'Authorization endpoint override', kind: 'url', required: false, secret: false, help: 'Useful for Cognito custom Hosted UI domains.' },
+    { key: 'tokenEndpoint', label: 'Token endpoint override', kind: 'url', required: false, secret: false, help: 'Useful for Cognito custom Hosted UI domains.' },
+    { key: 'jwksUri', label: 'JWKS URI override', kind: 'url', required: false, secret: false, help: 'Leave blank to use OIDC discovery.' },
+    { key: 'clientId', label: 'Client ID', kind: 'text', required: true, secret: false, help: 'Use a dedicated confidential application client.' },
+    { key: 'clientSecret', label: 'Client secret', kind: 'password', required: true, secret: true, help: 'Stored encrypted and never returned by the API.' },
+    { key: 'emailDomains', label: 'Allowed verified email domains', kind: 'string_list', required: true, secret: false, help: 'Comma-separated domains whose verified users may join this entity.' },
+  ] },
+] as const;
+
+const googleSchema = z.object({ folderId: z.string().min(1).max(255), impersonateEmail: z.union([z.string().email(), z.literal('')]).optional().default(''), serviceAccountJson: z.string().min(1).optional() });
+const oidcSchema = z.object({ issuerUrl: z.string().url(), authorizationEndpoint: z.union([z.string().url(), z.literal('')]).optional().default(''), tokenEndpoint: z.union([z.string().url(), z.literal('')]).optional().default(''), jwksUri: z.union([z.string().url(), z.literal('')]).optional().default(''), clientId: z.string().min(1).max(255), clientSecret: z.string().min(1).optional(), emailDomains: z.union([z.array(z.string()), z.string()]).transform((value) => (Array.isArray(value) ? value : value.split(',')).map((item) => item.trim().toLowerCase()).filter(Boolean)).pipe(z.array(z.string().regex(/^[a-z0-9.-]+\.[a-z]{2,}$/)).min(1)) });
+const encryptionKey = createHash('sha256').update(config.PLUGIN_ENCRYPTION_KEY).update('plugin-installation-secrets-v1').digest();
+function encryptSecrets(value: Record<string, string>): string { const iv = randomBytes(12); const cipher = createCipheriv('aes-256-gcm', encryptionKey, iv); const body = Buffer.concat([cipher.update(JSON.stringify(value), 'utf8'), cipher.final()]); return [iv, cipher.getAuthTag(), body].map((part) => part.toString('base64url')).join('.'); }
+export function decryptInstallationSecrets(installation: PluginInstallation): Record<string, string> { if (!installation.secretCiphertext) return {}; const parts = installation.secretCiphertext.split('.'); if (parts.length !== 3) throw new Error('The encrypted plugin configuration is invalid.'); const [iv, tag, body] = parts.map((part) => Buffer.from(part!, 'base64url')); const decipher = createDecipheriv('aes-256-gcm', encryptionKey, iv!); decipher.setAuthTag(tag!); return JSON.parse(Buffer.concat([decipher.update(body!), decipher.final()]).toString('utf8')) as Record<string, string>; }
+export const publicInstallation = (installation: PluginInstallation): PublicPluginInstallation => PublicPluginInstallationSchema.parse(installation);
+
+export async function configurePlugin(repository: Repository, entityId: string, pluginKey: PluginKey, raw: unknown, enabled: boolean): Promise<PublicPluginInstallation> {
+  const existing = await repository.findPluginInstallation(entityId, pluginKey); const priorSecrets = existing ? decryptInstallationSecrets(existing) : {};
+  let configuration: PluginInstallation['configuration']; let secrets: Record<string, string>;
+  if (pluginKey === 'google-drive') {
+    const input = googleSchema.parse(raw); secrets = { ...priorSecrets, ...(input.serviceAccountJson ? { serviceAccountJson: input.serviceAccountJson } : {}) }; if (!secrets.serviceAccountJson) throw new Error('Service-account JSON is required.');
+    const credential = JSON.parse(secrets.serviceAccountJson) as Partial<GoogleServiceAccount>; if (!credential.client_email || !credential.private_key) throw new Error('The service-account JSON must contain client_email and private_key.'); if (credential.token_uri) await assertExternalUrlAllowed(credential.token_uri, 'Google token endpoint');
+    configuration = { folderId: input.folderId, impersonateEmail: input.impersonateEmail };
+  } else {
+    const input = oidcSchema.parse(raw); await Promise.all([input.issuerUrl, input.authorizationEndpoint, input.tokenEndpoint, input.jwksUri].filter(Boolean).map((url) => assertExternalUrlAllowed(url, 'OIDC endpoint'))); secrets = { ...priorSecrets, ...(input.clientSecret ? { clientSecret: input.clientSecret } : {}) }; if (!secrets.clientSecret) throw new Error('Client secret is required.');
+    configuration = { issuerUrl: input.issuerUrl, authorizationEndpoint: input.authorizationEndpoint, tokenEndpoint: input.tokenEndpoint, jwksUri: input.jwksUri, clientId: input.clientId, emailDomains: input.emailDomains };
+  }
+  const timestamp = new Date().toISOString(); const installation = PluginInstallationSchema.parse({ id: existing?.id ?? `plugin_${randomUUID()}`, entityId, pluginKey, status: enabled ? 'enabled' : 'configured', configuration, configuredSecretFields: Object.keys(secrets), secretCiphertext: encryptSecrets(secrets), lastCheckedAt: null, lastError: null, createdAt: existing?.createdAt ?? timestamp, updatedAt: timestamp });
+  await repository.savePluginInstallation(installation); return publicInstallation(installation);
 }
 
-export interface ExecutedAgreementExportPlugin {
-  readonly key: string;
-  enabledFor(entityId: string): boolean;
-  exportExecutedAgreement(input: {
-    agreement: Agreement;
-    artifact: AgreementArtifact;
-    bytes: Uint8Array;
-  }): Promise<ExecutedAgreementExport>;
+type GoogleServiceAccount = { client_email: string; private_key: string; token_uri?: string };
+type GoogleDriveRuntime = { installationId: string; folderId: string; impersonateEmail?: string; credential: GoogleServiceAccount };
+const tokenCache = new Map<string, { value: string; expiresAt: number }>();
+async function googleAccessToken(runtime: GoogleDriveRuntime): Promise<string> { const cached = tokenCache.get(runtime.installationId); if (cached && cached.expiresAt > Date.now() + 60_000) return cached.value; const tokenUri = runtime.credential.token_uri ?? 'https://oauth2.googleapis.com/token'; const now = Math.floor(Date.now() / 1000); const assertion = await new SignJWT({ scope: 'https://www.googleapis.com/auth/drive', ...(runtime.impersonateEmail ? { sub: runtime.impersonateEmail } : {}) }).setProtectedHeader({ alg: 'RS256', typ: 'JWT' }).setIssuer(runtime.credential.client_email).setAudience(tokenUri).setIssuedAt(now).setExpirationTime(now + 3600).sign(await importPKCS8(runtime.credential.private_key, 'RS256')); const response = await fetch(tokenUri, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion }) }); if (!response.ok) throw new Error(`Google OAuth token exchange failed with ${response.status}.`); const result = await response.json() as { access_token?: string; expires_in?: number }; if (!result.access_token) throw new Error('Google OAuth did not return an access token.'); tokenCache.set(runtime.installationId, { value: result.access_token, expiresAt: Date.now() + (result.expires_in ?? 3600) * 1000 }); return result.access_token; }
+let environmentCredentialPromise: Promise<GoogleServiceAccount> | undefined;
+async function environmentGoogleRuntime(entityId: string): Promise<GoogleDriveRuntime | undefined> { const enabledIds = new Set(config.EXECUTED_EXPORT_ENTITY_IDS.split(',').map((item) => item.trim()).filter(Boolean)); if (config.EXECUTED_EXPORT_DRIVER !== 'google_drive' || !enabledIds.has(entityId) || !config.GOOGLE_DRIVE_SERVICE_ACCOUNT_PATH || !config.GOOGLE_DRIVE_FOLDER_ID) return undefined; environmentCredentialPromise ??= readFile(config.GOOGLE_DRIVE_SERVICE_ACCOUNT_PATH, 'utf8').then((body) => JSON.parse(body) as GoogleServiceAccount); return { installationId: `environment:${entityId}`, folderId: config.GOOGLE_DRIVE_FOLDER_ID, ...(config.GOOGLE_DRIVE_IMPERSONATE_EMAIL ? { impersonateEmail: config.GOOGLE_DRIVE_IMPERSONATE_EMAIL } : {}), credential: await environmentCredentialPromise }; }
+async function googleRuntime(repository: Repository, entityId: string): Promise<GoogleDriveRuntime | undefined> { const installation = await repository.findPluginInstallation(entityId, 'google-drive'); if (installation) { if (installation.status !== 'enabled') return undefined; const secrets = decryptInstallationSecrets(installation); return { installationId: installation.id, folderId: String(installation.configuration.folderId), ...(installation.configuration.impersonateEmail ? { impersonateEmail: String(installation.configuration.impersonateEmail) } : {}), credential: JSON.parse(secrets.serviceAccountJson!) as GoogleServiceAccount }; } return environmentGoogleRuntime(entityId); }
+
+export async function testPluginInstallation(repository: Repository, installation: PluginInstallation): Promise<PublicPluginInstallation> {
+  try {
+    if (installation.pluginKey === 'google-drive') { const runtime = await googleRuntime(repository, installation.entityId); if (!runtime) throw new Error('Google Drive is not enabled.'); const response = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(runtime.folderId)}?fields=id,name,mimeType&supportsAllDrives=true`, { headers: { authorization: `Bearer ${await googleAccessToken(runtime)}` } }); if (!response.ok) throw new Error(`Google Drive folder check failed with ${response.status}.`); const folder = await response.json() as { mimeType?: string }; if (folder.mimeType !== 'application/vnd.google-apps.folder') throw new Error('The configured Drive item is not a folder.'); }
+    else { const issuer = String(installation.configuration.issuerUrl).replace(/\/$/, ''); const discoveryIssuer = issuer === config.OIDC_ISSUER_URL.replace(/\/$/, '') && config.OIDC_INTERNAL_ISSUER_URL ? config.OIDC_INTERNAL_ISSUER_URL.replace(/\/$/, '') : issuer; const response = await fetch(`${discoveryIssuer}/.well-known/openid-configuration`); if (!response.ok) throw new Error(`OIDC discovery failed with ${response.status}.`); const metadata = await response.json() as { authorization_endpoint?: string; token_endpoint?: string; jwks_uri?: string }; if (!(installation.configuration.authorizationEndpoint || metadata.authorization_endpoint) || !(installation.configuration.tokenEndpoint || metadata.token_endpoint) || !(installation.configuration.jwksUri || metadata.jwks_uri)) throw new Error('OIDC discovery is missing required endpoints.'); }
+    installation.status = 'enabled'; installation.lastCheckedAt = new Date().toISOString(); installation.lastError = null;
+  } catch (error) { installation.status = 'error'; installation.lastCheckedAt = new Date().toISOString(); installation.lastError = error instanceof Error ? error.message : 'Plugin check failed.'; }
+  installation.updatedAt = new Date().toISOString(); await repository.savePluginInstallation(installation); return publicInstallation(installation);
 }
+export type EnterpriseOidcConnection = { issuerUrl: string; authorizationEndpoint: string; tokenEndpoint: string; jwksUri: string; clientId: string; clientSecret: string; emailDomains: string[] };
+export async function enterpriseOidcConnection(repository: Repository, entityId: string): Promise<EnterpriseOidcConnection | undefined> { const installation = await repository.findPluginInstallation(entityId, 'enterprise-oidc'); if (!installation || installation.status !== 'enabled') return undefined; const secret = decryptInstallationSecrets(installation).clientSecret; if (!secret) throw new Error('The enterprise OIDC client secret is unavailable.'); return { issuerUrl: String(installation.configuration.issuerUrl), authorizationEndpoint: String(installation.configuration.authorizationEndpoint ?? ''), tokenEndpoint: String(installation.configuration.tokenEndpoint ?? ''), jwksUri: String(installation.configuration.jwksUri ?? ''), clientId: String(installation.configuration.clientId), clientSecret: secret, emailDomains: Array.isArray(installation.configuration.emailDomains) ? installation.configuration.emailDomains.map(String) : [] }; }
 
-type GoogleServiceAccount = {
-  client_email: string;
-  private_key: string;
-  token_uri?: string;
-};
-
-const csv = (value: string) => new Set(value.split(',').map((item) => item.trim()).filter(Boolean));
-const driveEntityIds = csv(config.EXECUTED_EXPORT_ENTITY_IDS);
-let credentialPromise: Promise<GoogleServiceAccount> | undefined;
-let tokenCache: { value: string; expiresAt: number } | undefined;
-
-async function googleCredential(): Promise<GoogleServiceAccount> {
-  if (!config.GOOGLE_DRIVE_SERVICE_ACCOUNT_PATH) throw new Error('Google Drive credentials are not configured.');
-  credentialPromise ??= readFile(config.GOOGLE_DRIVE_SERVICE_ACCOUNT_PATH, 'utf8').then((body) => {
-    const value = JSON.parse(body) as Partial<GoogleServiceAccount>;
-    if (!value.client_email || !value.private_key) throw new Error('The Google service-account credential is incomplete.');
-    return value as GoogleServiceAccount;
-  });
-  return credentialPromise;
-}
-
-async function googleAccessToken(): Promise<string> {
-  if (tokenCache && tokenCache.expiresAt > Date.now() + 60_000) return tokenCache.value;
-  const credential = await googleCredential();
-  const tokenUri = credential.token_uri ?? 'https://oauth2.googleapis.com/token';
-  const now = Math.floor(Date.now() / 1000);
-  const assertion = await new SignJWT({
-    scope: 'https://www.googleapis.com/auth/drive',
-    ...(config.GOOGLE_DRIVE_IMPERSONATE_EMAIL ? { sub: config.GOOGLE_DRIVE_IMPERSONATE_EMAIL } : {}),
-  })
-    .setProtectedHeader({ alg: 'RS256', typ: 'JWT' })
-    .setIssuer(credential.client_email)
-    .setAudience(tokenUri)
-    .setIssuedAt(now)
-    .setExpirationTime(now + 3600)
-    .sign(await importPKCS8(credential.private_key, 'RS256'));
-  const response = await fetch(tokenUri, {
-    method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion }),
-  });
-  if (!response.ok) throw new Error(`Google OAuth token exchange failed with ${response.status}.`);
-  const result = await response.json() as { access_token?: string; expires_in?: number };
-  if (!result.access_token) throw new Error('Google OAuth did not return an access token.');
-  tokenCache = { value: result.access_token, expiresAt: Date.now() + (result.expires_in ?? 3600) * 1000 };
-  return tokenCache.value;
-}
-
-const driveEscape = (value: string) => value.replaceAll('\\', '\\\\').replaceAll("'", "\\'");
-const safeFileName = (value: string) => value.replace(/[^a-zA-Z0-9 ._()-]/g, '-').replace(/\s+/g, ' ').trim().slice(0, 160) || 'Executed agreement';
-
-const googleDrivePlugin: ExecutedAgreementExportPlugin = {
-  key: 'google_drive',
-  enabledFor: (entityId) => config.EXECUTED_EXPORT_DRIVER === 'google_drive' && driveEntityIds.has(entityId),
-  async exportExecutedAgreement({ agreement, artifact, bytes }) {
-    if (!config.GOOGLE_DRIVE_FOLDER_ID) throw new Error('A Google Drive destination folder is not configured.');
-    const token = await googleAccessToken();
-    const query = [
-      `'${driveEscape(config.GOOGLE_DRIVE_FOLDER_ID)}' in parents`,
-      'trashed = false',
-      `appProperties has { key='bytecrunchAgreementId' and value='${driveEscape(agreement.id)}' }`,
-      `appProperties has { key='bytecrunchArtifactSha256' and value='${artifact.artifactSha256}' }`,
-    ].join(' and ');
-    const lookup = new URL('https://www.googleapis.com/drive/v3/files');
-    lookup.searchParams.set('q', query);
-    lookup.searchParams.set('fields', 'files(id,webViewLink)');
-    lookup.searchParams.set('spaces', 'drive');
-    lookup.searchParams.set('supportsAllDrives', 'true');
-    lookup.searchParams.set('includeItemsFromAllDrives', 'true');
-    const existingResponse = await fetch(lookup, { headers: { authorization: `Bearer ${token}` } });
-    if (!existingResponse.ok) throw new Error(`Google Drive lookup failed with ${existingResponse.status}.`);
-    const existing = await existingResponse.json() as { files?: Array<{ id: string; webViewLink?: string }> };
-    if (existing.files?.[0]) return { provider: 'google_drive', externalId: existing.files[0].id, webUrl: existing.files[0].webViewLink ?? null };
-
-    const boundary = `bytecrunch_${randomUUID()}`;
-    const metadata = {
-      name: `${safeFileName(agreement.title)} - executed.pdf`,
-      mimeType: 'application/pdf',
-      parents: [config.GOOGLE_DRIVE_FOLDER_ID],
-      appProperties: {
-        bytecrunchAgreementId: agreement.id,
-        bytecrunchEntityId: agreement.tenantId,
-        bytecrunchRevision: String(agreement.revision),
-        bytecrunchArtifactSha256: artifact.artifactSha256,
-      },
-    };
-    const prefix = Buffer.from(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: application/pdf\r\n\r\n`);
-    const suffix = Buffer.from(`\r\n--${boundary}--`);
-    const upload = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,webViewLink', {
-      method: 'POST',
-      headers: { authorization: `Bearer ${token}`, 'content-type': `multipart/related; boundary=${boundary}` },
-      body: Buffer.concat([prefix, Buffer.from(bytes), suffix]),
-    });
-    if (!upload.ok) throw new Error(`Google Drive upload failed with ${upload.status}.`);
-    const created = await upload.json() as { id?: string; webViewLink?: string };
-    if (!created.id) throw new Error('Google Drive did not return a file ID.');
-    return { provider: 'google_drive', externalId: created.id, webUrl: created.webViewLink ?? null };
-  },
-};
-
-const executedAgreementExportPlugins: readonly ExecutedAgreementExportPlugin[] = [googleDrivePlugin];
-
-export async function runExecutedAgreementExports(input: { agreement: Agreement; artifact: AgreementArtifact; bytes: Uint8Array }): Promise<ExecutedAgreementExport[]> {
-  const enabled = executedAgreementExportPlugins.filter((plugin) => plugin.enabledFor(input.agreement.tenantId));
-  return Promise.all(enabled.map((plugin) => plugin.exportExecutedAgreement(input)));
-}
-
-export function configuredIntegrationPlugins(): Array<{ key: string; capability: 'executed_agreement_export'; enabledEntityIds: string[] }> {
-  return config.EXECUTED_EXPORT_DRIVER === 'none' ? [] : [{ key: config.EXECUTED_EXPORT_DRIVER, capability: 'executed_agreement_export', enabledEntityIds: [...driveEntityIds] }];
+export interface ExecutedAgreementExport { provider: string; externalId: string; webUrl: string | null }
+const driveEscape = (value: string) => value.replaceAll('\\', '\\\\').replaceAll("'", "\\'"); const safeFileName = (value: string) => value.replace(/[^a-zA-Z0-9 ._()-]/g, '-').replace(/\s+/g, ' ').trim().slice(0, 160) || 'Executed agreement';
+export async function runExecutedAgreementExports(repository: Repository, input: { agreement: Agreement; artifact: AgreementArtifact; bytes: Uint8Array }): Promise<ExecutedAgreementExport[]> {
+  const runtime = await googleRuntime(repository, input.agreement.tenantId); if (!runtime) return []; const token = await googleAccessToken(runtime); const query = [`'${driveEscape(runtime.folderId)}' in parents`, 'trashed = false', `appProperties has { key='bytecrunchAgreementId' and value='${driveEscape(input.agreement.id)}' }`, `appProperties has { key='bytecrunchArtifactSha256' and value='${input.artifact.artifactSha256}' }`].join(' and '); const lookup = new URL('https://www.googleapis.com/drive/v3/files'); lookup.searchParams.set('q', query); lookup.searchParams.set('fields', 'files(id,webViewLink)'); lookup.searchParams.set('spaces', 'drive'); lookup.searchParams.set('supportsAllDrives', 'true'); lookup.searchParams.set('includeItemsFromAllDrives', 'true'); const existingResponse = await fetch(lookup, { headers: { authorization: `Bearer ${token}` } }); if (!existingResponse.ok) throw new Error(`Google Drive lookup failed with ${existingResponse.status}.`); const existing = await existingResponse.json() as { files?: Array<{ id: string; webViewLink?: string }> }; if (existing.files?.[0]) return [{ provider: 'google_drive', externalId: existing.files[0].id, webUrl: existing.files[0].webViewLink ?? null }];
+  const boundary = `bytecrunch_${randomUUID()}`; const metadata = { name: `${safeFileName(input.agreement.title)} - executed.pdf`, mimeType: 'application/pdf', parents: [runtime.folderId], appProperties: { bytecrunchAgreementId: input.agreement.id, bytecrunchEntityId: input.agreement.tenantId, bytecrunchRevision: String(input.agreement.revision), bytecrunchArtifactSha256: input.artifact.artifactSha256 } }; const prefix = Buffer.from(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: application/pdf\r\n\r\n`); const suffix = Buffer.from(`\r\n--${boundary}--`); const upload = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,webViewLink', { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': `multipart/related; boundary=${boundary}` }, body: Buffer.concat([prefix, Buffer.from(input.bytes), suffix]) }); if (!upload.ok) throw new Error(`Google Drive upload failed with ${upload.status}.`); const created = await upload.json() as { id?: string; webViewLink?: string }; if (!created.id) throw new Error('Google Drive did not return a file ID.'); return [{ provider: 'google_drive', externalId: created.id, webUrl: created.webViewLink ?? null }];
 }

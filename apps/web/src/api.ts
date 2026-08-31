@@ -17,6 +17,8 @@ import {
   EntityMemberInvitationSchema,
   AccountSchema,
   EntityRoleSchema,
+  PublicPluginInstallationSchema,
+  PluginKeySchema,
   RecipientInboxItemSchema,
   RequiredEntityFieldSchema,
   type Agreement,
@@ -95,6 +97,12 @@ export type EntityRole = z.infer<typeof EntityRoleSchema>;
 export type RecipientInboxItem = z.infer<typeof RecipientInboxItemSchema>;
 export type Passkey = z.infer<typeof PasskeySchema>;
 export type AgreementArtifact = z.infer<typeof AgreementArtifactSchema>;
+const PluginManifestSchema = z.object({
+  key: PluginKeySchema, name: z.string(), description: z.string(), capability: z.enum(['executed_agreement_export', 'identity_provider']),
+  fields: z.array(z.object({ key: z.string(), label: z.string(), kind: z.enum(['text', 'url', 'email', 'password', 'textarea', 'string_list']), required: z.boolean(), secret: z.boolean(), help: z.string() })),
+});
+export type PluginManifest = z.infer<typeof PluginManifestSchema>;
+export type PluginInstallation = z.infer<typeof PublicPluginInstallationSchema>;
 const PublicVerificationSchema = z.object({
   schemaVersion: z.number(), status: z.literal('executed'), title: z.string(), agreementId: z.string(), revision: z.number(), executedAt: z.string(), contentSha256: z.string(),
   parties: z.array(z.object({ role: z.enum(['sender', 'counterparty']), legalName: z.string().nullable() })),
@@ -163,6 +171,7 @@ export const api = {
   loginUrl: `${API_URL}/auth/login`,
   loginUrlFor: (returnTo: string) =>
     `${API_URL}/auth/login?returnTo=${encodeURIComponent(returnTo)}`,
+  entitySsoUrl: (entitySlug: string) => `${API_URL}/auth/sso/${encodeURIComponent(entitySlug)}`,
   verifyAgreement: (code: string) => request(`/public/verify/${encodeURIComponent(code)}`, PublicVerificationSchema),
   downloadVerifiedAgreement: (code: string) => download(`/public/verify/${encodeURIComponent(code)}/document`),
   me: () => request("/v1/me", UserSchema),
@@ -186,6 +195,11 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(branding),
     }),
+  pluginCatalog: () => request('/v1/plugin-catalog', z.array(PluginManifestSchema)),
+  pluginInstallations: () => request('/v1/plugin-installations', z.array(PublicPluginInstallationSchema)),
+  configurePlugin: (pluginKey: z.infer<typeof PluginKeySchema>, configuration: Record<string, unknown>, enabled = true) => request(`/v1/plugin-installations/${pluginKey}`, PublicPluginInstallationSchema, { method: 'PUT', body: JSON.stringify({ configuration, enabled }) }),
+  testPlugin: (pluginKey: z.infer<typeof PluginKeySchema>) => request(`/v1/plugin-installations/${pluginKey}/test`, PublicPluginInstallationSchema, { method: 'POST' }),
+  removePlugin: (pluginKey: z.infer<typeof PluginKeySchema>) => request(`/v1/plugin-installations/${pluginKey}`, z.object({ removed: z.literal(true), operationId: z.string() }), { method: 'DELETE' }),
   entityMembers: () => request("/v1/entity-members", EntityMemberListSchema),
   inviteEntityMember: (input: { email: string; roles: EntityRole[] }) =>
     request(

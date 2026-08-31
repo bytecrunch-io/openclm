@@ -51,12 +51,14 @@ import { emitAgreementEvent } from './webhooks.js';
 import { notifyParticipants } from './notifications.js';
 import { registerPlatformRoutes } from './routes/platform.js';
 import { registerEntityRoutes } from './routes/entities.js';
+import { registerPluginRoutes } from './routes/plugins.js';
 import { clearRecipientSession, createRecipientLoginCode, currentRecipientSession, recipientSessionMiddleware, setRecipientSession, verifyRecipientLoginCode } from './recipient-auth.js';
 import { ensureCompletionManifest, ensureSigningSnapshot, publicArtifact, readArtifactContent } from './artifacts.js';
 import { artifactStorage } from './artifact-storage.js';
 import { rateLimit } from './rate-limit.js';
 import { metricsMiddleware, renderMetrics } from './metrics.js';
 import { signingProvider } from './signing.js';
+import { enterpriseOidcConnection } from './integration-plugins.js';
 
 function isoNow(): string { return new Date().toISOString(); }
 
@@ -291,7 +293,7 @@ export function createApp(repository: Repository): Hono {
   });
   app.use('/public/access/exchange', rateLimit(repository, { namespace: 'access-exchange', limit: 60, windowSeconds: 900 }));
   app.use('/public/integration-sessions/exchange', rateLimit(repository, { namespace: 'integration-exchange', limit: 60, windowSeconds: 900 }));
-  registerAuthRoutes(app);
+  registerAuthRoutes(app, repository);
   app.get('/public/entity-member-invitations/preview', async (context) => {
     const token = context.req.query('token'); if (!token || token.length < 20) return context.json({ error: 'invalid_invitation', message: 'The membership invitation is invalid.' }, 400);
     const invitation = await repository.getEntityMemberInvitationByTokenHash(hashInvitationToken(token));
@@ -392,6 +394,15 @@ export function createApp(repository: Repository): Hono {
       await repository.grantEntityMembership(account.id, entity.id, [...roles], permissionsForEntityRoles(roles));
       memberships = await repository.listEntityMemberships(account.id);
     }
+    if (!memberships.some((item) => item.entityId === authenticated.tenantId && item.status === 'active') && authenticated.emailVerified && authenticated.tenantId !== 'bytecrunch') {
+      const connection = await enterpriseOidcConnection(repository, authenticated.tenantId);
+      const allowedDomains = Array.isArray(connection?.emailDomains) ? connection.emailDomains.map(String) : [];
+      if (connection && allowedDomains.includes(emailDomain)) {
+        const roles = ['contract_manager', 'signatory'] as const;
+        await repository.grantEntityMembership(account.id, authenticated.tenantId, [...roles], permissionsForEntityRoles(roles));
+        memberships = await repository.listEntityMemberships(account.id);
+      }
+    }
     if (memberships.length === 0 && (config.AUTH_MODE === 'dev' || authenticated.email.toLowerCase() === config.DEV_USER_EMAIL.toLowerCase())) {
       let defaultEntity = await repository.getCustomerEntity(authenticated.tenantId);
       defaultEntity ??= await repository.createCustomerEntity({ id: authenticated.tenantId, slug: authenticated.tenantId, legalName: config.TENANT_LEGAL_NAME, businessAddress: config.TENANT_BUSINESS_ADDRESS || null, registrationNumber: null, jurisdiction: null });
@@ -418,6 +429,7 @@ export function createApp(repository: Repository): Hono {
       : path.startsWith('/v1/integrations') || path.startsWith('/v1/webhooks') || path.startsWith('/v1/webhook-deliveries') || path.startsWith('/v1/notification-deliveries') ? 'entity.manage'
       : path.startsWith('/v1/entity-members') ? 'members.manage'
       : path.startsWith('/v1/entity/branding') ? 'entity.manage'
+      : path.startsWith('/v1/plugin-') ? 'entity.manage'
       : undefined;
     if (requiredPermission && !activeMembership.permissions.includes(requiredPermission)) return context.json({ error: 'forbidden', message: `Your role cannot perform '${requiredPermission}' for this customer entity.` }, 403);
     context.set('user', { ...authenticated, id: account.id, tenantId: activeMembership.entityId });
@@ -425,6 +437,7 @@ export function createApp(repository: Repository): Hono {
   });
 
   registerEntityRoutes(app, repository, { now: isoNow, personalInbox: (accountId, email, accessOnly) => buildPersonalInbox(repository, accountId, email, accessOnly), publicInvitation: publicEntityMemberInvitation, assertAnotherAdministrator: (membership) => assertAnotherAdministrator(repository, membership) });
+  registerPluginRoutes(app, repository);
 
   app.post('/public/invitations/exchange', async (context) => {
     const body = await context.req.json() as { token?: unknown };

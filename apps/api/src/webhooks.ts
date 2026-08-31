@@ -64,11 +64,11 @@ function isPrivateAddress(address: string): boolean {
   );
 }
 
-export async function assertWebhookUrlAllowed(value: string): Promise<void> {
+export async function assertExternalUrlAllowed(value: string, label = "External endpoint"): Promise<void> {
   if (config.NODE_ENV !== "production") return;
   const url = new URL(value);
   if (url.protocol !== "https:")
-    throw new Error("Production webhook endpoints must use HTTPS.");
+    throw new Error(`${label} must use HTTPS in production.`);
   const hostname = url.hostname.toLowerCase();
   if (
     hostname === "localhost" ||
@@ -76,7 +76,7 @@ export async function assertWebhookUrlAllowed(value: string): Promise<void> {
     hostname.endsWith(".local") ||
     hostname.endsWith(".internal")
   )
-    throw new Error("Webhook endpoints cannot target local or internal hosts.");
+    throw new Error(`${label} cannot target local or internal hosts.`);
   const addresses = isIP(hostname)
     ? [{ address: hostname }]
     : await lookup(hostname, { all: true, verbatim: true });
@@ -85,8 +85,12 @@ export async function assertWebhookUrlAllowed(value: string): Promise<void> {
     addresses.some((item) => isPrivateAddress(item.address))
   )
     throw new Error(
-      "Webhook endpoints must resolve only to public network addresses.",
+      `${label} must resolve only to public network addresses.`,
     );
+}
+
+export async function assertWebhookUrlAllowed(value: string): Promise<void> {
+  return assertExternalUrlAllowed(value, "Webhook endpoint");
 }
 
 export async function emitAgreementEvent(

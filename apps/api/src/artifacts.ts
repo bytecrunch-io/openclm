@@ -123,7 +123,7 @@ export async function ensureCompletionManifest(
   );
   if (existing) {
     const executedPdf = artifacts.find((item) => item.kind === 'executed_pdf' && item.revision === agreement.revision && item.contentSha256 === agreement.contentSha256);
-    if (executedPdf) await exportExecutedPdf(agreement, executedPdf);
+    if (executedPdf) await exportExecutedPdf(repository, agreement, executedPdf);
     return existing;
   }
   if (!agreement.signingEnvelope || !['active', 'executed'].includes(agreement.signingEnvelope.status)) throw new Error('The executed agreement has no valid frozen signing envelope.');
@@ -177,13 +177,13 @@ export async function ensureCompletionManifest(
       completedAt: now(),
     },
   );
-  await exportExecutedPdf(agreement, executedPdf);
+  await exportExecutedPdf(repository, agreement, executedPdf);
   return manifest;
 }
 
-async function exportExecutedPdf(agreement: Agreement, artifact: AgreementArtifact): Promise<void> {
+async function exportExecutedPdf(repository: Repository, agreement: Agreement, artifact: AgreementArtifact): Promise<void> {
   try {
-    await runExecutedAgreementExports({ agreement, artifact, bytes: await readArtifactContent(artifact) });
+    await runExecutedAgreementExports(repository, { agreement, artifact, bytes: await readArtifactContent(artifact) });
   } catch (error) {
     // The sealed ByteCrunch artifact is authoritative. A downstream export is
     // retried the next time completion is ensured and must never undo signing.

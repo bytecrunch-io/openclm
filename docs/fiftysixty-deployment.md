@@ -1,6 +1,6 @@
 # FiftySixty single-host deployment
 
-This profile runs ByteCrunch Contracts as a standalone customer-entity CLM on one EC2 host. FiftySixty is a customer entity, not a special platform workspace. Cognito authenticates staff and Google Drive receives a downstream copy of each executed PDF; PostgreSQL plus the filesystem artifact volume remain authoritative.
+This profile runs ByteCrunch Contracts as a standalone customer-entity CLM on one EC2 host. FiftySixty is created through the normal company onboarding flow, not as a special platform workspace. Cognito authenticates staff and Google Drive receives a downstream copy of each executed PDF; PostgreSQL plus the filesystem artifact volume remain authoritative.
 
 ## 1. Add the Cognito client
 
@@ -12,19 +12,19 @@ In the FiftySixty `AuthStack`, create a dedicated confidential user-pool client 
 
 Do not reuse the console public client or the machine-to-machine client. The CLM keys identities by the Cognito issuer plus `sub`; Google is intentionally not a second CLM identity system. The existing Cognito pre-signup policy continues to decide which email domains may authenticate.
 
-Copy the new client ID and secret into `deploy/.env.fiftysixty`. The issuer and Hosted UI endpoint split in the example is intentional: tokens are verified against the regional Cognito issuer while browser authorization uses `auth.fiftysixty.com`.
+After creating the FiftySixty entity, install **Enterprise SSO** in Settings and enter the client details there. The issuer and Hosted UI endpoint split is intentional: tokens are verified against the regional Cognito issuer while browser authorization uses `auth.fiftysixty.com`. The environment-based OIDC values remain the platform/recovery login, not the entity connection.
 
 ## 2. Prepare Google Drive export
 
-Create a dedicated Google service account and a destination folder for executed contracts. For direct service-account access, use a Shared Drive and share only that folder with the service-account email; service accounts do not have personal Drive storage quota. Put its JSON credential at `deploy/secrets/google-service-account.json` with mode `0600` and set `GOOGLE_DRIVE_FOLDER_ID`.
+Create a dedicated Google service account and a destination folder for executed contracts. For direct service-account access, use a Shared Drive and share only that folder with the service-account email; service accounts do not have personal Drive storage quota. Install **Google Drive** in the entity Settings, then paste the credential JSON and destination folder ID. The environment credential remains a self-hosting fallback when no entity installation exists.
 
-If Workspace policy requires domain-wide delegation, authorize the Drive scope and set `GOOGLE_DRIVE_IMPERSONATE_EMAIL` to a dedicated automation user. Delegation is optional and broader than sharing one folder.
+If Workspace policy requires domain-wide delegation, authorize the Drive scope and enter a dedicated automation user in the plugin form. Delegation is optional and broader than sharing one folder.
 
 The export plugin queries by agreement ID plus sealed-artifact SHA-256 before uploading, so retries do not create duplicates. Export happens after the sealed PDF is durably retained. A Drive failure is logged and retried the next time completion is ensured; it never reverses an execution.
 
 ## 3. Configure the customer entity
 
-Copy `deploy/fiftysixty.env.example` to `deploy/.env.fiftysixty` and populate every `CHANGE_` value. URL-encode the database password when placing it in `DATABASE_URL`. `BOOTSTRAP_MEMBER_EMAIL_DOMAINS` maps verified first-time staff into the FiftySixty entity as contract managers and signatories. Only addresses in `BOOTSTRAP_ADMIN_EMAILS` become entity administrators.
+Copy `deploy/fiftysixty.env.example` to `deploy/.env.fiftysixty` and populate every required platform value. URL-encode the database password when placing it in `DATABASE_URL`. For a clean self-service test, leave the optional `BOOTSTRAP_*` and `EXECUTED_EXPORT_*` values unset, sign in through the platform provider, and create FiftySixty in the three-step onboarding flow. The bootstrap variables remain useful for unattended self-host migrations.
 
 After the initial administrator logs in, open **Settings → Entity branding** to upload the logo and logomark and select the brand colours. Images are limited to PNG, JPEG, or WebP under 300 KB and are stored with the entity. Participant contract pages inherit the sender entity's presentation.
 
@@ -41,7 +41,7 @@ mkdir -p secrets
 docker compose --env-file .env.fiftysixty -f docker-compose.fiftysixty.yml up -d --build
 ```
 
-The compose file intentionally omits Keycloak and Mailpit. Persist and encrypt both named volumes, restrict the EC2 security group to HTTPS and operator SSH, and mount the PKCS#12 seal plus Google credential read-only under `deploy/secrets`.
+The compose file intentionally omits Keycloak and Mailpit. Persist and encrypt both named volumes, restrict the EC2 security group to HTTPS and operator SSH, and mount the PKCS#12 seal read-only under `deploy/secrets`. A mounted Google credential is needed only when using the environment fallback instead of the entity plugin installation.
 
 ## 5. Acceptance checks
 

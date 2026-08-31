@@ -28,6 +28,9 @@ global account -> customer-entity membership -> TypeSpec API -> Zod validation -
 - OIDC identities use provider, issuer, and subject as their stable key. Verified email is a contact/recovery attribute and is not used as an OIDC subject.
 - OIDC discovery endpoints can be overridden independently of the issuer. This supports Amazon Cognito's regional issuer plus branded Hosted UI split.
 - Optional verified-domain bootstrap maps a first login into one configured customer entity. Administrators remain an explicit email allowlist; other matched users receive contract-manager and signatory roles.
+- A first-time platform user can create a customer entity through the company, branding, and integration onboarding steps. The creator is the recovery administrator and may later enable that entity's own OIDC connection.
+- Plugin code is installed by the deployment operator and exposed through a static catalog. Entity administrators may configure catalog entries but cannot upload executable code.
+- Plugin installations are entity-owned records. Public configuration is separated from AES-256-GCM encrypted secrets; secret values and ciphertext are never returned by the HTTP API. `PLUGIN_ENCRYPTION_KEY` is independent from session signing and must remain stable across deployments.
 - External integration identities remain tenant- and integration-scoped opaque subject IDs.
 - Agreement participants and agreement access are separate: the participant records the role in the transaction, while durable agreement access links that participant to a global account.
 - Agreement content is hashed whenever an accepted suggestion changes it.

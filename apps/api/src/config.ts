@@ -57,6 +57,7 @@ const ConfigSchema = z
       .string()
       .min(32)
       .default("local-only-session-secret-change-me"),
+    PLUGIN_ENCRYPTION_KEY: z.string().min(32).default("local-only-plugin-encryption-key-change-me"),
     WEBHOOK_SIGNING_SECRET: z.string().min(8).default("local-webhook-secret"),
     SIGNING_MODE: z.enum(["development", "platform", "disabled"]).default("development"),
     PDF_SEAL_MODE: z.enum(["development", "p12", "disabled"]).default("development"),
@@ -104,6 +105,7 @@ const ConfigSchema = z
       !value.SESSION_SECRET.includes(
         "change-",
       ), "SESSION_SECRET", "Use a unique deployed session secret of at least 32 characters.");
+    require(!value.PLUGIN_ENCRYPTION_KEY.includes("local-") && !value.PLUGIN_ENCRYPTION_KEY.includes("change-"), "PLUGIN_ENCRYPTION_KEY", "Use a stable, unique plugin encryption key of at least 32 characters.");
     require(value.WEBHOOK_SIGNING_SECRET.length >= 32 &&
       !value.WEBHOOK_SIGNING_SECRET.includes(
         "local-",

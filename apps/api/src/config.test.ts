@@ -11,6 +11,7 @@ const productionEnvironment = {
   OIDC_CLIENT_SECRET: "deployed-client-secret",
   OIDC_REDIRECT_URI: "https://api.contracts.example.com/auth/callback",
   SESSION_SECRET: "unique-session-secret-1234567890abcdef",
+  PLUGIN_ENCRYPTION_KEY: "unique-plugin-key-1234567890abcdef",
   WEBHOOK_SIGNING_SECRET: "unique-webhook-secret-1234567890abcdef",
   SMTP_HOST: "smtp.example.com",
   SIGNING_MODE: "disabled",

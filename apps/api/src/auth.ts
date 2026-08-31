@@ -3,6 +3,9 @@ import { createRemoteJWKSet, jwtVerify, SignJWT } from 'jose';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import type { Context, MiddlewareHandler } from 'hono';
 import { config } from './config.js';
+import type { Repository } from './repository.js';
+import { enterpriseOidcConnection } from './integration-plugins.js';
+import { assertExternalUrlAllowed } from './webhooks.js';
 
 export interface AuthUser {
   id: string;
@@ -137,7 +140,16 @@ export function currentUser(context: Context): AuthUser {
   return context.get('user') as AuthUser;
 }
 
-export function registerAuthRoutes(app: import('hono').Hono): void {
+const entityCallbackUri = () => new URL('/auth/entity-callback', config.OIDC_REDIRECT_URI).toString();
+
+async function entityMetadata(repository: Repository, entityId: string): Promise<{ metadata: OidcMetadata; issuer: string; clientId: string; clientSecret: string; emailDomains: string[] }> {
+  const connection = await enterpriseOidcConnection(repository, entityId); if (!connection) throw new Error('Enterprise SSO is not enabled for this entity.');
+  const issuer = String(connection.issuerUrl).replace(/\/$/, ''); await assertExternalUrlAllowed(issuer, 'OIDC issuer'); const discoveryIssuer = issuer === config.OIDC_ISSUER_URL.replace(/\/$/, '') && config.OIDC_INTERNAL_ISSUER_URL ? config.OIDC_INTERNAL_ISSUER_URL.replace(/\/$/, '') : issuer; const response = await fetch(`${discoveryIssuer}/.well-known/openid-configuration`); if (!response.ok) throw new Error(`OIDC discovery failed with ${response.status}`);
+  const discovered = await response.json() as OidcMetadata;
+  return { issuer, clientId: String(connection.clientId), clientSecret: String(connection.clientSecret), emailDomains: Array.isArray(connection.emailDomains) ? connection.emailDomains.map(String) : [], metadata: { ...discovered, ...(connection.authorizationEndpoint ? { authorization_endpoint: String(connection.authorizationEndpoint) } : {}), ...(connection.tokenEndpoint ? { token_endpoint: String(connection.tokenEndpoint) } : {}), ...(connection.jwksUri ? { jwks_uri: String(connection.jwksUri) } : {}) } };
+}
+
+export function registerAuthRoutes(app: import('hono').Hono, repository: Repository): void {
   app.get('/auth/login', async (context) => {
     if (config.AUTH_MODE === 'dev') return context.redirect(config.WEB_URL);
     const metadata = await getMetadata();
@@ -161,6 +173,19 @@ export function registerAuthRoutes(app: import('hono').Hono): void {
     url.searchParams.set('code_challenge', challenge);
     url.searchParams.set('code_challenge_method', 'S256');
     return context.redirect(url.toString());
+  });
+
+  app.get('/auth/sso/:entitySlug', async (context) => {
+    const entity = await repository.findCustomerEntityBySlug(context.req.param('entitySlug'));
+    if (!entity) return context.text('Customer entity not found.', 404);
+    try {
+      const connection = await entityMetadata(repository, entity.id); const state = randomBytes(24).toString('base64url'); const nonce = randomBytes(24).toString('base64url'); const verifier = randomBytes(48).toString('base64url');
+      const requestedReturnTo = context.req.query('returnTo'); const returnTo = requestedReturnTo?.startsWith('/') && !requestedReturnTo.startsWith('//') ? requestedReturnTo : '/'; const challenge = createHash('sha256').update(verifier).digest('base64url');
+      const authState = await signPayload({ state, nonce, verifier, returnTo, entityId: entity.id }, '10m');
+      setCookie(context, 'bc_contracts_auth_state', authState, { httpOnly: true, sameSite: 'Lax', secure: entityCallbackUri().startsWith('https://'), path: '/', maxAge: 600 });
+      const url = new URL(connection.metadata.authorization_endpoint); url.searchParams.set('client_id', connection.clientId); url.searchParams.set('redirect_uri', entityCallbackUri()); url.searchParams.set('response_type', 'code'); url.searchParams.set('scope', 'openid profile email'); url.searchParams.set('state', state); url.searchParams.set('nonce', nonce); url.searchParams.set('code_challenge', challenge); url.searchParams.set('code_challenge_method', 'S256');
+      return context.redirect(url.toString());
+    } catch (error) { return context.text(error instanceof Error ? error.message : 'Enterprise SSO could not be started.', 409); }
   });
 
   app.get('/auth/callback', async (context) => {
@@ -209,6 +234,19 @@ export function registerAuthRoutes(app: import('hono').Hono): void {
     } catch (error) {
       return context.text(`Authentication failed: ${error instanceof Error ? error.message : 'Unknown error'}`, 401);
     }
+  });
+
+  app.get('/auth/entity-callback', async (context) => {
+    const code = context.req.query('code'); const returnedState = context.req.query('state'); const stateCookie = getCookie(context, 'bc_contracts_auth_state');
+    if (!code || !returnedState || !stateCookie) return context.text('Invalid authentication response.', 400);
+    try {
+      const { payload: authState } = await jwtVerify(stateCookie, secret, { algorithms: ['HS256'] }); if (authState.state !== returnedState || typeof authState.entityId !== 'string') throw new Error('State does not match');
+      const connection = await entityMetadata(repository, authState.entityId); const response = await fetch(internalUrl(connection.metadata.token_endpoint), { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: entityCallbackUri(), client_id: connection.clientId, client_secret: connection.clientSecret, code_verifier: String(authState.verifier) }) });
+      if (!response.ok) throw new Error(`Token endpoint returned ${response.status}`); const tokens = await response.json() as { id_token: string }; const jwks = createRemoteJWKSet(new URL(internalUrl(connection.metadata.jwks_uri))); const { payload } = await jwtVerify(tokens.id_token, jwks, { issuer: connection.issuer, audience: connection.clientId });
+      if (payload.nonce !== authState.nonce) throw new Error('Nonce does not match'); if (typeof payload.email !== 'string' || payload.email_verified !== true) throw new Error('A verified email address is required'); const emailDomain = payload.email.toLowerCase().split('@')[1] ?? ''; if (!connection.emailDomains.includes(emailDomain)) throw new Error('This verified email domain is not allowed for the customer entity.');
+      const session = await new SignJWT({ email: payload.email, emailVerified: true, name: payload.name ?? payload.preferred_username ?? payload.email, issuer: connection.issuer, tenantId: authState.entityId, scopes: ['agreements:read', 'agreements:write', 'templates:write'] }).setProtectedHeader({ alg: 'HS256' }).setSubject(String(payload.sub)).setIssuedAt().setExpirationTime('8h').sign(secret);
+      setCookie(context, 'bc_contracts_session', session, { httpOnly: true, sameSite: 'Lax', secure: config.WEB_URL.startsWith('https://'), path: '/', maxAge: 28_800 }); deleteCookie(context, 'bc_contracts_auth_state'); const returnUrl = new URL(String(authState.returnTo ?? '/'), config.WEB_URL); return context.redirect(returnUrl.origin === new URL(config.WEB_URL).origin ? returnUrl.toString() : config.WEB_URL);
+    } catch (error) { return context.text(`Authentication failed: ${error instanceof Error ? error.message : 'Unknown error'}`, 401); }
   });
 
   app.post('/auth/logout', (context) => {

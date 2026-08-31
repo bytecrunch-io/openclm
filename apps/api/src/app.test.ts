@@ -151,6 +151,20 @@ describe('contracts API vertical slice', () => {
     expect(denied.status).toBe(403);
   });
 
+  it('installs entity plugins without exposing credentials and starts entity-specific SSO', async () => {
+    const repository = new MemoryRepository(); await repository.init(); const app = createApp(repository);
+    const catalog = await app.request('/v1/plugin-catalog'); expect(await catalog.json()).toEqual(expect.arrayContaining([expect.objectContaining({ key: 'google-drive' }), expect.objectContaining({ key: 'enterprise-oidc' })]));
+    const secret = 'client-secret-that-must-never-be-returned';
+    const configured = await app.request('/v1/plugin-installations/enterprise-oidc', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ enabled: true, configuration: { issuerUrl: 'https://identity.example.com/pool', authorizationEndpoint: 'https://auth.example.com/oauth2/authorize', tokenEndpoint: 'https://auth.example.com/oauth2/token', jwksUri: 'https://identity.example.com/pool/jwks.json', clientId: 'contracts-client', clientSecret: secret, emailDomains: ['example.com'] } }) });
+    expect(configured.status).toBe(200); const publicBody = await configured.json() as Record<string, unknown>; expect(publicBody).toMatchObject({ pluginKey: 'enterprise-oidc', status: 'enabled', configuredSecretFields: ['clientSecret'] }); expect(JSON.stringify(publicBody)).not.toContain(secret); expect(publicBody).not.toHaveProperty('secretCiphertext');
+    const stored = await repository.findPluginInstallation('bytecrunch', 'enterprise-oidc'); expect(stored?.secretCiphertext).toBeTruthy(); expect(stored?.secretCiphertext).not.toContain(secret);
+    const response = new Response(JSON.stringify({ authorization_endpoint: 'https://discovered.example/authorize', token_endpoint: 'https://discovered.example/token', jwks_uri: 'https://discovered.example/jwks' }), { status: 200, headers: { 'content-type': 'application/json' } });
+    vi.stubGlobal('fetch', vi.fn(async () => response.clone()));
+    try { const login = await app.request('/auth/sso/bytecrunch'); expect(login.status).toBe(302); const location = new URL(login.headers.get('location')!); expect(location.origin + location.pathname).toBe('https://auth.example.com/oauth2/authorize'); expect(location.searchParams.get('client_id')).toBe('contracts-client'); expect(location.searchParams.get('redirect_uri')).toBe('http://localhost:3001/auth/entity-callback'); }
+    finally { vi.unstubAllGlobals(); }
+    const removed = await app.request('/v1/plugin-installations/enterprise-oidc', { method: 'DELETE' }); expect(removed.status).toBe(200); expect(await repository.findPluginInstallation('bytecrunch', 'enterprise-oidc')).toBeUndefined();
+  });
+
   it('versions templates inside the selected customer entity only', async () => {
     const repository = new MemoryRepository(); await repository.init(); const app = createApp(repository); const me = await (await app.request('/v1/me')).json() as { id: string };
     const createdEntity = await app.request('/v1/entities', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ slug: 'template-customer', legalName: 'Template Customer ApS' }) }); const entity = await createdEntity.json() as { id: string }; const headers = { 'content-type': 'application/json', 'x-bytecrunch-entity-id': entity.id };

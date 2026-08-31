@@ -286,6 +286,26 @@ export const IntegrationSchema = z.object({
 export type Integration = z.infer<typeof IntegrationSchema>;
 export const CreateIntegrationSchema = IntegrationSchema.pick({ name: true, key: true, mappingStrategy: true, allowedRedirectUris: true, allowedOrigins: true });
 
+export const PluginKeySchema = z.enum(['google-drive', 'enterprise-oidc']);
+export type PluginKey = z.infer<typeof PluginKeySchema>;
+export const PluginCapabilitySchema = z.enum(['executed_agreement_export', 'identity_provider']);
+export const PluginInstallationSchema = z.object({
+  id: z.string().min(1), entityId: z.string().min(1), pluginKey: PluginKeySchema,
+  status: z.enum(['configured', 'enabled', 'disabled', 'error']),
+  configuration: z.record(z.string(), z.union([z.string(), z.boolean(), z.array(z.string())])),
+  configuredSecretFields: z.array(z.string()),
+  secretCiphertext: z.string().min(1).nullable(),
+  lastCheckedAt: z.string().datetime().nullable(), lastError: z.string().max(1000).nullable(),
+  createdAt: z.string().datetime(), updatedAt: z.string().datetime(),
+});
+export type PluginInstallation = z.infer<typeof PluginInstallationSchema>;
+export const PublicPluginInstallationSchema = PluginInstallationSchema.omit({ secretCiphertext: true });
+export type PublicPluginInstallation = z.infer<typeof PublicPluginInstallationSchema>;
+export const ConfigurePluginInstallationSchema = z.object({
+  configuration: z.record(z.string(), z.unknown()),
+  enabled: z.boolean().default(true),
+});
+
 export const IdentityLinkSchema = z.object({
   id: z.string().min(1), tenantId: z.string().min(1), integrationId: z.string().min(1), externalSubject: z.string().min(1).max(255),
   personId: z.string().min(1), email: z.string().email(), linkingMethod: z.enum(['host_asserted', 'shared_oidc', 'account_linking']), verifiedAt: z.string().datetime(),

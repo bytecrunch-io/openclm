@@ -1925,6 +1925,145 @@ paths:
             - templates:read
             - templates:write
             - webhooks:manage
+  /v1/plugin-catalog:
+    get:
+      operationId: PluginCatalogOperations_list
+      parameters:
+        - $ref: '#/components/parameters/EntityContext'
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - type: array
+                    items:
+                      $ref: '#/components/schemas/PluginManifest'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+  /v1/plugin-installations:
+    get:
+      operationId: PluginInstallationOperations_list
+      parameters:
+        - $ref: '#/components/parameters/EntityContext'
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - type: array
+                    items:
+                      $ref: '#/components/schemas/PluginInstallation'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+  /v1/plugin-installations/{pluginKey}:
+    put:
+      operationId: PluginInstallationOperations_configure
+      parameters:
+        - $ref: '#/components/parameters/EntityContext'
+        - name: pluginKey
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/PluginKey'
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/PluginInstallation'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfigurePluginInstallation'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+    delete:
+      operationId: PluginInstallationOperations_remove
+      parameters:
+        - $ref: '#/components/parameters/EntityContext'
+        - name: pluginKey
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/PluginKey'
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - type: object
+                    properties:
+                      removed:
+                        type: boolean
+                        enum:
+                          - true
+                      operationId:
+                        type: string
+                    required:
+                      - removed
+                      - operationId
+                  - $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+  /v1/plugin-installations/{pluginKey}/test:
+    post:
+      operationId: PluginInstallationOperations_test
+      parameters:
+        - $ref: '#/components/parameters/EntityContext'
+        - name: pluginKey
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/PluginKey'
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/PluginInstallation'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
   /v1/templates:
     get:
       operationId: TemplateOperations_list
@@ -2411,6 +2550,16 @@ components:
             - type: string
               format: date-time
             - type: 'null'
+    ConfigurePluginInstallation:
+      type: object
+      required:
+        - configuration
+      properties:
+        configuration:
+          type: object
+          unevaluatedProperties: {}
+        enabled:
+          type: boolean
     CreateAgreement:
       type: object
       required:
@@ -3614,6 +3763,113 @@ components:
         options:
           type: object
           unevaluatedProperties: {}
+    PluginField:
+      type: object
+      required:
+        - key
+        - label
+        - kind
+        - required
+        - secret
+        - help
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        kind:
+          type: string
+          enum:
+            - text
+            - url
+            - email
+            - password
+            - textarea
+            - string_list
+        required:
+          type: boolean
+        secret:
+          type: boolean
+        help:
+          type: string
+    PluginInstallation:
+      type: object
+      required:
+        - id
+        - entityId
+        - pluginKey
+        - status
+        - configuration
+        - configuredSecretFields
+        - lastCheckedAt
+        - lastError
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+        entityId:
+          type: string
+        pluginKey:
+          $ref: '#/components/schemas/PluginKey'
+        status:
+          type: string
+          enum:
+            - configured
+            - enabled
+            - disabled
+            - error
+        configuration:
+          type: object
+          unevaluatedProperties: {}
+        configuredSecretFields:
+          type: array
+          items:
+            type: string
+        lastCheckedAt:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+        lastError:
+          anyOf:
+            - type: string
+            - type: 'null'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    PluginKey:
+      type: string
+      enum:
+        - google-drive
+        - enterprise-oidc
+    PluginManifest:
+      type: object
+      required:
+        - key
+        - name
+        - description
+        - capability
+        - fields
+      properties:
+        key:
+          $ref: '#/components/schemas/PluginKey'
+        name:
+          type: string
+        description:
+          type: string
+        capability:
+          type: string
+          enum:
+            - executed_agreement_export
+            - identity_provider
+        fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/PluginField'
     PublicVerification:
       type: object
       required:

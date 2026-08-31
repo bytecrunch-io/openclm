@@ -14,6 +14,7 @@ import {
   Check,
   ChevronRight,
   CircleUserRound,
+  Cloud,
   FileCheck2,
   FileClock,
   FilePenLine,
@@ -32,6 +33,7 @@ import {
   Plus,
   Save,
   Settings,
+  Trash2,
   ShieldCheck,
   UserPlus,
   UsersRound,
@@ -58,6 +60,8 @@ import {
   type PublicVerification,
   type RecipientInboxItem,
   type User,
+  type PluginInstallation,
+  type PluginManifest,
 } from "./api";
 import ExternalPortal from "./ExternalPortal";
 import {
@@ -522,6 +526,7 @@ function AdminApp() {
             api.selectEntity(entityId);
             setCreatingEntity(false);
             setSelected(undefined);
+            setView("settings");
             void refresh();
           }}
           onError={setError}
@@ -613,6 +618,7 @@ function NavButton({
 }
 
 function SignIn({ error }: { error?: string }) {
+  const [companySlug, setCompanySlug] = useState('');
   return (
     <main className="signin">
       <div className="bc-bytewave" />
@@ -627,12 +633,13 @@ function SignIn({ error }: { error?: string }) {
         {error && <div className="error-banner">{error}</div>}
         <div className="signin-actions">
           <a className="button button-accent" href={api.loginUrl}>
-            Continue with SSO <ArrowRight />
+            Sign in or create a company <ArrowRight />
           </a>
           <a className="button button-secondary" href="/inbox">
             Open invited agreements
           </a>
         </div>
+        <form className="company-sso-login" onSubmit={(event) => { event.preventDefault(); if (companySlug) window.location.assign(api.entitySsoUrl(companySlug)); }}><label>Use your company SSO<div><input required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" value={companySlug} onChange={(event) => setCompanySlug(event.target.value.toLowerCase())} placeholder="company-workspace" /><button className="button button-secondary">Continue</button></div><small>Enter the workspace identifier provided by your company.</small></label></form>
       </section>
     </main>
   );
@@ -1065,6 +1072,8 @@ function CustomerEntityOnboarding({
   user: User;
   onCreated: (entityId: string) => void;
 }) {
+  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [entity, setEntity] = useState<CustomerEntity>();
   const [legalName, setLegalName] = useState("");
   const [slug, setSlug] = useState("");
   const [businessAddress, setBusinessAddress] = useState("");
@@ -1072,12 +1081,17 @@ function CustomerEntityOnboarding({
   const [jurisdiction, setJurisdiction] = useState("");
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
+  const [branding, setBranding] = useState<EntityBranding>({ displayName: null, primaryColor: '#ed650f', secondaryColor: '#05a9ef', logoDataUrl: null, markDataUrl: null });
   const suggestedSlug = (value: string) =>
     value
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-|-$/g, "");
-  async function submit(event: FormEvent) {
+  const readBrandImage = (file: File, field: 'logoDataUrl' | 'markDataUrl') => {
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 300_000) { setError('Use a PNG, JPEG, or WebP image smaller than 300 KB.'); return; }
+    const reader = new FileReader(); reader.onload = () => setBranding((current) => ({ ...current, [field]: String(reader.result) })); reader.readAsDataURL(file);
+  };
+  async function submitEntity(event: FormEvent) {
     event.preventDefault();
     try {
       setBusy(true);
@@ -1089,7 +1103,7 @@ function CustomerEntityOnboarding({
         ...(registrationNumber ? { registrationNumber } : {}),
         ...(jurisdiction ? { jurisdiction } : {}),
       });
-      onCreated(entity.id);
+      api.selectEntity(entity.id); setEntity(entity); setBranding((current) => ({ ...current, displayName: entity.legalName })); setStep(2);
     } catch (cause) {
       setError(
         cause instanceof Error
@@ -1100,6 +1114,7 @@ function CustomerEntityOnboarding({
       setBusy(false);
     }
   }
+  async function submitBranding(event: FormEvent) { event.preventDefault(); if (!entity) return; try { setBusy(true); setError(undefined); const updated = await api.updateEntityBranding(branding); setEntity(updated); setStep(3); } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not save company branding.'); } finally { setBusy(false); } }
   return (
     <main className="entity-onboarding">
       <section className="entity-onboarding-intro">
@@ -1113,10 +1128,11 @@ function CustomerEntityOnboarding({
           independent tenant and contracting context—not a ByteCrunch subsidiary
           or shared parent workspace.
         </p>
+        <ol className="onboarding-steps"><li className={step >= 1 ? 'active' : ''}>Company</li><li className={step >= 2 ? 'active' : ''}>Brand</li><li className={step >= 3 ? 'active' : ''}>Integrations</li></ol>
       </section>
-      <form
+      {step === 1 && <form
         className="entity-onboarding-form"
-        onSubmit={(event) => void submit(event)}
+        onSubmit={(event) => void submitEntity(event)}
       >
         <span className="bc-eyebrow bc-text-blue">// CUSTOMER ENTITY</span>
         <h2>Set up your workspace</h2>
@@ -1185,7 +1201,16 @@ function CustomerEntityOnboarding({
           )}
         </button>
         <small>Signed in as {user.email}</small>
-      </form>
+      </form>}
+      {step === 2 && <form className="entity-onboarding-form" onSubmit={(event) => void submitBranding(event)}>
+        <span className="bc-eyebrow bc-text-blue">// COMPANY BRAND</span><h2>Make the workspace yours</h2>
+        <label>Display name<input required value={branding.displayName ?? ''} onChange={(event) => setBranding((current) => ({ ...current, displayName: event.target.value }))} /></label>
+        <div className="form-split"><label>Primary colour<input type="color" value={branding.primaryColor} onChange={(event) => setBranding((current) => ({ ...current, primaryColor: event.target.value }))} /></label><label>Secondary colour<input type="color" value={branding.secondaryColor} onChange={(event) => setBranding((current) => ({ ...current, secondaryColor: event.target.value }))} /></label></div>
+        <div className="form-split"><label>Logo<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) readBrandImage(file, 'logoDataUrl'); }} /><small>Horizontal logo, up to 300 KB.</small></label><label>Logomark<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) readBrandImage(file, 'markDataUrl'); }} /><small>Square mark, up to 300 KB.</small></label></div>
+        <div className="onboarding-brand-preview" style={{ borderColor: branding.primaryColor }}>{branding.markDataUrl ? <img src={branding.markDataUrl} alt="" /> : <img src={logo} alt="" />}<strong>{branding.displayName}</strong></div>
+        {error && <div className="inline-error">{error}</div>}<footer><button type="button" className="button button-secondary" onClick={() => setStep(3)}>Skip for now</button><button disabled={busy} className="button button-accent">{busy ? <><BusyMark /> Saving…</> : <>Continue <ArrowRight /></>}</button></footer>
+      </form>}
+      {step === 3 && entity && <div className="entity-onboarding-form onboarding-integrations"><PluginManager entity={entity} canManage onError={setError} onboarding onContinue={() => onCreated(entity.id)} />{error && <div className="inline-error">{error}</div>}<button className="text-button" onClick={() => onCreated(entity.id)}>Skip integrations for now</button></div>}
     </main>
   );
 }
@@ -3427,6 +3452,7 @@ function IntegrationSettings({ entity, canManage, onSaved, onError }: { entity: 
           {canManage && <button className="button button-accent" disabled={busy}>{busy ? <><BusyMark /> Saving…</> : <><Save /> Save branding</>}</button>}
         </div>
       </form>
+      {canManage && <PluginManager entity={entity} canManage onError={onError} />}
       <div className="integration-grid">
         <article>
           <Webhook />
@@ -3468,6 +3494,22 @@ function IntegrationSettings({ entity, canManage, onSaved, onError }: { entity: 
       </div>
     </div>
   );
+}
+
+function PluginManager({ entity, canManage, onError, onboarding = false, onContinue }: { entity: CustomerEntity; canManage: boolean; onError: (message: string) => void; onboarding?: boolean; onContinue?: () => void }) {
+  const [catalog, setCatalog] = useState<PluginManifest[]>([]); const [installations, setInstallations] = useState<PluginInstallation[]>([]); const [editing, setEditing] = useState<PluginManifest>(); const [values, setValues] = useState<Record<string, string>>({}); const [busy, setBusy] = useState<string>();
+  const load = () => Promise.all([api.pluginCatalog(), api.pluginInstallations()]).then(([nextCatalog, nextInstallations]) => { setCatalog(nextCatalog); setInstallations(nextInstallations); }).catch((cause) => onError(cause instanceof Error ? cause.message : 'Could not load integrations.'));
+  useEffect(() => { void load(); }, [entity.id]);
+  const installationFor = (key: PluginManifest['key']) => installations.find((item) => item.pluginKey === key);
+  const open = (manifest: PluginManifest) => { const installation = installationFor(manifest.key); const initial: Record<string, string> = {}; for (const field of manifest.fields) { const stored = installation?.configuration[field.key]; initial[field.key] = Array.isArray(stored) ? stored.join(', ') : typeof stored === 'string' ? stored : ''; } setValues(initial); setEditing(manifest); };
+  const savePlugin = async (event: FormEvent) => { event.preventDefault(); if (!editing) return; setBusy(`save-${editing.key}`); try { const configuration: Record<string, unknown> = {}; for (const field of editing.fields) { if (field.secret && !values[field.key]) continue; configuration[field.key] = field.kind === 'string_list' ? values[field.key]?.split(',').map((item) => item.trim()).filter(Boolean) : values[field.key] ?? ''; } const saved = await api.configurePlugin(editing.key, configuration); setInstallations((items) => [...items.filter((item) => item.pluginKey !== saved.pluginKey), saved]); setEditing(undefined); } catch (cause) { onError(cause instanceof Error ? cause.message : 'Could not configure integration.'); } finally { setBusy(undefined); } };
+  const test = async (key: PluginManifest['key']) => { setBusy(`test-${key}`); try { const result = await api.testPlugin(key); setInstallations((items) => [...items.filter((item) => item.pluginKey !== key), result]); } catch (cause) { onError(cause instanceof Error ? cause.message : 'Could not test integration.'); } finally { setBusy(undefined); } };
+  const remove = async (key: PluginManifest['key']) => { if (!window.confirm('Disconnect this integration and remove its stored credentials?')) return; setBusy(`remove-${key}`); try { await api.removePlugin(key); setInstallations((items) => items.filter((item) => item.pluginKey !== key)); } catch (cause) { onError(cause instanceof Error ? cause.message : 'Could not disconnect integration.'); } finally { setBusy(undefined); } };
+  return <section className={`plugin-manager ${onboarding ? 'onboarding' : ''}`}>
+    <div className="plugin-manager-heading"><div><span className="bc-eyebrow bc-text-blue">// AVAILABLE INTEGRATIONS</span><h2>{onboarding ? 'Connect the tools your company uses.' : 'Installed per entity.'}</h2><p>ByteCrunch operators make trusted plugins available. Entity administrators control their configuration and credentials.</p></div>{onContinue && <button className="button button-accent" onClick={onContinue}>Finish setup <ArrowRight /></button>}</div>
+    <div className="plugin-catalog">{catalog.map((manifest) => { const installation = installationFor(manifest.key); return <article key={manifest.key} className="plugin-card"><div className="plugin-icon">{manifest.key === 'google-drive' ? <Cloud /> : <ShieldCheck />}</div><span className={`plugin-status ${installation?.status ?? 'available'}`}>{installation?.status ?? 'available'}</span><h3>{manifest.name}</h3><p>{manifest.description}</p>{manifest.key === 'enterprise-oidc' && installation && <code>{api.entitySsoUrl(entity.slug)}</code>}<div className="plugin-actions"><button disabled={!canManage || Boolean(busy)} className="button button-secondary button-small" onClick={() => open(manifest)}>{installation ? 'Configure' : 'Set up'}</button>{installation && <button disabled={Boolean(busy)} className="button button-secondary button-small" onClick={() => void test(manifest.key)}>{busy === `test-${manifest.key}` ? <><BusyMark /> Testing…</> : 'Test connection'}</button>}{installation && <button disabled={Boolean(busy)} className="icon-button" aria-label={`Disconnect ${manifest.name}`} onClick={() => void remove(manifest.key)}>{busy === `remove-${manifest.key}` ? <BusyMark /> : <Trash2 />}</button>}</div>{installation?.lastError && <small className="plugin-error">{installation.lastError}</small>}</article>; })}</div>
+    {editing && <Dialog labelledBy="plugin-config-heading" onClose={() => setEditing(undefined)} busy={Boolean(busy)}><header><div><span className="bc-eyebrow bc-text-orange">// {editing.capability.replaceAll('_', ' ')}</span><h2 id="plugin-config-heading">Configure {editing.name}</h2></div><IconButton label="Close integration form" onClick={() => setEditing(undefined)}><X /></IconButton></header><form onSubmit={(event) => void savePlugin(event)}>{editing.key === 'enterprise-oidc' && <div className="inline-note"><strong>Callback URL</strong><code>{new URL('/auth/entity-callback', api.entitySsoUrl(entity.slug)).toString()}</code></div>}{editing.fields.map((field) => <label key={field.key}>{field.label}{field.kind === 'textarea' ? <textarea required={field.required && !(field.secret && installationFor(editing.key)?.configuredSecretFields.includes(field.key))} rows={7} value={values[field.key] ?? ''} placeholder={field.secret && installationFor(editing.key) ? 'Configured — leave blank to keep it' : ''} onChange={(event) => setValues((current) => ({ ...current, [field.key]: event.target.value }))} /> : <input required={field.required && !(field.secret && installationFor(editing.key)?.configuredSecretFields.includes(field.key))} type={field.kind === 'password' ? 'password' : field.kind === 'email' ? 'email' : field.kind === 'url' ? 'url' : 'text'} value={values[field.key] ?? ''} placeholder={field.secret && installationFor(editing.key) ? 'Configured — leave blank to keep it' : ''} onChange={(event) => setValues((current) => ({ ...current, [field.key]: event.target.value }))} />}<small>{field.help}</small></label>)}<footer><button type="button" className="button button-secondary" onClick={() => setEditing(undefined)}>Cancel</button><button className="button button-accent" disabled={Boolean(busy)}>{busy ? <><BusyMark /> Saving…</> : <><Save /> Save and enable</>}</button></footer></form></Dialog>}
+  </section>;
 }
 
 export default App;

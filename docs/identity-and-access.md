@@ -30,6 +30,8 @@ Customer entity membership must never be inferred from agreement onboarding. A r
 
 A verified SSO user with no memberships can create their first independent customer entity and becomes its administrator. This is customer onboarding for the hosted or self-hosted product; it does not create a ByteCrunch subsidiary or place the customer beneath a ByteCrunch workspace. A user arriving through an entity invitation accepts that scoped membership instead.
 
+The first administrator uses the deployment's platform identity provider to create the entity, apply branding, and optionally configure enterprise OIDC. Enterprise OIDC is then reached through `/auth/sso/{entity-slug}`. Its issuer, client, endpoint overrides, encrypted client secret, and allowed verified-email domains belong to that entity. A successful entity callback grants contract-manager and signatory roles when needed; it never grants administrator. The original platform identity remains a recovery path if the customer provider is unavailable.
+
 Templates, agreements, sender details, members, and policies follow the active entity. The template library therefore shows and versions only templates owned by the selected customer entity; publishing an edit creates a new immutable version rather than changing agreements already in progress. The personal action inbox spans memberships so an entity switch cannot hide a required signature.
 
 ## Customer-entity invitation flow

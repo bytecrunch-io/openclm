@@ -394,6 +394,11 @@ enum EntityPermission { entity_manage: "entity.manage", members_manage: "members
 model EntityBranding { displayName: string | null; primaryColor: string; secondaryColor: string; logoDataUrl: string | null; markDataUrl: string | null; }
 model CustomerEntity { id: string; slug: string; legalName: string; businessAddress: string | null; registrationNumber: string | null; jurisdiction: string | null; branding: EntityBranding; createdAt: utcDateTime; }
 model CreateCustomerEntity { slug: string; legalName: string; businessAddress?: string; registrationNumber?: string; jurisdiction?: string; }
+enum PluginKey { google_drive: "google-drive", enterprise_oidc: "enterprise-oidc" }
+model PluginField { key: string; label: string; kind: "text" | "url" | "email" | "password" | "textarea" | "string_list"; required: boolean; secret: boolean; help: string; }
+model PluginManifest { key: PluginKey; name: string; description: string; capability: "executed_agreement_export" | "identity_provider"; fields: PluginField[]; }
+model PluginInstallation { id: string; entityId: string; pluginKey: PluginKey; status: "configured" | "enabled" | "disabled" | "error"; configuration: Record<unknown>; configuredSecretFields: string[]; lastCheckedAt: utcDateTime | null; lastError: string | null; createdAt: utcDateTime; updatedAt: utcDateTime; }
+model ConfigurePluginInstallation { configuration: Record<unknown>; enabled?: boolean; }
 model EntityMembershipRecord { id: string; accountId: string; entityId: string; roles: EntityRole[]; permissions: EntityPermission[]; status: "invited" | "active" | "suspended"; createdAt: utcDateTime; }
 model EntityMembership is EntityMembershipRecord { entity: CustomerEntity; }
 model CurrentAccount { id: string; email: string; name: string; activeEntityId: string | null; entities: EntityMembership[]; scopes: string[]; }
@@ -483,6 +488,19 @@ interface EntityOperations { @post create(@body body: CreateCustomerEntity): Cus
 @route("/v1/entity/branding")
 @useAuth(ContractsOAuth2)
 interface EntityBrandingOperations { @put update(...EntityContext, @body body: EntityBranding): CustomerEntity | ErrorResponse; }
+
+@route("/v1/plugin-catalog")
+@useAuth(ContractsOAuth2)
+interface PluginCatalogOperations { @get list(...EntityContext): PluginManifest[] | ErrorResponse; }
+
+@route("/v1/plugin-installations")
+@useAuth(ContractsOAuth2)
+interface PluginInstallationOperations {
+  @get list(...EntityContext): PluginInstallation[] | ErrorResponse;
+  @put @route("/{pluginKey}") configure(...EntityContext, @path pluginKey: PluginKey, @body body: ConfigurePluginInstallation): PluginInstallation | ErrorResponse;
+  @post @route("/{pluginKey}/test") test(...EntityContext, @path pluginKey: PluginKey): PluginInstallation | ErrorResponse;
+  @delete @route("/{pluginKey}") remove(...EntityContext, @path pluginKey: PluginKey): { removed: true; operationId: string; } | ErrorResponse;
+}
 
 @route("/v1/entity-members")
 @useAuth(ContractsOAuth2)

@@ -17,7 +17,7 @@
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": true,
       "publicClient": false,
-      "redirectUris": ["http://localhost:3001/auth/callback"],
+      "redirectUris": ["http://localhost:3001/auth/callback", "http://localhost:3001/auth/entity-callback"],
       "webOrigins": ["http://localhost:3000"],
       "protocol": "openid-connect",
       "attributes": {
@@ -61,6 +61,17 @@
       "lastName": "Admin",
       "credentials": [
         { "type": "password", "value": "bytecrunch", "temporary": false }
+      ]
+    },
+    {
+      "username": "founder@acme.test",
+      "email": "founder@acme.test",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Acme",
+      "lastName": "Founder",
+      "credentials": [
+        { "type": "password", "value": "onboarding", "temporary": false }
       ]
     }
   ]

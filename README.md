@@ -29,7 +29,9 @@ It is designed to work as a standalone product first. Each customer legal entity
 - Explicit **Acting for** context for templates, agreements, people, and sender details
 - Entity-scoped administrator, template manager, contract manager, signatory, and viewer roles
 - Per-entity display name, colour scheme, logo, and logomark
+- Guided first-company onboarding for legal details, branding, and optional integrations
 - Generic OIDC Authorization Code + PKCE for staff SSO
+- Entity-owned enterprise OIDC connections with company-specific login URLs and verified-domain membership
 - Verified-domain customer-entity bootstrap with an explicit administrator allowlist
 - Low-friction recipient invitations that become durable agreement access
 - Recipient return through short-lived email codes or discoverable WebAuthn passkeys
@@ -45,6 +47,7 @@ It is designed to work as a standalone product first. Each customer legal entity
 - Append-only lifecycle events and durable, retryable, replayable webhook deliveries
 - PostgreSQL and in-memory repository adapters
 - Optional, idempotent Google Drive export of executed PDFs behind a provider interface
+- Operator-controlled plugin catalog with entity installation, encrypted credentials, connection tests, and disconnect controls
 - Local PostgreSQL, Keycloak, Mailpit, API, and web application through Docker Compose
 - System, light, and dark Bytecrunch themes
 
@@ -84,6 +87,7 @@ docker-compose up --build
 | OpenAPI | http://localhost:3001/openapi.yaml |
 | Keycloak | http://localhost:8080 (`admin` / `admin`) |
 | Test user | `admin@bytecrunch.local` / `bytecrunch` |
+| First-company test user | `founder@acme.test` / `onboarding` |
 | Mailpit | http://localhost:8025 |
 
 The stack has no required hosted identity, database, email, font, telemetry, or license service. Compose configuration is for local development and its credentials must not be reused in a deployment.
@@ -103,6 +107,8 @@ The stack has no required hosted identity, database, email, font, telemetry, or 
 11. Close the recipient session and return through `/inbox` with a Mailpit code; optionally enroll a passkey and use it for the next return.
 
 Create another customer entity with **Add entity** to verify that templates, agreements, people, and sender identity change with the selected context. Open **People** to test member invitations and role assignment.
+
+To exercise self-service onboarding, sign out and use `founder@acme.test` / `onboarding`. Complete the company and brand steps, then configure Enterprise SSO with issuer `http://localhost:8080/realms/bytecrunch`, client ID `bytecrunch-contracts`, client secret `local-development-secret`, and allowed domain `acme.test`. After finishing, sign out and use the company SSO field with the entity slug. Existing Compose volumes created before this user was added must be recreated or the user added through Keycloak administration because realm imports only run on initial setup.
 
 An automated end-to-end equivalent runs against the Compose services:
 
