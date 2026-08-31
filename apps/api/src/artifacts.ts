@@ -9,6 +9,7 @@ import { artifactStorage } from "./artifact-storage.js";
 import { config } from "./config.js";
 import { renderAgreementPdf, renderCompletionCertificatePdf } from './pdf.js';
 import { pdfSha256, sealPdf, validateSealedPdf } from './pdf-seal.js';
+import { runExecutedAgreementExports } from './integration-plugins.js';
 
 const now = () => new Date().toISOString();
 const safeName = (value: string) =>
@@ -120,7 +121,11 @@ export async function ensureCompletionManifest(
       item.revision === agreement.revision &&
       item.contentSha256 === agreement.contentSha256,
   );
-  if (existing) return existing;
+  if (existing) {
+    const executedPdf = artifacts.find((item) => item.kind === 'executed_pdf' && item.revision === agreement.revision && item.contentSha256 === agreement.contentSha256);
+    if (executedPdf) await exportExecutedPdf(agreement, executedPdf);
+    return existing;
+  }
   if (!agreement.signingEnvelope || !['active', 'executed'].includes(agreement.signingEnvelope.status)) throw new Error('The executed agreement has no valid frozen signing envelope.');
   if (!agreement.verificationCode) { agreement.verificationCode = randomBytes(24).toString('base64url'); await repository.saveAgreement(agreement); }
   const sealedAt = agreement.executedAt ?? now();
@@ -135,7 +140,7 @@ export async function ensureCompletionManifest(
   completionCertificate ??= await storeArtifact(repository, agreement, 'completion_certificate', `${safeName(agreement.title)}-completion-certificate.pdf`, 'application/pdf', await renderCompletionCertificatePdf(agreement, executedSha256, `${sealProfile} · ${sealProvider}`));
   agreement.signingEnvelope.status = 'executed'; await repository.saveAgreement(agreement);
   const evidence = await repository.listSignatureEvidence(agreement.tenantId, agreement.id);
-  return storeJsonArtifact(
+  const manifest = await storeJsonArtifact(
     repository,
     agreement,
     "completion_manifest",
@@ -172,6 +177,18 @@ export async function ensureCompletionManifest(
       completedAt: now(),
     },
   );
+  await exportExecutedPdf(agreement, executedPdf);
+  return manifest;
+}
+
+async function exportExecutedPdf(agreement: Agreement, artifact: AgreementArtifact): Promise<void> {
+  try {
+    await runExecutedAgreementExports({ agreement, artifact, bytes: await readArtifactContent(artifact) });
+  } catch (error) {
+    // The sealed ByteCrunch artifact is authoritative. A downstream export is
+    // retried the next time completion is ensured and must never undo signing.
+    console.error(JSON.stringify({ event: 'executed_agreement_export_failed', agreementId: agreement.id, tenantId: agreement.tenantId, message: error instanceof Error ? error.message : 'Unknown export error' }));
+  }
 }
 
 export function publicArtifact(

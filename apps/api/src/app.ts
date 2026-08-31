@@ -360,6 +360,38 @@ export function createApp(repository: Repository): Hono {
     context.set('user', { ...authenticated, id: account.id });
     if (context.req.path === '/v1/entity-member-invitations/accept' || context.req.path === '/v1/my-work') return next();
     let memberships = await repository.listEntityMemberships(account.id);
+    const bootstrapDomains = config.BOOTSTRAP_MEMBER_EMAIL_DOMAINS.split(',').map((item) => item.trim().toLowerCase()).filter(Boolean);
+    const bootstrapAdmins = config.BOOTSTRAP_ADMIN_EMAILS.split(',').map((item) => item.trim().toLowerCase()).filter(Boolean);
+    const email = authenticated.email.toLowerCase();
+    const emailDomain = email.split('@')[1] ?? '';
+    if (memberships.length === 0 && authenticated.emailVerified && config.BOOTSTRAP_ENTITY_ID && bootstrapDomains.includes(emailDomain)) {
+      let entity = await repository.getCustomerEntity(config.BOOTSTRAP_ENTITY_ID);
+      if (!entity) {
+        let created = false;
+        try {
+          entity = await repository.createCustomerEntity({
+            id: config.BOOTSTRAP_ENTITY_ID,
+            slug: config.BOOTSTRAP_ENTITY_SLUG ?? config.BOOTSTRAP_ENTITY_ID,
+            legalName: config.BOOTSTRAP_ENTITY_LEGAL_NAME ?? config.BOOTSTRAP_ENTITY_ID,
+            businessAddress: config.BOOTSTRAP_ENTITY_BUSINESS_ADDRESS || null,
+            registrationNumber: null,
+            jurisdiction: config.BOOTSTRAP_ENTITY_JURISDICTION || null,
+            branding: { displayName: config.BOOTSTRAP_ENTITY_LEGAL_NAME ?? null, primaryColor: config.BOOTSTRAP_ENTITY_PRIMARY_COLOR, secondaryColor: config.BOOTSTRAP_ENTITY_SECONDARY_COLOR, logoDataUrl: null, markDataUrl: null },
+          });
+          created = true;
+        } catch (error) {
+          entity = await repository.getCustomerEntity(config.BOOTSTRAP_ENTITY_ID);
+          if (!entity) throw error;
+        }
+        if (created) {
+          const sourceTemplate = (await repository.listTemplates('bytecrunch')).filter((item) => item.key === 'mutual-nda').sort((a, b) => b.version - a.version)[0];
+          if (sourceTemplate) await repository.createTemplate(entity.id, { key: sourceTemplate.key, name: sourceTemplate.name, description: sourceTemplate.description, content: sourceTemplate.content });
+        }
+      }
+      const roles = bootstrapAdmins.includes(email) ? ['administrator'] as const : ['contract_manager', 'signatory'] as const;
+      await repository.grantEntityMembership(account.id, entity.id, [...roles], permissionsForEntityRoles(roles));
+      memberships = await repository.listEntityMemberships(account.id);
+    }
     if (memberships.length === 0 && (config.AUTH_MODE === 'dev' || authenticated.email.toLowerCase() === config.DEV_USER_EMAIL.toLowerCase())) {
       let defaultEntity = await repository.getCustomerEntity(authenticated.tenantId);
       defaultEntity ??= await repository.createCustomerEntity({ id: authenticated.tenantId, slug: authenticated.tenantId, legalName: config.TENANT_LEGAL_NAME, businessAddress: config.TENANT_BUSINESS_ADDRESS || null, registrationNumber: null, jurisdiction: null });
@@ -385,6 +417,7 @@ export function createApp(repository: Repository): Hono {
       : path.startsWith('/v1/integration-sessions') ? 'agreements.write'
       : path.startsWith('/v1/integrations') || path.startsWith('/v1/webhooks') || path.startsWith('/v1/webhook-deliveries') || path.startsWith('/v1/notification-deliveries') ? 'entity.manage'
       : path.startsWith('/v1/entity-members') ? 'members.manage'
+      : path.startsWith('/v1/entity/branding') ? 'entity.manage'
       : undefined;
     if (requiredPermission && !activeMembership.permissions.includes(requiredPermission)) return context.json({ error: 'forbidden', message: `Your role cannot perform '${requiredPermission}' for this customer entity.` }, 403);
     context.set('user', { ...authenticated, id: account.id, tenantId: activeMembership.entityId });
@@ -932,7 +965,8 @@ async function externalView(repository: Repository, session: { tenantId: string;
   const party = agreement.parties.find((item) => item.id === participant.partyId) ?? null;
   const template = (await repository.listTemplates(session.tenantId)).find((item) => item.key === agreement.templateKey && item.version === agreement.templateVersion);
   const requiredEntityFields = requiredEntityFieldsForTemplate(template?.content ?? agreement.content, party?.role ?? 'counterparty');
-  return { agreement: agreementForReviewSide(agreement, 'counterparty'), participant, party, requiredEntityFields };
+  const entity = await repository.getCustomerEntity(session.tenantId);
+  return { agreement: agreementForReviewSide(agreement, 'counterparty'), participant, party, requiredEntityFields, branding: entity?.branding ?? null };
 }
 
 function agreementForReviewSide(agreement: Agreement, viewerSide: 'sender' | 'counterparty'): Agreement {

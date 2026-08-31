@@ -5,6 +5,7 @@ import {
   EntityMemberInvitationSchema,
   InviteEntityMemberSchema,
   UpdateEntityMemberSchema,
+  UpdateEntityBrandingSchema,
   permissionsForEntityRoles,
   type EntityMemberInvitation,
   type EntityMembership,
@@ -96,6 +97,16 @@ export function registerEntityRoutes(
         content: sourceTemplate.content,
       });
     return context.json(entity, 201);
+  });
+
+  app.put("/v1/entity/branding", async (context) => {
+    const user = currentUser(context);
+    const branding = UpdateEntityBrandingSchema.parse(await context.req.json());
+    const entity = await repository.getCustomerEntity(user.tenantId);
+    if (!entity) throw new Error("The active customer entity could not be found.");
+    entity.branding = branding;
+    await repository.saveCustomerEntity(entity);
+    return context.json(entity);
   });
 
   app.get("/v1/entity-members", async (context) => {

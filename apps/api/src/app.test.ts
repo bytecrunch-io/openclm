@@ -139,6 +139,18 @@ describe('contracts API vertical slice', () => {
     expect((await app.request('/v1/agreements', { headers: { 'x-bytecrunch-entity-id': 'not-a-membership' } })).status).toBe(403);
   });
 
+  it('stores entity branding at the tenant boundary and enforces entity-manage permission', async () => {
+    const repository = new MemoryRepository(); await repository.init(); const app = createApp(repository);
+    const branding = { displayName: 'FiftySixty', primaryColor: '#112233', secondaryColor: '#aabbcc', logoDataUrl: null, markDataUrl: 'data:image/png;base64,iVBORw0KGgo=' };
+    const updated = await app.request('/v1/entity/branding', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(branding) });
+    expect(updated.status).toBe(200); expect(await updated.json()).toMatchObject({ id: 'bytecrunch', branding });
+    const me = await (await app.request('/v1/me')).json() as { id: string };
+    const restricted = await repository.createCustomerEntity({ slug: 'brand-viewer', legalName: 'Brand Viewer', businessAddress: null, registrationNumber: null, jurisdiction: null });
+    await repository.grantEntityMembership(me.id, restricted.id, ['viewer'], ['templates.read', 'agreements.read']);
+    const denied = await app.request('/v1/entity/branding', { method: 'PUT', headers: { 'content-type': 'application/json', 'x-bytecrunch-entity-id': restricted.id }, body: JSON.stringify(branding) });
+    expect(denied.status).toBe(403);
+  });
+
   it('versions templates inside the selected customer entity only', async () => {
     const repository = new MemoryRepository(); await repository.init(); const app = createApp(repository); const me = await (await app.request('/v1/me')).json() as { id: string };
     const createdEntity = await app.request('/v1/entities', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ slug: 'template-customer', legalName: 'Template Customer ApS' }) }); const entity = await createdEntity.json() as { id: string }; const headers = { 'content-type': 'application/json', 'x-bytecrunch-entity-id': entity.id };

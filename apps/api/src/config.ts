@@ -30,12 +30,29 @@ const ConfigSchema = z
       .url()
       .default("http://localhost:8080/realms/bytecrunch"),
     OIDC_INTERNAL_ISSUER_URL: z.string().url().optional(),
+    OIDC_AUTHORIZATION_ENDPOINT: z.string().url().optional(),
+    OIDC_TOKEN_ENDPOINT: z.string().url().optional(),
+    OIDC_JWKS_URI: z.string().url().optional(),
     OIDC_CLIENT_ID: z.string().default("bytecrunch-contracts"),
     OIDC_CLIENT_SECRET: z.string().default("local-development-secret"),
     OIDC_REDIRECT_URI: z
       .string()
       .url()
       .default("http://localhost:3001/auth/callback"),
+    BOOTSTRAP_ENTITY_ID: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).optional(),
+    BOOTSTRAP_ENTITY_SLUG: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).optional(),
+    BOOTSTRAP_ENTITY_LEGAL_NAME: z.string().min(1).optional(),
+    BOOTSTRAP_ENTITY_BUSINESS_ADDRESS: z.string().max(500).default(""),
+    BOOTSTRAP_ENTITY_JURISDICTION: z.string().max(100).default(""),
+    BOOTSTRAP_MEMBER_EMAIL_DOMAINS: z.string().default(""),
+    BOOTSTRAP_ADMIN_EMAILS: z.string().default(""),
+    BOOTSTRAP_ENTITY_PRIMARY_COLOR: z.string().regex(/^#[0-9a-fA-F]{6}$/).default("#ed650f"),
+    BOOTSTRAP_ENTITY_SECONDARY_COLOR: z.string().regex(/^#[0-9a-fA-F]{6}$/).default("#05a9ef"),
+    EXECUTED_EXPORT_DRIVER: z.enum(["none", "google_drive"]).default("none"),
+    EXECUTED_EXPORT_ENTITY_IDS: z.string().default(""),
+    GOOGLE_DRIVE_SERVICE_ACCOUNT_PATH: z.string().min(1).optional(),
+    GOOGLE_DRIVE_IMPERSONATE_EMAIL: z.string().email().optional(),
+    GOOGLE_DRIVE_FOLDER_ID: z.string().min(1).optional(),
     SESSION_SECRET: z
       .string()
       .min(32)
@@ -93,6 +110,16 @@ const ConfigSchema = z
       ), "WEBHOOK_SIGNING_SECRET", "Use a unique deployed webhook signing secret of at least 32 characters.");
     require(value.OIDC_CLIENT_SECRET !==
       "local-development-secret", "OIDC_CLIENT_SECRET", "Use the deployed OIDC client secret.");
+    if (value.BOOTSTRAP_ENTITY_ID) {
+      require(Boolean(value.BOOTSTRAP_ENTITY_SLUG), "BOOTSTRAP_ENTITY_SLUG", "Set a slug for the bootstrapped customer entity.");
+      require(Boolean(value.BOOTSTRAP_ENTITY_LEGAL_NAME), "BOOTSTRAP_ENTITY_LEGAL_NAME", "Set the legal name for the bootstrapped customer entity.");
+      require(Boolean(value.BOOTSTRAP_MEMBER_EMAIL_DOMAINS), "BOOTSTRAP_MEMBER_EMAIL_DOMAINS", "Set at least one verified email domain for automatic membership.");
+    }
+    if (value.EXECUTED_EXPORT_DRIVER === "google_drive") {
+      require(Boolean(value.GOOGLE_DRIVE_SERVICE_ACCOUNT_PATH), "GOOGLE_DRIVE_SERVICE_ACCOUNT_PATH", "Set the Google service-account credential path.");
+      require(Boolean(value.GOOGLE_DRIVE_FOLDER_ID), "GOOGLE_DRIVE_FOLDER_ID", "Set the destination Google Drive folder.");
+      require(Boolean(value.EXECUTED_EXPORT_ENTITY_IDS), "EXECUTED_EXPORT_ENTITY_IDS", "Explicitly scope executed exports to customer entity IDs.");
+    }
     require(value.ARTIFACT_STORAGE_DRIVER !==
       "database", "ARTIFACT_STORAGE_DRIVER", "Deployed artifacts must use a storage adapter outside the application database.");
     require(!value.RATE_LIMIT_SECRET.includes(

@@ -48,7 +48,13 @@ async function getMetadata(): Promise<OidcMetadata> {
   metadataPromise ??= fetch(`${config.OIDC_INTERNAL_ISSUER_URL ?? config.OIDC_ISSUER_URL}/.well-known/openid-configuration`)
     .then(async (response) => {
       if (!response.ok) throw new Error(`OIDC discovery failed with ${response.status}`);
-      return response.json() as Promise<OidcMetadata>;
+      const discovered = await response.json() as OidcMetadata;
+      return {
+        ...discovered,
+        ...(config.OIDC_AUTHORIZATION_ENDPOINT ? { authorization_endpoint: config.OIDC_AUTHORIZATION_ENDPOINT } : {}),
+        ...(config.OIDC_TOKEN_ENDPOINT ? { token_endpoint: config.OIDC_TOKEN_ENDPOINT } : {}),
+        ...(config.OIDC_JWKS_URI ? { jwks_uri: config.OIDC_JWKS_URI } : {}),
+      };
     });
   return metadataPromise;
 }

@@ -131,6 +131,19 @@ export const ENTITY_ROLE_PERMISSIONS: Readonly<Record<EntityRole, readonly Entit
 export function permissionsForEntityRoles(roles: readonly EntityRole[]): EntityPermission[] {
   return [...new Set(roles.flatMap((role) => ENTITY_ROLE_PERMISSIONS[role]))];
 }
+const BrandImageDataUrlSchema = z.string()
+  .regex(/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+=*$/, 'Use a PNG, JPEG, or WebP image.')
+  .max(400_000, 'Brand images must be smaller than 300 KB.')
+  .nullable();
+export const EntityBrandingSchema = z.object({
+  displayName: z.string().min(1).max(120).nullable().default(null),
+  primaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).default('#ed650f'),
+  secondaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).default('#05a9ef'),
+  logoDataUrl: BrandImageDataUrlSchema.default(null),
+  markDataUrl: BrandImageDataUrlSchema.default(null),
+});
+export type EntityBranding = z.infer<typeof EntityBrandingSchema>;
+export const UpdateEntityBrandingSchema = EntityBrandingSchema;
 export const CustomerEntitySchema = z.object({
   id: z.string().min(1),
   slug: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
@@ -138,6 +151,7 @@ export const CustomerEntitySchema = z.object({
   businessAddress: z.string().max(500).nullable().default(null),
   registrationNumber: z.string().max(100).nullable().default(null),
   jurisdiction: z.string().max(100).nullable().default(null),
+  branding: EntityBrandingSchema.default({ displayName: null, primaryColor: '#ed650f', secondaryColor: '#05a9ef', logoDataUrl: null, markDataUrl: null }),
   createdAt: z.string().datetime(),
 });
 export type CustomerEntity = z.infer<typeof CustomerEntitySchema>;

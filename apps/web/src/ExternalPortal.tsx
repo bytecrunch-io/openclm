@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
 import {
   AlertTriangle,
   ArrowRight,
@@ -27,6 +27,7 @@ import {
   SignatureCeremony,
 } from "./SigningExperience";
 import { BusyMark, Dialog, IconButton } from "./components";
+import type { EntityBranding } from "@bytecrunch/contracts-domain";
 
 export default function ExternalPortal() {
   const [view, setView] = useState<ExternalView>();
@@ -136,7 +137,7 @@ export default function ExternalPortal() {
 
   if (!view.participant.onboardingCompletedAt) {
     return (
-      <PortalFrame>
+      <PortalFrame branding={view.branding}>
         <Onboarding
           view={view}
           busy={loading}
@@ -147,7 +148,7 @@ export default function ExternalPortal() {
     );
   }
   return (
-    <PortalFrame>
+    <PortalFrame branding={view.branding}>
       <Workspace
         view={view}
         busy={busyAction}
@@ -159,13 +160,13 @@ export default function ExternalPortal() {
   );
 }
 
-function PortalFrame({ children }: { children: ReactNode }) {
+function PortalFrame({ children, branding }: { children: ReactNode; branding?: EntityBranding | null }) {
   return (
-    <main className="external-shell">
+    <main className="external-shell" style={{ '--bc-orange': branding?.primaryColor, '--bc-blue': branding?.secondaryColor } as CSSProperties}>
       <header className="external-header">
         <div className="external-brand">
-          <img src={logo} alt="" />
-          <strong>BYTECRUNCH</strong>
+          <img src={branding?.markDataUrl ?? branding?.logoDataUrl ?? logo} alt="" />
+          <strong>{branding?.displayName ?? "BYTECRUNCH"}</strong>
           <span>CONTRACTS</span>
         </div>
         <div className="external-header-actions">

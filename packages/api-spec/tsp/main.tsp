@@ -391,7 +391,8 @@ model ExchangeResult { accepted: true; }
 model RecoveryRequired { accepted: false; verificationRequired: true; message: string; }
 enum EntityRole { administrator, template_manager, contract_manager, signatory, viewer }
 enum EntityPermission { entity_manage: "entity.manage", members_manage: "members.manage", templates_read: "templates.read", templates_write: "templates.write", agreements_read: "agreements.read", agreements_write: "agreements.write", agreements_sign: "agreements.sign" }
-model CustomerEntity { id: string; slug: string; legalName: string; businessAddress: string | null; registrationNumber: string | null; jurisdiction: string | null; createdAt: utcDateTime; }
+model EntityBranding { displayName: string | null; primaryColor: string; secondaryColor: string; logoDataUrl: string | null; markDataUrl: string | null; }
+model CustomerEntity { id: string; slug: string; legalName: string; businessAddress: string | null; registrationNumber: string | null; jurisdiction: string | null; branding: EntityBranding; createdAt: utcDateTime; }
 model CreateCustomerEntity { slug: string; legalName: string; businessAddress?: string; registrationNumber?: string; jurisdiction?: string; }
 model EntityMembershipRecord { id: string; accountId: string; entityId: string; roles: EntityRole[]; permissions: EntityPermission[]; status: "invited" | "active" | "suspended"; createdAt: utcDateTime; }
 model EntityMembership is EntityMembershipRecord { entity: CustomerEntity; }
@@ -458,6 +459,7 @@ model ExternalView {
   participant: Participant;
   party: AgreementParty | null;
   requiredEntityFields: "businessAddress"[];
+  branding: EntityBranding | null;
 }
 
 @route("/health")
@@ -477,6 +479,10 @@ interface PersonalWorkOperations { @get list(): RecipientInboxItem[] | ErrorResp
 @route("/v1/entities")
 @useAuth(ContractsOAuth2)
 interface EntityOperations { @post create(@body body: CreateCustomerEntity): CustomerEntity | ErrorResponse; }
+
+@route("/v1/entity/branding")
+@useAuth(ContractsOAuth2)
+interface EntityBrandingOperations { @put update(...EntityContext, @body body: EntityBranding): CustomerEntity | ErrorResponse; }
 
 @route("/v1/entity-members")
 @useAuth(ContractsOAuth2)

@@ -28,7 +28,9 @@ It is designed to work as a standalone product first. Each customer legal entity
 - Global human accounts with memberships in multiple customer entities
 - Explicit **Acting for** context for templates, agreements, people, and sender details
 - Entity-scoped administrator, template manager, contract manager, signatory, and viewer roles
+- Per-entity display name, colour scheme, logo, and logomark
 - Generic OIDC Authorization Code + PKCE for staff SSO
+- Verified-domain customer-entity bootstrap with an explicit administrator allowlist
 - Low-friction recipient invitations that become durable agreement access
 - Recipient return through short-lived email codes or discoverable WebAuthn passkeys
 - Cross-entity personal work inboxes
@@ -42,10 +44,11 @@ It is designed to work as a standalone product first. Each customer legal entity
 - Generic integration-scoped `subject_signed` and `agreement_executed` condition evaluation
 - Append-only lifecycle events and durable, retryable, replayable webhook deliveries
 - PostgreSQL and in-memory repository adapters
+- Optional, idempotent Google Drive export of executed PDFs behind a provider interface
 - Local PostgreSQL, Keycloak, Mailpit, API, and web application through Docker Compose
 - System, light, and dark Bytecrunch themes
 
-More detail is available in [architecture](./docs/architecture.md), [identity and access](./docs/identity-and-access.md), [artifact storage](./docs/artifact-storage.md), the [deployment guide](./docs/deployment.md), [operations](./docs/operations.md), the [signing test plan](./docs/signing-test-plan.md), the [design system](./docs/design-system.md), the [UX audit](./docs/ux-audit.md), and the [production-readiness checklist](./docs/production-readiness.md).
+More detail is available in [architecture](./docs/architecture.md), [identity and access](./docs/identity-and-access.md), [artifact storage](./docs/artifact-storage.md), the [deployment guide](./docs/deployment.md), the [FiftySixty deployment profile](./docs/fiftysixty-deployment.md), [operations](./docs/operations.md), the [signing test plan](./docs/signing-test-plan.md), the [design system](./docs/design-system.md), the [UX audit](./docs/ux-audit.md), and the [production-readiness checklist](./docs/production-readiness.md).
 
 ## Architecture
 
@@ -58,6 +61,7 @@ TypeSpec HTTP boundary → API orchestration → domain schemas and invariants
                               │
                               ├── repository → PostgreSQL / in-memory
                               ├── email → SMTP / development console
+                              ├── executed export plugin → Google Drive / future adapters
                               └── lifecycle webhooks
 ```
 

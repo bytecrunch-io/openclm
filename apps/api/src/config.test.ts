@@ -56,4 +56,26 @@ describe("production configuration", () => {
   it("rejects production artifacts stored inline in the database", () => {
     expect(() => parseConfig({ ...productionEnvironment, ARTIFACT_STORAGE_DRIVER: "database" })).toThrow(/outside the application database/i);
   });
+
+  it("requires explicitly scoped Google Drive export configuration", () => {
+    expect(() => parseConfig({ ...productionEnvironment, EXECUTED_EXPORT_DRIVER: 'google_drive' })).toThrow(/Google service-account credential path/i);
+    expect(parseConfig({
+      ...productionEnvironment,
+      EXECUTED_EXPORT_DRIVER: 'google_drive',
+      EXECUTED_EXPORT_ENTITY_IDS: 'fiftysixty',
+      GOOGLE_DRIVE_SERVICE_ACCOUNT_PATH: '/run/secrets/google-service-account.json',
+      GOOGLE_DRIVE_FOLDER_ID: 'drive-folder-id',
+    })).toMatchObject({ EXECUTED_EXPORT_DRIVER: 'google_drive', EXECUTED_EXPORT_ENTITY_IDS: 'fiftysixty' });
+  });
+
+  it("requires complete verified-domain entity bootstrap configuration", () => {
+    expect(() => parseConfig({ ...productionEnvironment, BOOTSTRAP_ENTITY_ID: 'fiftysixty' })).toThrow(/slug for the bootstrapped/i);
+    expect(parseConfig({
+      ...productionEnvironment,
+      BOOTSTRAP_ENTITY_ID: 'fiftysixty',
+      BOOTSTRAP_ENTITY_SLUG: 'fiftysixty',
+      BOOTSTRAP_ENTITY_LEGAL_NAME: 'FiftySixty ApS',
+      BOOTSTRAP_MEMBER_EMAIL_DOMAINS: 'fiftysixty.com,spot.dog',
+    })).toMatchObject({ BOOTSTRAP_ENTITY_ID: 'fiftysixty' });
+  });
 });

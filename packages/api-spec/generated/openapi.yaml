@@ -1659,6 +1659,33 @@ paths:
             - templates:read
             - templates:write
             - webhooks:manage
+  /v1/entity/branding:
+    put:
+      operationId: EntityBrandingOperations_update
+      parameters:
+        - $ref: '#/components/parameters/EntityContext'
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/CustomerEntity'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EntityBranding'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
   /v1/integration-sessions:
     post:
       operationId: IntegrationSessionOperations_create
@@ -2624,6 +2651,7 @@ components:
         - businessAddress
         - registrationNumber
         - jurisdiction
+        - branding
         - createdAt
       properties:
         id:
@@ -2644,6 +2672,8 @@ components:
           anyOf:
             - type: string
             - type: 'null'
+        branding:
+          $ref: '#/components/schemas/EntityBranding'
         createdAt:
           type: string
           format: date-time
@@ -2692,6 +2722,31 @@ components:
           anyOf:
             - type: string
               format: date-time
+            - type: 'null'
+    EntityBranding:
+      type: object
+      required:
+        - displayName
+        - primaryColor
+        - secondaryColor
+        - logoDataUrl
+        - markDataUrl
+      properties:
+        displayName:
+          anyOf:
+            - type: string
+            - type: 'null'
+        primaryColor:
+          type: string
+        secondaryColor:
+          type: string
+        logoDataUrl:
+          anyOf:
+            - type: string
+            - type: 'null'
+        markDataUrl:
+          anyOf:
+            - type: string
             - type: 'null'
     EntityDetails:
       type: object
@@ -2995,6 +3050,7 @@ components:
         - participant
         - party
         - requiredEntityFields
+        - branding
       properties:
         agreement:
           $ref: '#/components/schemas/Agreement'
@@ -3010,6 +3066,10 @@ components:
             type: string
             enum:
               - businessAddress
+        branding:
+          anyOf:
+            - $ref: '#/components/schemas/EntityBranding'
+            - type: 'null'
     HealthResponse:
       type: object
       required:

@@ -63,6 +63,10 @@ export interface DeliveryQueueStats {
   notification: { pending: number; failed: number; deadLetter: number; oldestQueuedAt: string | null };
   webhook: { pending: number; failed: number; deadLetter: number; oldestQueuedAt: string | null };
 }
+type CreateCustomerEntityInput = Omit<CustomerEntity, 'id' | 'createdAt' | 'branding'> & {
+  id?: string;
+  branding?: CustomerEntity['branding'];
+};
 
 export interface Repository {
   readonly kind: 'memory' | 'postgres';
@@ -118,7 +122,8 @@ export interface Repository {
   findAccountByEmail(email: string): Promise<Account | undefined>;
   getAccount(id: string): Promise<Account | undefined>;
   getCustomerEntity(id: string): Promise<CustomerEntity | undefined>;
-  createCustomerEntity(input: Omit<CustomerEntity, 'id' | 'createdAt'> & { id?: string }): Promise<CustomerEntity>;
+  createCustomerEntity(input: CreateCustomerEntityInput): Promise<CustomerEntity>;
+  saveCustomerEntity(entity: CustomerEntity): Promise<void>;
   listEntityMemberships(accountId: string): Promise<EntityMembership[]>;
   grantEntityMembership(accountId: string, entityId: string, roles: EntityMembership['roles'], permissions: EntityMembership['permissions']): Promise<EntityMembership>;
   createAgreementAccess(access: AgreementAccess): Promise<void>;
@@ -405,9 +410,15 @@ export class MemoryRepository implements Repository {
   async findAccountByEmail(email: string) { const value = this.accounts.find((item) => item.email === email.toLowerCase()); return value ? structuredClone(value) : undefined; }
   async getAccount(id: string) { const value = this.accounts.find((item) => item.id === id); return value ? structuredClone(value) : undefined; }
   async getCustomerEntity(id: string) { const value = this.customerEntities.find((item) => item.id === id); return value ? structuredClone(value) : undefined; }
-  async createCustomerEntity(input: Omit<CustomerEntity, 'id' | 'createdAt'> & { id?: string }) {
+  async createCustomerEntity(input: CreateCustomerEntityInput) {
     if (this.customerEntities.some((item) => item.slug === input.slug)) throw new Error('An entity with this slug already exists.');
     const value = CustomerEntitySchema.parse({ ...input, id: input.id ?? `org_${randomUUID()}`, createdAt: now() }); this.customerEntities.push(value); return structuredClone(value);
+  }
+  async saveCustomerEntity(entity: CustomerEntity) {
+    const value = CustomerEntitySchema.parse(entity);
+    const index = this.customerEntities.findIndex((item) => item.id === value.id);
+    if (index < 0) throw new Error('Customer entity not found.');
+    this.customerEntities[index] = value;
   }
   async listEntityMemberships(accountId: string) { return this.entityMemberships.filter((item) => item.accountId === accountId).map((item) => structuredClone(item)); }
   async grantEntityMembership(accountId: string, entityId: string, roles: EntityMembership['roles'], permissions: EntityMembership['permissions']) {
@@ -780,7 +791,8 @@ export class PostgresRepository extends MemoryRepository {
   override async findAccountByEmail(email: string) { const result = await this.pool.query('SELECT payload FROM accounts WHERE email=$1', [email.toLowerCase()]); return result.rows[0] ? AccountSchema.parse(result.rows[0].payload) : undefined; }
   override async getAccount(id: string) { const result = await this.pool.query('SELECT payload FROM accounts WHERE id=$1', [id]); return result.rows[0] ? AccountSchema.parse(result.rows[0].payload) : undefined; }
   override async getCustomerEntity(id: string) { const result = await this.pool.query('SELECT payload FROM customer_entities WHERE id=$1', [id]); return result.rows[0] ? CustomerEntitySchema.parse(result.rows[0].payload) : undefined; }
-  override async createCustomerEntity(input: Omit<CustomerEntity, 'id' | 'createdAt'> & { id?: string }) { const entity = CustomerEntitySchema.parse({ ...input, id: input.id ?? `org_${randomUUID()}`, createdAt: now() }); await this.pool.query('INSERT INTO customer_entities (id,slug,payload) VALUES ($1,$2,$3)', [entity.id, entity.slug, JSON.stringify(entity)]); return entity; }
+  override async createCustomerEntity(input: CreateCustomerEntityInput) { const entity = CustomerEntitySchema.parse({ ...input, id: input.id ?? `org_${randomUUID()}`, createdAt: now() }); await this.pool.query('INSERT INTO customer_entities (id,slug,payload) VALUES ($1,$2,$3)', [entity.id, entity.slug, JSON.stringify(entity)]); return entity; }
+  override async saveCustomerEntity(entity: CustomerEntity) { const value = CustomerEntitySchema.parse(entity); await this.pool.query('UPDATE customer_entities SET payload=$1 WHERE id=$2', [JSON.stringify(value), value.id]); }
   override async listEntityMemberships(accountId: string) { const result = await this.pool.query('SELECT payload FROM entity_memberships WHERE account_id=$1', [accountId]); return result.rows.map((row) => EntityMembershipSchema.parse(row.payload)); }
   override async grantEntityMembership(accountId: string, entityId: string, roles: EntityMembership['roles'], permissions: EntityMembership['permissions']) {
     const found = await this.pool.query('SELECT payload FROM entity_memberships WHERE account_id=$1 AND entity_id=$2', [accountId, entityId]); if (found.rows[0]) return EntityMembershipSchema.parse(found.rows[0].payload);

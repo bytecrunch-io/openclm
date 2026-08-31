@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from "react";
 import {
   browserSupportsWebAuthn,
   startAuthentication,
@@ -44,6 +44,8 @@ import {
   type CreateAgreement,
   type CreateTemplate,
   type Notification,
+  type CustomerEntity,
+  type EntityBranding,
   type Template,
 } from "@bytecrunch/contracts-domain";
 import logo from "./assets/logo.svg";
@@ -229,6 +231,16 @@ function AdminApp() {
   const activeMembership = user?.entities.find(
     (item) => item.entityId === user.activeEntityId,
   );
+  useEffect(() => {
+    const root = document.documentElement;
+    const branding = activeMembership?.entity.branding;
+    root.style.setProperty("--bc-orange", branding?.primaryColor ?? "#ed650f");
+    root.style.setProperty("--bc-blue", branding?.secondaryColor ?? "#05a9ef");
+    return () => {
+      root.style.removeProperty("--bc-orange");
+      root.style.removeProperty("--bc-blue");
+    };
+  }, [activeMembership?.entity.branding]);
 
   if (!user && !loading) return <SignIn {...(error ? { error } : {})} />;
   if (user && user.entities.length === 0)
@@ -252,8 +264,8 @@ function AdminApp() {
             setSelected(undefined);
           }}
         >
-          <img src={logo} alt="" />
-          <span>BYTECRUNCH</span>
+          <img src={activeMembership?.entity.branding.markDataUrl ?? logo} alt="" />
+          <span>{activeMembership?.entity.branding.displayName ?? "BYTECRUNCH"}</span>
           <b>CONTRACTS</b>
         </button>
         <nav className="side-nav" aria-label="Primary navigation">
@@ -316,7 +328,7 @@ function AdminApp() {
               setSelected(undefined);
             }}
           >
-            Integrations
+            Settings
           </NavButton>
         </nav>
         <div className="sidebar-foot">
@@ -479,7 +491,17 @@ function AdminApp() {
         {view === "members" && user && (
           <MemberSettings user={user} onError={setError} />
         )}
-        {view === "settings" && <IntegrationSettings />}
+        {view === "settings" && activeMembership && (
+          <IntegrationSettings
+            entity={activeMembership.entity}
+            canManage={activeMembership.permissions.includes("entity.manage")}
+            onSaved={(entity) => setUser((current) => current ? {
+              ...current,
+              entities: current.entities.map((membership) => membership.entityId === entity.id ? { ...membership, entity } : membership),
+            } : current)}
+            onError={setError}
+          />
+        )}
       </main>
       {creating && (
         <CreateAgreementModal
@@ -3354,13 +3376,28 @@ function CreateEntityModal({
   );
 }
 
-function IntegrationSettings() {
+function IntegrationSettings({ entity, canManage, onSaved, onError }: { entity: CustomerEntity; canManage: boolean; onSaved: (entity: CustomerEntity) => void; onError: (message: string) => void }) {
+  const [branding, setBranding] = useState<EntityBranding>(entity.branding);
+  const [busy, setBusy] = useState(false);
+  const readImage = (file: File, field: "logoDataUrl" | "markDataUrl") => {
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) { onError('Use a PNG, JPEG, or WebP brand image.'); return; }
+    if (file.size > 300_000) { onError('Brand images must be smaller than 300 KB.'); return; }
+    const reader = new FileReader();
+    reader.onload = () => setBranding((value) => ({ ...value, [field]: String(reader.result) }));
+    reader.readAsDataURL(file);
+  };
+  const save = async (event: FormEvent) => {
+    event.preventDefault(); setBusy(true);
+    try { onSaved(await api.updateEntityBranding(branding)); }
+    catch (cause) { onError(cause instanceof Error ? cause.message : 'Could not save entity branding.'); }
+    finally { setBusy(false); }
+  };
   return (
     <div className="page">
       <div className="page-heading">
         <div>
-          <span className="bc-eyebrow bc-text-blue">// INTEGRATIONS</span>
-          <h1>Connect without coupling.</h1>
+          <span className="bc-eyebrow bc-text-blue">// ENTITY SETTINGS</span>
+          <h1>Identity here. Connections there.</h1>
           <p>
             OAuth2 clients create secure handoffs and evaluate contract
             conditions. External subjects stay scoped to their integration; the
@@ -3368,6 +3405,28 @@ function IntegrationSettings() {
           </p>
         </div>
       </div>
+      <form className="branding-settings" onSubmit={(event) => void save(event)}>
+        <div className="branding-preview" style={{ '--preview-primary': branding.primaryColor, '--preview-secondary': branding.secondaryColor } as CSSProperties}>
+          <div className="branding-preview-mark"><img src={branding.markDataUrl ?? logo} alt="Brand mark preview" /></div>
+          {branding.logoDataUrl ? <img className="branding-preview-logo" src={branding.logoDataUrl} alt="Full logo preview" /> : <strong>{branding.displayName ?? entity.legalName}</strong>}
+          <span>CONTRACTS</span>
+        </div>
+        <div className="branding-fields">
+          <span className="bc-eyebrow bc-text-orange">// ENTITY BRANDING</span>
+          <h2>Make the workspace recognisably yours.</h2>
+          <p>Branding follows this customer entity into its workspace and participant-facing contract experience.</p>
+          <label>Display name<input disabled={!canManage} value={branding.displayName ?? ''} onChange={(event) => setBranding((value) => ({ ...value, displayName: event.target.value || null }))} /></label>
+          <div className="form-split">
+            <label>Primary colour<input disabled={!canManage} type="color" value={branding.primaryColor} onChange={(event) => setBranding((value) => ({ ...value, primaryColor: event.target.value }))} /></label>
+            <label>Secondary colour<input disabled={!canManage} type="color" value={branding.secondaryColor} onChange={(event) => setBranding((value) => ({ ...value, secondaryColor: event.target.value }))} /></label>
+          </div>
+          <div className="form-split">
+            <label>Logo<input disabled={!canManage} type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) readImage(file, 'logoDataUrl'); }} /><small>Horizontal logo, up to 300 KB.</small></label>
+            <label>Logomark<input disabled={!canManage} type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) readImage(file, 'markDataUrl'); }} /><small>Square mark, up to 300 KB.</small></label>
+          </div>
+          {canManage && <button className="button button-accent" disabled={busy}>{busy ? <><BusyMark /> Saving…</> : <><Save /> Save branding</>}</button>}
+        </div>
+      </form>
       <div className="integration-grid">
         <article>
           <Webhook />

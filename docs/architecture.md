@@ -14,6 +14,7 @@ global account -> customer-entity membership -> TypeSpec API -> Zod validation -
                  PostgreSQL             object storage        signing provider
                      |
                      +-> durable signed webhook outbox -> host system
+                     +-> executed-artifact export plugins -> document systems
 ```
 
 ## Boundary rules
@@ -25,6 +26,8 @@ global account -> customer-entity membership -> TypeSpec API -> Zod validation -
 - ByteCrunch is the platform operator. Each customer legal entity is its own tenant and contracting context; there is no ByteCrunch parent workspace in the customer model.
 - Human accounts are global and may have memberships in several customer entities. Entity membership and server-side permission checks provide tenant access; the client-side entity selector is not a security boundary.
 - OIDC identities use provider, issuer, and subject as their stable key. Verified email is a contact/recovery attribute and is not used as an OIDC subject.
+- OIDC discovery endpoints can be overridden independently of the issuer. This supports Amazon Cognito's regional issuer plus branded Hosted UI split.
+- Optional verified-domain bootstrap maps a first login into one configured customer entity. Administrators remain an explicit email allowlist; other matched users receive contract-manager and signatory roles.
 - External integration identities remain tenant- and integration-scoped opaque subject IDs.
 - Agreement participants and agreement access are separate: the participant records the role in the transaction, while durable agreement access links that participant to a global account.
 - Agreement content is hashed whenever an accepted suggestion changes it.
@@ -57,6 +60,8 @@ The development mode uses an ephemeral self-signed seal. Production `platform` m
 The initial PostgreSQL repository stores validated aggregate snapshots in JSONB. Lifecycle audit events and webhook delivery attempts now use separate append-only/persistent tables. Before high-volume production use, extract participants, immutable revisions, signing evidence, and signing envelopes into relational append-only tables.
 
 Artifact bytes are accessed through a capability interface rather than a cloud SDK. Metadata retains an opaque storage key and digest. The built-in filesystem adapter supports local disks and persistent volumes; GCS, OCI Object Storage, S3-compatible stores, or permanent networks such as Arweave can provide adapters without changing agreement orchestration. See [artifact storage](./artifact-storage.md).
+
+Executed-artifact exports are a separate plugin capability. They run only after the authoritative sealed artifact is stored, are explicitly scoped to customer-entity IDs, and use the artifact digest as their idempotency key. A downstream Google Drive copy is never treated as the legal evidence store and an export outage never rolls back execution. Additional repositories implement `ExecutedAgreementExportPlugin` without entering agreement lifecycle code.
 
 Webhook delivery has a persistent retry queue, delivery history, SSRF-oriented production URL checks, and manual replay. Every lifecycle transition commits its agreement aggregate, audit event, and webhook deliveries in one PostgreSQL transaction. Initial agreement/invitation creation, notification enqueue, and signing-artifact creation remain adjacent idempotent workflows rather than one transaction; add explicit recovery and dead-letter operations before production use.
 

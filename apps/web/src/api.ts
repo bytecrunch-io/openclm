@@ -24,6 +24,7 @@ import {
   type CreateTemplate,
   type CreateSuggestion,
   type SignatureInput,
+  type EntityBranding,
 } from "@bytecrunch/contracts-domain";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
@@ -40,6 +41,7 @@ const ExternalViewSchema = z.object({
   participant: ParticipantSchema,
   party: AgreementPartySchema.nullable(),
   requiredEntityFields: z.array(RequiredEntityFieldSchema),
+  branding: CustomerEntitySchema.shape.branding.nullable(),
 });
 const EntityMemberListSchema = z.object({
   members: z.array(
@@ -178,6 +180,11 @@ export const api = {
     request("/v1/entities", CustomerEntitySchema, {
       method: "POST",
       body: JSON.stringify(input),
+    }),
+  updateEntityBranding: (branding: EntityBranding) =>
+    request("/v1/entity/branding", CustomerEntitySchema, {
+      method: "PUT",
+      body: JSON.stringify(branding),
     }),
   entityMembers: () => request("/v1/entity-members", EntityMemberListSchema),
   inviteEntityMember: (input: { email: string; roles: EntityRole[] }) =>
