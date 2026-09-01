@@ -31,7 +31,7 @@ global account -> customer-entity membership -> TypeSpec API -> Zod validation -
 - A first-time platform user can create a customer entity through the company, branding, and integration onboarding steps. The creator is the recovery administrator and may later enable that entity's own OIDC connection.
 - Plugin code is installed by the deployment operator and exposed through a static catalog. Entity administrators may configure catalog entries but cannot upload executable code.
 - Plugin installations are entity-owned records. Public configuration is separated from AES-256-GCM encrypted secrets; secret values and ciphertext are never returned by the HTTP API. `PLUGIN_ENCRYPTION_KEY` is independent from session signing and must remain stable across deployments.
-- External integration identities remain tenant- and integration-scoped opaque subject IDs.
+- Participant identities are external principals keyed by customer entity, OIDC issuer, and subject. Integration/API-client identity, staff membership identity, and participant identity are separate security planes.
 - Agreement participants and agreement access are separate: the participant records the role in the transaction, while durable agreement access links that participant to a global account.
 - Agreement content is hashed whenever an accepted suggestion changes it.
 - Executed state requires every party's minimum signature requirement and every unassigned required signature to be satisfied. Normal agreements do not impose a signing order.
@@ -50,7 +50,9 @@ Members authenticate through generic OIDC Authorization Code + PKCE. The authent
 
 An external invitation is a bootstrap credential, not permanent access. Its first explicit exchange creates or resolves a global account, grants an agreement-specific access record, links the participant to that account, and consumes the invitation. Opening an accepted invitation requests a fresh 15-minute, single-use email challenge. This means a closed or cleared browser can recover without turning the original URL into a permanent bearer credential. Invitation URLs are never consumed by a GET, which avoids corporate link scanners accepting an invitation on the recipient's behalf.
 
-Server integrations use OAuth2 bearer tokens issued for the API audience. The bundled Keycloak realm is local infrastructure, not an application dependency; any conforming provider can replace it.
+Server integrations use entity-owned OAuth2 client credentials. `/oauth/token` issues five-minute bearer tokens for the integration API audience and only the client's configured `conditions:read` and `signing_sessions:write` scopes. Secrets are hashed at rest, displayed only on creation or rotation, and belong exclusively in the integrating backend.
+
+The recommended participant integration is `shared_oidc`. The host backend starts a handoff using the subject from its authenticated session, but that assertion does not create a signing session by itself. Contracts performs Authorization Code + PKCE against the entity's participant OIDC plugin, verifies the ID token signature, issuer, audience, state, nonce, verified email, and exact expected subject, then stores the resulting external principal and authentication context in signature evidence. This lets Cognito or another customer identity provider remain the source of truth without asking the person to link two accounts. `host_asserted` is an explicit lower-separation alternative for integrations that own and accept the entire authentication boundary. Ordinary email invitation and passkey recovery remain independent standalone flows.
 
 ## Signing boundary
 

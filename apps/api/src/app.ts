@@ -59,6 +59,8 @@ import { rateLimit } from './rate-limit.js';
 import { metricsMiddleware, renderMetrics } from './metrics.js';
 import { signingProvider } from './signing.js';
 import { enterpriseOidcConnection } from './integration-plugins.js';
+import { registerIntegrationOAuthRoutes } from './integration-oauth.js';
+import { registerIntegrationApiRoutes } from './routes/integration-api.js';
 
 function isoNow(): string { return new Date().toISOString(); }
 
@@ -294,6 +296,8 @@ export function createApp(repository: Repository): Hono {
   app.use('/public/access/exchange', rateLimit(repository, { namespace: 'access-exchange', limit: 60, windowSeconds: 900 }));
   app.use('/public/integration-sessions/exchange', rateLimit(repository, { namespace: 'integration-exchange', limit: 60, windowSeconds: 900 }));
   registerAuthRoutes(app, repository);
+  registerIntegrationOAuthRoutes(app, repository);
+  registerIntegrationApiRoutes(app, repository, { now: isoNow, transition, conditionByPerson: conditionResultByPerson });
   app.get('/public/entity-member-invitations/preview', async (context) => {
     const token = context.req.query('token'); if (!token || token.length < 20) return context.json({ error: 'invalid_invitation', message: 'The membership invitation is invalid.' }, 400);
     const invitation = await repository.getEntityMemberInvitationByTokenHash(hashInvitationToken(token));
@@ -424,8 +428,7 @@ export function createApp(repository: Repository): Hono {
     const path = context.req.path; const method = context.req.method;
     const requiredPermission = path.startsWith('/v1/templates') ? (method === 'GET' ? 'templates.read' : 'templates.write')
       : path.startsWith('/v1/agreements') ? (method === 'GET' ? 'agreements.read' : path.endsWith('/sign') ? 'agreements.sign' : 'agreements.write')
-      : path.startsWith('/v1/notifications') || path.startsWith('/v1/conditions') ? 'agreements.read'
-      : path.startsWith('/v1/integration-sessions') ? 'agreements.write'
+      : path.startsWith('/v1/notifications') ? 'agreements.read'
       : path.startsWith('/v1/integrations') || path.startsWith('/v1/webhooks') || path.startsWith('/v1/webhook-deliveries') || path.startsWith('/v1/notification-deliveries') ? 'entity.manage'
       : path.startsWith('/v1/entity-members') ? 'members.manage'
       : path.startsWith('/v1/entity/branding') ? 'entity.manage'
@@ -491,8 +494,14 @@ export function createApp(repository: Repository): Hono {
     const session = await repository.getIntegrationSessionByTokenHash(hashInvitationToken(body.token));
     if (!session || session.status !== 'pending') return context.json({ error: 'invalid_session', message: 'This handoff is invalid or has already been used.' }, 410);
     if (new Date(session.expiresAt).getTime() <= Date.now()) { session.status = 'expired'; await repository.saveIntegrationSession(session); return context.json({ error: 'session_expired', message: 'This handoff has expired.' }, 410); }
+    const integration = (await repository.listIntegrations(session.tenantId)).find((item) => item.id === session.integrationId);
+    if (integration?.mappingStrategy === 'shared_oidc') {
+      const entity = await repository.getCustomerEntity(session.tenantId); if (!entity) return context.json({ error: 'entity_not_found', message: 'The signing entity no longer exists.' }, 404);
+      const authenticationUrl = new URL(`/auth/participant/${encodeURIComponent(entity.slug)}`, config.OIDC_REDIRECT_URI); authenticationUrl.searchParams.set('integrationToken', body.token);
+      return context.json({ accepted: false, authenticationRequired: true, authenticationUrl: authenticationUrl.toString() }, 202);
+    }
     session.status = 'accepted'; session.acceptedAt = isoNow(); await repository.saveIntegrationSession(session);
-    await setExternalSession(context, { invitationId: session.id, agreementId: session.agreementId, participantId: session.participantId, tenantId: session.tenantId, authenticationMethod: 'integration_handoff' });
+    await setExternalSession(context, { invitationId: session.id, agreementId: session.agreementId, participantId: session.participantId, tenantId: session.tenantId, authenticationMethod: 'integration_handoff', ...(session.externalPrincipalId ? { externalPrincipalId: session.externalPrincipalId } : {}), authenticationIssuer: session.identityIssuer, authenticationSubject: session.externalSubject });
     return context.json({ accepted: true, returnUrl: session.returnUrl });
   });
 
@@ -642,7 +651,7 @@ export function createApp(repository: Repository): Hono {
     if (!participant || participant.role !== 'signatory' || !participant.permissions.includes('sign')) throw new Error('You are not a signatory on this agreement.');
     if (!participant.onboardingCompletedAt || !participant.authorityConfirmed) throw new Error('Complete onboarding and confirm your authority before signing.');
     if (!['out_for_signature', 'partially_signed'].includes(agreement.status)) throw new Error('This agreement is not open for signature.');
-    await ensureSigningSnapshot(repository, agreement); participant.status = 'signed'; participant.signedAt = isoNow(); participant.signature = await signingProvider().sign({ agreement, participant, ...(body.signature ? { signature: body.signature } : {}), authenticationMethod: session.authenticationMethod ?? 'invitation', signedAt: participant.signedAt }); agreement.updatedAt = isoNow();
+    await ensureSigningSnapshot(repository, agreement); participant.status = 'signed'; participant.signedAt = isoNow(); participant.signature = { ...await signingProvider().sign({ agreement, participant, ...(body.signature ? { signature: body.signature } : {}), authenticationMethod: session.authenticationMethod ?? 'invitation', signedAt: participant.signedAt }), authenticationIssuer: session.authenticationIssuer ?? null, authenticationSubject: session.authenticationSubject ?? null, authenticationTime: session.authenticationTime ?? null }; agreement.updatedAt = isoNow();
     if (isExecutionComplete(agreement)) { transition(agreement, 'executed'); agreement.executedAt = isoNow(); agreement.parties.forEach((party) => { party.status = 'executed'; }); }
     else {
       if (participant.partyId && isPartySignatureComplete(agreement, participant.partyId)) agreement.parties.find((party) => party.id === participant.partyId)!.status = 'executed';
@@ -662,7 +671,7 @@ export function createApp(repository: Repository): Hono {
     if (!nominator?.permissions.includes('nominate_signatory') || !nominator.partyId) throw new Error('You cannot nominate a signatory for this party.');
     const person = await repository.findPersonByEmail(session.tenantId, input.email) ?? await repository.createPerson(session.tenantId, input.email, input.name);
     const participant = {
-      id: `part_${randomUUID()}`, partyId: nominator.partyId, personId: person.id, externalSubjectId: null,
+      id: `part_${randomUUID()}`, partyId: nominator.partyId, personId: person.id, externalSubjectId: null, externalPrincipalId: null,
       email: input.email, name: input.name, title: input.title ?? null, role: 'signatory' as const, required: true,
       status: 'not_invited' as const, signedAt: null, signature: null, capacity: null, authorityConfirmed: false, onboardingCompletedAt: null,
       permissions: ['read', 'comment', 'suggest', 'sign', 'nominate_signatory'] as Array<'read' | 'comment' | 'suggest' | 'sign' | 'nominate_signatory'>,
@@ -687,7 +696,7 @@ export function createApp(repository: Repository): Hono {
       if (!senderEntity) throw new Error('The active customer entity could not be found.');
       const senderParty = { id: `party_${randomUUID()}`, role: 'sender' as const, status: 'ready' as const, minimumSignatures: 1, entity: { id: senderEntity.id, externalId: null, legalName: senderEntity.legalName, businessAddress: senderEntity.businessAddress, registrationNumber: senderEntity.registrationNumber, jurisdiction: senderEntity.jurisdiction, verificationStatus: 'confirmed' as const, proposedDetails: null } };
       agreement.parties.unshift(senderParty);
-      const creator = { id: `part_${randomUUID()}`, personId: user.id, externalSubjectId: null, email: user.email, name: user.name, role: 'signatory' as const, required: true, status: 'reviewed' as const, signedAt: null, signature: null, partyId: senderParty.id, title: null, capacity: 'authorized_representative' as const, authorityConfirmed: true, onboardingCompletedAt: isoNow(), permissions: ['read', 'comment', 'suggest', 'sign'] as Array<'read' | 'comment' | 'suggest' | 'sign'> };
+      const creator = { id: `part_${randomUUID()}`, personId: user.id, externalSubjectId: null, externalPrincipalId: null, email: user.email, name: user.name, role: 'signatory' as const, required: true, status: 'reviewed' as const, signedAt: null, signature: null, partyId: senderParty.id, title: null, capacity: 'authorized_representative' as const, authorityConfirmed: true, onboardingCompletedAt: isoNow(), permissions: ['read', 'comment', 'suggest', 'sign'] as Array<'read' | 'comment' | 'suggest' | 'sign'> };
       agreement.participants.push(creator); agreement.createdByParticipantId = creator.id;
       materializePartyVariables(agreement);
     }
@@ -845,7 +854,7 @@ export function createApp(repository: Repository): Hono {
     await ensureSigningSnapshot(repository, agreement);
     participant.status = 'signed';
     participant.signedAt = isoNow();
-    participant.signature = await signingProvider().sign({ agreement, participant, ...(input.signature ? { signature: input.signature } : {}), authenticationMethod: user.authProvider === 'oidc' ? 'oidc' : 'development', signedAt: participant.signedAt });
+    participant.signature = { ...await signingProvider().sign({ agreement, participant, ...(input.signature ? { signature: input.signature } : {}), authenticationMethod: user.authProvider === 'oidc' ? 'oidc' : 'development', signedAt: participant.signedAt }), authenticationIssuer: user.authIssuer, authenticationSubject: user.authSubjectId, authenticationTime: null };
     agreement.updatedAt = isoNow();
     if (isExecutionComplete(agreement)) {
       transition(agreement, 'executed');

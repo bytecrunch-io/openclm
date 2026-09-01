@@ -41,8 +41,8 @@ It is designed to work as a standalone product first. Each customer legal entity
 
 - TypeSpec source with generated OpenAPI 3.1
 - Zod validation at domain, API-input, and browser-response boundaries
-- OAuth2 bearer authentication for backend integrations
-- Integration-scoped identity links, short-lived handoffs, and signed lifecycle webhooks
+- Entity-owned OAuth2 client credentials with one-time secret display, rotation, short-lived scoped tokens, and signed lifecycle webhooks
+- External principals keyed by verified OIDC `issuer + subject`, plus short-lived signing handoffs
 - Generic integration-scoped `subject_signed` and `agreement_executed` condition evaluation
 - Append-only lifecycle events and durable, retryable, replayable webhook deliveries
 - PostgreSQL and in-memory repository adapters
@@ -130,10 +130,22 @@ Without `DATABASE_URL`, the API uses in-memory persistence and a deterministic d
 
 ## API and integration boundary
 
-The standalone app is the primary implementation target. The integration surface is intentionally backend-mediated: another system authenticates with OAuth2, supplies an opaque subject within its own integration namespace, optionally creates a short-lived contract handoff, and evaluates contract conditions. Bytecrunch Contracts reports facts; the integrating system owns every access rule, gate, or business decision.
+The standalone app is the primary implementation target. Integrations are a separate backend boundary. An entity administrator creates an API client in **Settings**, stores its one-time secret, and the integrating backend exchanges those credentials for a five-minute scoped token. Browser code never receives the client secret or condition API token. Bytecrunch Contracts reports contract facts; the integrating system owns every access rule, gate, or business decision.
+
+For the recommended `shared_oidc` mode, the entity also configures **Customer identity (OIDC)**. The integrating backend supplies the stable `sub` from its own authenticated session. Before a signing session is accepted, Contracts authenticates the participant directly against that provider and requires the ID token's exact `iss + sub`. Email remains a verified contact attribute, not the identity key. `host_asserted` mode is available only for a backend that intentionally owns the complete authentication boundary.
+
+First obtain a token using HTTP Basic client authentication:
 
 ```http
-POST /v1/integration-sessions
+POST /oauth/token
+Authorization: Basic base64(client_id:client_secret)
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials&scope=conditions%3Aread%20signing_sessions%3Awrite
+```
+
+```http
+POST /integration/v1/signing-sessions
 Authorization: Bearer <access-token>
 Content-Type: application/json
 
@@ -147,7 +159,7 @@ Content-Type: application/json
 ```
 
 ```http
-POST /v1/conditions/evaluate
+POST /integration/v1/conditions/evaluate
 Authorization: Bearer <access-token>
 Content-Type: application/json
 
@@ -162,7 +174,7 @@ Content-Type: application/json
 }
 ```
 
-`subject_signed` means the linked person has a valid signature on the current content revision. `agreement_executed` means every required signature for a qualifying agreement has been collected. The opaque subject is never collected in the normal standalone UI, and an unlinked subject simply produces unmet conditions without exposing another person’s agreements.
+`subject_signed` means the external principal has a valid signature on the current content revision. `agreement_executed` means every required signature for a qualifying agreement has been collected. The opaque subject is never collected in the normal standalone UI, and an unknown `iss + sub` simply produces unmet conditions without exposing another person’s agreements. Responses include a decision ID, evaluation time, issuer, and `Cache-Control: no-store`.
 
 ## Repository layout
 

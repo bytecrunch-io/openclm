@@ -8,7 +8,7 @@ import type { Repository } from './repository.js';
 import { assertExternalUrlAllowed } from './webhooks.js';
 
 export type PluginField = { key: string; label: string; kind: 'text' | 'url' | 'email' | 'password' | 'textarea' | 'string_list'; required: boolean; secret: boolean; help: string };
-export type PluginManifest = { key: PluginKey; name: string; description: string; capability: 'executed_agreement_export' | 'identity_provider'; fields: PluginField[] };
+export type PluginManifest = { key: PluginKey; name: string; description: string; capability: 'executed_agreement_export' | 'identity_provider' | 'participant_identity_provider'; fields: PluginField[] };
 export const pluginCatalog: readonly PluginManifest[] = [
   { key: 'google-drive', name: 'Google Drive', capability: 'executed_agreement_export', description: 'Copy each sealed executed PDF into an entity-owned Google Drive folder.', fields: [
     { key: 'folderId', label: 'Destination folder ID', kind: 'text', required: true, secret: false, help: 'The folder ID from its Google Drive URL. Shared Drives are supported.' },
@@ -24,10 +24,19 @@ export const pluginCatalog: readonly PluginManifest[] = [
     { key: 'clientSecret', label: 'Client secret', kind: 'password', required: true, secret: true, help: 'Stored encrypted and never returned by the API.' },
     { key: 'emailDomains', label: 'Allowed verified email domains', kind: 'string_list', required: true, secret: false, help: 'Comma-separated domains whose verified users may join this entity.' },
   ] },
+  { key: 'participant-oidc', name: 'Customer identity (OIDC)', capability: 'participant_identity_provider', description: 'Authenticate integrated recipients with the customer identity provider that already signs them into your product.', fields: [
+    { key: 'issuerUrl', label: 'Issuer URL', kind: 'url', required: true, secret: false, help: 'The exact issuer in participant ID tokens, such as a Cognito user-pool issuer.' },
+    { key: 'authorizationEndpoint', label: 'Authorization endpoint override', kind: 'url', required: false, secret: false, help: 'Useful for Cognito custom managed-login domains.' },
+    { key: 'tokenEndpoint', label: 'Token endpoint override', kind: 'url', required: false, secret: false, help: 'Useful for Cognito custom managed-login domains.' },
+    { key: 'jwksUri', label: 'JWKS URI override', kind: 'url', required: false, secret: false, help: 'Leave blank to use OIDC discovery.' },
+    { key: 'clientId', label: 'Client ID', kind: 'text', required: true, secret: false, help: 'Use a dedicated confidential OIDC application for participant signing.' },
+    { key: 'clientSecret', label: 'Client secret', kind: 'password', required: true, secret: true, help: 'Stored encrypted and never returned by the API.' },
+  ] },
 ] as const;
 
 const googleSchema = z.object({ folderId: z.string().min(1).max(255), impersonateEmail: z.union([z.string().email(), z.literal('')]).optional().default(''), serviceAccountJson: z.string().min(1).optional() });
 const oidcSchema = z.object({ issuerUrl: z.string().url(), authorizationEndpoint: z.union([z.string().url(), z.literal('')]).optional().default(''), tokenEndpoint: z.union([z.string().url(), z.literal('')]).optional().default(''), jwksUri: z.union([z.string().url(), z.literal('')]).optional().default(''), clientId: z.string().min(1).max(255), clientSecret: z.string().min(1).optional(), emailDomains: z.union([z.array(z.string()), z.string()]).transform((value) => (Array.isArray(value) ? value : value.split(',')).map((item) => item.trim().toLowerCase()).filter(Boolean)).pipe(z.array(z.string().regex(/^[a-z0-9.-]+\.[a-z]{2,}$/)).min(1)) });
+const participantOidcSchema = oidcSchema.omit({ emailDomains: true });
 const encryptionKey = createHash('sha256').update(config.PLUGIN_ENCRYPTION_KEY).update('plugin-installation-secrets-v1').digest();
 function encryptSecrets(value: Record<string, string>): string { const iv = randomBytes(12); const cipher = createCipheriv('aes-256-gcm', encryptionKey, iv); const body = Buffer.concat([cipher.update(JSON.stringify(value), 'utf8'), cipher.final()]); return [iv, cipher.getAuthTag(), body].map((part) => part.toString('base64url')).join('.'); }
 export function decryptInstallationSecrets(installation: PluginInstallation): Record<string, string> { if (!installation.secretCiphertext) return {}; const parts = installation.secretCiphertext.split('.'); if (parts.length !== 3) throw new Error('The encrypted plugin configuration is invalid.'); const [iv, tag, body] = parts.map((part) => Buffer.from(part!, 'base64url')); const decipher = createDecipheriv('aes-256-gcm', encryptionKey, iv!); decipher.setAuthTag(tag!); return JSON.parse(Buffer.concat([decipher.update(body!), decipher.final()]).toString('utf8')) as Record<string, string>; }
@@ -40,9 +49,12 @@ export async function configurePlugin(repository: Repository, entityId: string, 
     const input = googleSchema.parse(raw); secrets = { ...priorSecrets, ...(input.serviceAccountJson ? { serviceAccountJson: input.serviceAccountJson } : {}) }; if (!secrets.serviceAccountJson) throw new Error('Service-account JSON is required.');
     const credential = JSON.parse(secrets.serviceAccountJson) as Partial<GoogleServiceAccount>; if (!credential.client_email || !credential.private_key) throw new Error('The service-account JSON must contain client_email and private_key.'); if (credential.token_uri) await assertExternalUrlAllowed(credential.token_uri, 'Google token endpoint');
     configuration = { folderId: input.folderId, impersonateEmail: input.impersonateEmail };
-  } else {
+  } else if (pluginKey === 'enterprise-oidc') {
     const input = oidcSchema.parse(raw); await Promise.all([input.issuerUrl, input.authorizationEndpoint, input.tokenEndpoint, input.jwksUri].filter(Boolean).map((url) => assertExternalUrlAllowed(url, 'OIDC endpoint'))); secrets = { ...priorSecrets, ...(input.clientSecret ? { clientSecret: input.clientSecret } : {}) }; if (!secrets.clientSecret) throw new Error('Client secret is required.');
     configuration = { issuerUrl: input.issuerUrl, authorizationEndpoint: input.authorizationEndpoint, tokenEndpoint: input.tokenEndpoint, jwksUri: input.jwksUri, clientId: input.clientId, emailDomains: input.emailDomains };
+  } else {
+    const input = participantOidcSchema.parse(raw); await Promise.all([input.issuerUrl, input.authorizationEndpoint, input.tokenEndpoint, input.jwksUri].filter(Boolean).map((url) => assertExternalUrlAllowed(url, 'OIDC endpoint'))); secrets = { ...priorSecrets, ...(input.clientSecret ? { clientSecret: input.clientSecret } : {}) }; if (!secrets.clientSecret) throw new Error('Client secret is required.');
+    configuration = { issuerUrl: input.issuerUrl, authorizationEndpoint: input.authorizationEndpoint, tokenEndpoint: input.tokenEndpoint, jwksUri: input.jwksUri, clientId: input.clientId };
   }
   const timestamp = new Date().toISOString(); const installation = PluginInstallationSchema.parse({ id: existing?.id ?? `plugin_${randomUUID()}`, entityId, pluginKey, status: enabled ? 'enabled' : 'configured', configuration, configuredSecretFields: Object.keys(secrets), secretCiphertext: encryptSecrets(secrets), lastCheckedAt: null, lastError: null, createdAt: existing?.createdAt ?? timestamp, updatedAt: timestamp });
   await repository.savePluginInstallation(installation); return publicInstallation(installation);
@@ -66,6 +78,8 @@ export async function testPluginInstallation(repository: Repository, installatio
 }
 export type EnterpriseOidcConnection = { issuerUrl: string; authorizationEndpoint: string; tokenEndpoint: string; jwksUri: string; clientId: string; clientSecret: string; emailDomains: string[] };
 export async function enterpriseOidcConnection(repository: Repository, entityId: string): Promise<EnterpriseOidcConnection | undefined> { const installation = await repository.findPluginInstallation(entityId, 'enterprise-oidc'); if (!installation || installation.status !== 'enabled') return undefined; const secret = decryptInstallationSecrets(installation).clientSecret; if (!secret) throw new Error('The enterprise OIDC client secret is unavailable.'); return { issuerUrl: String(installation.configuration.issuerUrl), authorizationEndpoint: String(installation.configuration.authorizationEndpoint ?? ''), tokenEndpoint: String(installation.configuration.tokenEndpoint ?? ''), jwksUri: String(installation.configuration.jwksUri ?? ''), clientId: String(installation.configuration.clientId), clientSecret: secret, emailDomains: Array.isArray(installation.configuration.emailDomains) ? installation.configuration.emailDomains.map(String) : [] }; }
+export type ParticipantOidcConnection = Omit<EnterpriseOidcConnection, 'emailDomains'> & { installationId: string };
+export async function participantOidcConnection(repository: Repository, entityId: string): Promise<ParticipantOidcConnection | undefined> { const installation = await repository.findPluginInstallation(entityId, 'participant-oidc'); if (!installation || installation.status !== 'enabled') return undefined; const secret = decryptInstallationSecrets(installation).clientSecret; if (!secret) throw new Error('The participant OIDC client secret is unavailable.'); return { installationId: installation.id, issuerUrl: String(installation.configuration.issuerUrl), authorizationEndpoint: String(installation.configuration.authorizationEndpoint ?? ''), tokenEndpoint: String(installation.configuration.tokenEndpoint ?? ''), jwksUri: String(installation.configuration.jwksUri ?? ''), clientId: String(installation.configuration.clientId), clientSecret: secret }; }
 
 export interface ExecutedAgreementExport { provider: string; externalId: string; webUrl: string | null }
 const driveEscape = (value: string) => value.replaceAll('\\', '\\\\').replaceAll("'", "\\'"); const safeFileName = (value: string) => value.replace(/[^a-zA-Z0-9 ._()-]/g, '-').replace(/\s+/g, ' ').trim().slice(0, 160) || 'Executed agreement';

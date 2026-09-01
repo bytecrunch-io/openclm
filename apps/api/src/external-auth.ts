@@ -11,7 +11,11 @@ export interface ExternalSession {
   tenantId: string;
   accountId?: string;
   authenticationMethod?:
-    "invitation" | "email_code" | "passkey" | "integration_handoff";
+    "invitation" | "email_code" | "passkey" | "integration_handoff" | "federated_oidc";
+  externalPrincipalId?: string;
+  authenticationIssuer?: string;
+  authenticationSubject?: string;
+  authenticationTime?: string;
 }
 
 declare module "hono" {
@@ -80,6 +84,10 @@ export function externalSessionMiddleware(): MiddlewareHandler {
               ) as NonNullable<ExternalSession["authenticationMethod"]>,
             }
           : {}),
+        ...(payload.externalPrincipalId ? { externalPrincipalId: String(payload.externalPrincipalId) } : {}),
+        ...(payload.authenticationIssuer ? { authenticationIssuer: String(payload.authenticationIssuer) } : {}),
+        ...(payload.authenticationSubject ? { authenticationSubject: String(payload.authenticationSubject) } : {}),
+        ...(payload.authenticationTime ? { authenticationTime: String(payload.authenticationTime) } : {}),
       });
       return next();
     } catch {

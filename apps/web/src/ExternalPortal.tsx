@@ -56,7 +56,11 @@ export default function ExternalPortal() {
         }
         window.history.replaceState({}, "", "/invite");
       } else if (integrationToken) {
-        await api.exchangeIntegrationSession(integrationToken);
+        const result = await api.exchangeIntegrationSession(integrationToken);
+        if (!result.accepted) {
+          window.location.assign(result.authenticationUrl);
+          return;
+        }
         window.history.replaceState({}, "", "/invite");
       }
       setView(await api.externalSession());

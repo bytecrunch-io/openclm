@@ -21,6 +21,14 @@ model ContractsOAuth2 is OAuth2Auth<[
   }
 ]>;
 
+model IntegrationOAuth2 is OAuth2Auth<[
+  {
+    type: OAuth2FlowType.clientCredentials;
+    tokenUrl: "http://localhost:3001/oauth/token";
+    scopes: ["conditions:read", "signing_sessions:write"];
+  }
+]>;
+
 enum AgreementStatus {
   draft,
   in_review,
@@ -89,6 +97,7 @@ model Participant {
   id: string;
   personId: string | null;
   externalSubjectId: string | null;
+  externalPrincipalId: string | null;
   email: string;
   name: string;
   role: ParticipantRole;
@@ -118,7 +127,10 @@ model SignatureRecord {
   signedAt: utcDateTime;
   provider: "development_witness" | "platform_electronic_signature" | "external_provider";
   providerSignatureId: string | null;
-  authenticationMethod: "development" | "oidc" | "invitation" | "email_code" | "passkey" | "integration_handoff";
+  authenticationMethod: "development" | "oidc" | "invitation" | "email_code" | "passkey" | "integration_handoff" | "federated_oidc";
+  authenticationIssuer: string | null;
+  authenticationSubject: string | null;
+  authenticationTime: utcDateTime | null;
   consentText: string;
   consentVersion: string;
 }
@@ -293,7 +305,9 @@ model ConditionResult {
 }
 
 model ConditionEvaluation {
+  decisionId: string;
   integrationKey: string;
+  issuer: string;
   subject: string;
   met: boolean;
   operator: RequirementOperator;
@@ -402,9 +416,9 @@ model EntityBranding {
 }
 model CustomerEntity { id: string; slug: string; legalName: string; businessAddress: string | null; registrationNumber: string | null; jurisdiction: string | null; branding: EntityBranding; createdAt: utcDateTime; }
 model CreateCustomerEntity { slug: string; legalName: string; businessAddress?: string; registrationNumber?: string; jurisdiction?: string; }
-enum PluginKey { google_drive: "google-drive", enterprise_oidc: "enterprise-oidc" }
+enum PluginKey { google_drive: "google-drive", enterprise_oidc: "enterprise-oidc", participant_oidc: "participant-oidc" }
 model PluginField { key: string; label: string; kind: "text" | "url" | "email" | "password" | "textarea" | "string_list"; required: boolean; secret: boolean; help: string; }
-model PluginManifest { key: PluginKey; name: string; description: string; capability: "executed_agreement_export" | "identity_provider"; fields: PluginField[]; }
+model PluginManifest { key: PluginKey; name: string; description: string; capability: "executed_agreement_export" | "identity_provider" | "participant_identity_provider"; fields: PluginField[]; }
 model PluginInstallation { id: string; entityId: string; pluginKey: PluginKey; status: "configured" | "enabled" | "disabled" | "error"; configuration: Record<unknown>; configuredSecretFields: string[]; lastCheckedAt: utcDateTime | null; lastError: string | null; createdAt: utcDateTime; updatedAt: utcDateTime; }
 model ConfigurePluginInstallation { configuration: Record<unknown>; enabled?: boolean; }
 model EntityMembershipRecord { id: string; accountId: string; entityId: string; roles: EntityRole[]; permissions: EntityPermission[]; status: "invited" | "active" | "suspended"; createdAt: utcDateTime; }
@@ -445,22 +459,28 @@ model NominateSignatory {
   title?: string;
 }
 
-model IntegrationContext { integrationId: string; integrationKey: string; externalSubject: string; personId: string; returnUrl: url; }
+model IntegrationContext { integrationId: string; integrationKey: string; identityIssuer: string; externalSubject: string; externalPrincipalId: string | null; personId: string; returnUrl: url; }
 model Integration {
   id: string; tenantId: string; key: string; name: string;
   mappingStrategy: "host_asserted" | "shared_oidc" | "account_linking";
-  allowedRedirectUris: url[]; allowedOrigins: url[]; createdAt: utcDateTime;
+  allowedRedirectUris: url[]; allowedOrigins: url[]; identityProviderKey: "participant-oidc" | null;
+  clientId: string | null; scopes: ("conditions:read" | "signing_sessions:write")[]; createdAt: utcDateTime;
 }
 model CreateIntegration {
   key: string; name: string; mappingStrategy: "host_asserted" | "shared_oidc" | "account_linking";
-  allowedRedirectUris: url[]; allowedOrigins?: url[];
+  allowedRedirectUris: url[]; allowedOrigins?: url[]; identityProviderKey?: "participant-oidc";
+  scopes?: ("conditions:read" | "signing_sessions:write")[];
 }
+model IntegrationCredential { integration: Integration; clientSecret: string; }
+model IntegrationTokenRequest { grant_type: "client_credentials"; scope?: string; client_id?: string; client_secret?: string; }
+model IntegrationTokenResponse { access_token: string; token_type: "Bearer"; expires_in: int32; scope: string; }
 model CreateIntegrationSession {
   integrationKey: string; subject: string; email: string; displayName?: string; templateKey: string;
   title?: string; returnUrl: url; metadata?: Record<string>;
 }
 model IntegrationSessionResult { agreementId: string; expiresAt: utcDateTime; handoffUrl: url; }
 model ExchangeIntegrationResult { accepted: true; returnUrl: url; }
+model IntegrationAuthenticationRequired { accepted: false; authenticationRequired: true; authenticationUrl: url; }
 model Notification { id: string; tenantId: string; recipientPersonId: string; recipientEmail: string; type: string; title: string; body: string; agreementId: string; threadId: string | null; actorName: string; readAt: utcDateTime | null; createdAt: utcDateTime; }
 model NotificationDelivery {
   id: string; notificationId: string; recipientEmail: string; subject: string; body: string; actionUrl: url;
@@ -614,19 +634,20 @@ interface AgreementOperations {
 @useAuth(ContractsOAuth2)
 interface IntegrationOperations {
   @get list(): Integration[];
-  @post create(@body body: CreateIntegration): Integration | ErrorResponse;
+  @post create(@body body: CreateIntegration): IntegrationCredential | ErrorResponse;
+  @post @route("/{integrationKey}/rotate-secret") rotateSecret(@path integrationKey: string): IntegrationCredential | ErrorResponse;
 }
 
-@route("/v1/integration-sessions")
-@useAuth(ContractsOAuth2)
-interface IntegrationSessionOperations { @post create(@body body: CreateIntegrationSession): IntegrationSessionResult | ErrorResponse; }
+@route("/oauth/token")
+interface IntegrationTokenOperations { @post issue(@body body: IntegrationTokenRequest): IntegrationTokenResponse | ErrorResponse; }
 
-@route("/v1/conditions")
-@useAuth(ContractsOAuth2)
-interface ConditionOperations {
-  @post @route("/evaluate")
-  evaluate(@body body: EvaluateConditions): ConditionEvaluation | ErrorResponse;
-}
+@route("/integration/v1/signing-sessions")
+@useAuth(IntegrationOAuth2)
+interface MachineSigningSessionOperations { @post create(@body body: CreateIntegrationSession): IntegrationSessionResult | ErrorResponse; }
+
+@route("/integration/v1/conditions")
+@useAuth(IntegrationOAuth2)
+interface MachineConditionOperations { @post @route("/evaluate") evaluate(@body body: EvaluateConditions): ConditionEvaluation | ErrorResponse; }
 
 @route("/v1/notifications")
 @useAuth(ContractsOAuth2)
@@ -707,7 +728,7 @@ interface ExternalParticipantOperations {
   exchangeAccess(@body body: ExchangeInvitation): ExchangeResult | ErrorResponse;
 
   @post @route("/integration-sessions/exchange")
-  exchangeIntegration(@body body: ExchangeInvitation): ExchangeIntegrationResult | ErrorResponse;
+  exchangeIntegration(@body body: ExchangeInvitation): ExchangeIntegrationResult | IntegrationAuthenticationRequired | ErrorResponse;
 
   @get @route("/session")
   session(): ExternalView | ErrorResponse;

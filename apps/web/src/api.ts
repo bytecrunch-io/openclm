@@ -18,6 +18,7 @@ import {
   AccountSchema,
   EntityRoleSchema,
   PublicPluginInstallationSchema,
+  PublicIntegrationSchema,
   PluginKeySchema,
   RecipientInboxItemSchema,
   RequiredEntityFieldSchema,
@@ -98,11 +99,13 @@ export type RecipientInboxItem = z.infer<typeof RecipientInboxItemSchema>;
 export type Passkey = z.infer<typeof PasskeySchema>;
 export type AgreementArtifact = z.infer<typeof AgreementArtifactSchema>;
 const PluginManifestSchema = z.object({
-  key: PluginKeySchema, name: z.string(), description: z.string(), capability: z.enum(['executed_agreement_export', 'identity_provider']),
+  key: PluginKeySchema, name: z.string(), description: z.string(), capability: z.enum(['executed_agreement_export', 'identity_provider', 'participant_identity_provider']),
   fields: z.array(z.object({ key: z.string(), label: z.string(), kind: z.enum(['text', 'url', 'email', 'password', 'textarea', 'string_list']), required: z.boolean(), secret: z.boolean(), help: z.string() })),
 });
 export type PluginManifest = z.infer<typeof PluginManifestSchema>;
 export type PluginInstallation = z.infer<typeof PublicPluginInstallationSchema>;
+export type Integration = z.infer<typeof PublicIntegrationSchema>;
+const IntegrationCredentialSchema = z.object({ integration: PublicIntegrationSchema, clientSecret: z.string().min(1) });
 const PublicVerificationSchema = z.object({
   schemaVersion: z.number(), status: z.literal('executed'), title: z.string(), agreementId: z.string(), revision: z.number(), executedAt: z.string(), contentSha256: z.string(),
   parties: z.array(z.object({ role: z.enum(['sender', 'counterparty']), legalName: z.string().nullable() })),
@@ -200,6 +203,10 @@ export const api = {
   configurePlugin: (pluginKey: z.infer<typeof PluginKeySchema>, configuration: Record<string, unknown>, enabled = true) => request(`/v1/plugin-installations/${pluginKey}`, PublicPluginInstallationSchema, { method: 'PUT', body: JSON.stringify({ configuration, enabled }) }),
   testPlugin: (pluginKey: z.infer<typeof PluginKeySchema>) => request(`/v1/plugin-installations/${pluginKey}/test`, PublicPluginInstallationSchema, { method: 'POST' }),
   removePlugin: (pluginKey: z.infer<typeof PluginKeySchema>) => request(`/v1/plugin-installations/${pluginKey}`, z.object({ removed: z.literal(true), operationId: z.string() }), { method: 'DELETE' }),
+  integrations: () => request('/v1/integrations', z.array(PublicIntegrationSchema)),
+  createIntegration: (input: { key: string; name: string; mappingStrategy: 'host_asserted' | 'shared_oidc'; allowedRedirectUris: string[]; identityProviderKey?: 'participant-oidc'; scopes?: Array<'conditions:read' | 'signing_sessions:write'> }) => request('/v1/integrations', IntegrationCredentialSchema, { method: 'POST', body: JSON.stringify(input) }),
+  rotateIntegrationSecret: (key: string) => request(`/v1/integrations/${encodeURIComponent(key)}/rotate-secret`, IntegrationCredentialSchema, { method: 'POST' }),
+  participantOidcCallbackUrl: () => new URL('/auth/participant-callback', API_URL).toString(),
   entityMembers: () => request("/v1/entity-members", EntityMemberListSchema),
   inviteEntityMember: (input: { email: string; roles: EntityRole[] }) =>
     request(
@@ -448,7 +455,10 @@ export const api = {
   exchangeIntegrationSession: (token: string) =>
     request(
       "/public/integration-sessions/exchange",
-      z.object({ accepted: z.literal(true), returnUrl: z.string().url() }),
+      z.union([
+        z.object({ accepted: z.literal(true), returnUrl: z.string().url() }),
+        z.object({ accepted: z.literal(false), authenticationRequired: z.literal(true), authenticationUrl: z.string().url() }),
+      ]),
       { method: "POST", body: JSON.stringify({ token }) },
     ),
   externalSession: () => request("/public/session", ExternalViewSchema),

@@ -73,7 +73,7 @@ The current automated suite directly covers deterministic PDF output, explicit u
 | ID | Test | Expected result |
 | --- | --- | --- |
 | SIG-001 | Staff signs with OIDC after selecting the correct customer entity. | Evidence records `oidc`, the account-linked participant, entity/party, capacity, consent version, UTC time, content hash, PDF hash, and envelope ID. |
-| SIG-002 | Recipient signs from a fresh invite, email-code return, passkey return, and integration handoff. | Evidence records the actual authentication method; no flow can select another participant record. |
+| SIG-002 | Recipient signs from a fresh invite, email-code return, passkey return, host-asserted integration handoff, and participant-OIDC handoff. | Evidence records the actual authentication method and, for federation, issuer, subject, and provider authentication time; no flow can select another participant record. |
 | SIG-003 | Decline intent checkbox or omit `intentConfirmed: true`. | Request is rejected and no status/evidence/artifact changes. |
 | SIG-004 | Sign before onboarding or without authority confirmation. | Request is rejected with an actionable message. |
 | SIG-005 | Sender signs first, then counterparty. | First signature yields `partially_signed`; second yields `executed`. |
@@ -82,6 +82,12 @@ The current automated suite directly covers deterministic PDF output, explicit u
 | SIG-008 | Submit two simultaneous sign requests for one participant. | Exactly one active evidence row and one accepted ceremony result; the other request is rejected/idempotently resolved. This is a required concurrency test before launch. |
 | SIG-009 | Attempt staff signing for a participant linked to another account or external subject. | Rejected; no evidence is created. |
 | SIG-010 | Close the browser after signing and return through `/inbox`. | Agreement and signature remain available through durable account access; the invitation token is not reusable as authentication. |
+| SIG-011 | Start a shared-OIDC handoff for subject A while the browser authenticates as subject B. | Callback fails closed; no external principal, participant session, agreement signature, or condition result is attributed to either account. |
+| SIG-012 | Tamper with OIDC state/nonce, use the wrong audience/issuer, an expired token, unknown signing key, or an unverified email. | Every case fails before a participant session is issued; the handoff remains unusable for signing without a valid restart. |
+| SIG-013 | Reuse an accepted shared-OIDC handoff URL or authorization callback. | The one-time handoff cannot create a second session or signature. |
+| SIG-014 | Rotate an integration client secret. | The old secret immediately fails, the new secret obtains only configured scopes, and neither secret appears in list responses, logs, browser storage, or OpenAPI examples. |
+| SIG-015 | Request a machine token with an unconfigured scope or call a machine endpoint without its required scope. | Token issuance or endpoint access fails with `invalid_scope`/`insufficient_scope`; no agreement or decision is created. |
+| SIG-016 | Evaluate conditions for an unknown subject, a subject from another issuer, entity, or API client, and a known subject. | Unknown/cross-boundary cases return only unmet results; the known subject returns a non-cacheable decision with issuer, decision ID, and UTC evaluation time. |
 
 ## C. Review reopening and invalidation
 

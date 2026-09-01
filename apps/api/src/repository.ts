@@ -7,6 +7,7 @@ import {
   IntegrationSchema,
   PluginInstallationSchema,
   IdentityLinkSchema,
+  ExternalPrincipalSchema,
   IntegrationSessionSchema,
   NotificationSchema,
   NotificationOutboxSchema,
@@ -34,6 +35,7 @@ import {
   type Integration,
   type PluginInstallation,
   type IdentityLink,
+  type ExternalPrincipal,
   type IntegrationSession,
   type Notification,
   type NotificationOutbox,
@@ -106,12 +108,16 @@ export interface Repository {
   listIntegrations(tenantId: string): Promise<Integration[]>;
   createIntegration(tenantId: string, input: Omit<Integration, 'id' | 'tenantId' | 'createdAt'>): Promise<Integration>;
   findIntegration(tenantId: string, key: string): Promise<Integration | undefined>;
+  findIntegrationByClientId(clientId: string): Promise<Integration | undefined>;
+  saveIntegration(integration: Integration): Promise<void>;
   listPluginInstallations(entityId: string): Promise<PluginInstallation[]>;
   findPluginInstallation(entityId: string, pluginKey: PluginInstallation['pluginKey']): Promise<PluginInstallation | undefined>;
   savePluginInstallation(installation: PluginInstallation): Promise<void>;
   deletePluginInstallation(entityId: string, pluginKey: PluginInstallation['pluginKey']): Promise<void>;
   findIdentityLink(tenantId: string, integrationId: string, externalSubject: string): Promise<IdentityLink | undefined>;
   createIdentityLink(link: IdentityLink): Promise<void>;
+  findExternalPrincipal(tenantId: string, issuer: string, subject: string): Promise<ExternalPrincipal | undefined>;
+  createExternalPrincipal(principal: ExternalPrincipal): Promise<void>;
   createIntegrationSession(session: IntegrationSession): Promise<void>;
   getIntegrationSessionByTokenHash(tokenHash: string): Promise<IntegrationSession | undefined>;
   saveIntegrationSession(session: IntegrationSession): Promise<void>;
@@ -185,6 +191,7 @@ export class MemoryRepository implements Repository {
   protected integrations: Integration[] = [];
   protected pluginInstallations: PluginInstallation[] = [];
   protected identityLinks: IdentityLink[] = [];
+  protected externalPrincipals: ExternalPrincipal[] = [];
   protected integrationSessions: IntegrationSession[] = [];
   protected notifications: Notification[] = [];
   protected notificationOutbox: NotificationOutbox[] = [];
@@ -382,12 +389,16 @@ export class MemoryRepository implements Repository {
   async listIntegrations(tenantId: string) { return this.integrations.filter((item) => item.tenantId === tenantId).map((item) => structuredClone(item)); }
   async createIntegration(tenantId: string, input: Omit<Integration, 'id' | 'tenantId' | 'createdAt'>) { const value = IntegrationSchema.parse({ ...input, id: `int_${randomUUID()}`, tenantId, createdAt: now() }); this.integrations.push(value); return structuredClone(value); }
   async findIntegration(tenantId: string, key: string) { const value = this.integrations.find((item) => item.tenantId === tenantId && item.key === key); return value ? structuredClone(value) : undefined; }
+  async findIntegrationByClientId(clientId: string) { const value = this.integrations.find((item) => item.clientId === clientId); return value ? structuredClone(value) : undefined; }
+  async saveIntegration(integration: Integration) { const value = IntegrationSchema.parse(integration); const index = this.integrations.findIndex((item) => item.id === value.id); if (index < 0) throw new Error('Integration not found.'); this.integrations[index] = value; }
   async listPluginInstallations(entityId: string) { return this.pluginInstallations.filter((item) => item.entityId === entityId).map((item) => structuredClone(item)); }
   async findPluginInstallation(entityId: string, pluginKey: PluginInstallation['pluginKey']) { const value = this.pluginInstallations.find((item) => item.entityId === entityId && item.pluginKey === pluginKey); return value ? structuredClone(value) : undefined; }
   async savePluginInstallation(installation: PluginInstallation) { const value = PluginInstallationSchema.parse(installation); const index = this.pluginInstallations.findIndex((item) => item.entityId === value.entityId && item.pluginKey === value.pluginKey); if (index < 0) this.pluginInstallations.push(value); else this.pluginInstallations[index] = value; }
   async deletePluginInstallation(entityId: string, pluginKey: PluginInstallation['pluginKey']) { this.pluginInstallations = this.pluginInstallations.filter((item) => !(item.entityId === entityId && item.pluginKey === pluginKey)); }
   async findIdentityLink(tenantId: string, integrationId: string, externalSubject: string) { const value = this.identityLinks.find((item) => item.tenantId === tenantId && item.integrationId === integrationId && item.externalSubject === externalSubject); return value ? structuredClone(value) : undefined; }
   async createIdentityLink(link: IdentityLink) { this.identityLinks.push(IdentityLinkSchema.parse(link)); }
+  async findExternalPrincipal(tenantId: string, issuer: string, subject: string) { const value = this.externalPrincipals.find((item) => item.tenantId === tenantId && item.issuer === issuer && item.subject === subject); return value ? structuredClone(value) : undefined; }
+  async createExternalPrincipal(principal: ExternalPrincipal) { const value = ExternalPrincipalSchema.parse(principal); if (!this.externalPrincipals.some((item) => item.tenantId === value.tenantId && item.issuer === value.issuer && item.subject === value.subject)) this.externalPrincipals.push(value); }
   async createIntegrationSession(session: IntegrationSession) { this.integrationSessions.push(IntegrationSessionSchema.parse(session)); }
   async getIntegrationSessionByTokenHash(tokenHash: string) { const value = this.integrationSessions.find((item) => item.tokenHash === tokenHash); return value ? structuredClone(value) : undefined; }
   async saveIntegrationSession(session: IntegrationSession) { const index = this.integrationSessions.findIndex((item) => item.id === session.id); if (index < 0) throw new Error('Integration session not found.'); this.integrationSessions[index] = IntegrationSessionSchema.parse(session); }
@@ -522,8 +533,10 @@ export class PostgresRepository extends MemoryRepository {
       CREATE INDEX IF NOT EXISTS invitations_agreement_idx ON invitations (tenant_id, agreement_id);
       CREATE TABLE IF NOT EXISTS people (id text PRIMARY KEY, tenant_id text NOT NULL, email text NOT NULL, payload jsonb NOT NULL, UNIQUE (tenant_id, email));
       CREATE TABLE IF NOT EXISTS integrations (id text PRIMARY KEY, tenant_id text NOT NULL, integration_key text NOT NULL, payload jsonb NOT NULL, UNIQUE (tenant_id, integration_key));
+      CREATE UNIQUE INDEX IF NOT EXISTS integrations_client_id_unique ON integrations ((payload->>'clientId')) WHERE payload->>'clientId' IS NOT NULL;
       CREATE TABLE IF NOT EXISTS plugin_installations (id text PRIMARY KEY, entity_id text NOT NULL, plugin_key text NOT NULL, payload jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now(), UNIQUE (entity_id, plugin_key));
       CREATE TABLE IF NOT EXISTS identity_links (id text PRIMARY KEY, tenant_id text NOT NULL, integration_id text NOT NULL, external_subject text NOT NULL, payload jsonb NOT NULL, UNIQUE (tenant_id, integration_id, external_subject));
+      CREATE TABLE IF NOT EXISTS external_principals (id text PRIMARY KEY, tenant_id text NOT NULL, issuer text NOT NULL, subject text NOT NULL, payload jsonb NOT NULL, UNIQUE (tenant_id, issuer, subject));
       CREATE TABLE IF NOT EXISTS integration_sessions (id text PRIMARY KEY, tenant_id text NOT NULL, token_hash text UNIQUE NOT NULL, payload jsonb NOT NULL);
       CREATE TABLE IF NOT EXISTS notifications (id text PRIMARY KEY, tenant_id text NOT NULL, recipient_person_id text NOT NULL, payload jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
       CREATE INDEX IF NOT EXISTS notifications_recipient_idx ON notifications (tenant_id, recipient_person_id, created_at DESC);
@@ -767,12 +780,16 @@ export class PostgresRepository extends MemoryRepository {
   override async listIntegrations(tenantId: string) { const result = await this.pool.query('SELECT payload FROM integrations WHERE tenant_id = $1', [tenantId]); return result.rows.map((row) => IntegrationSchema.parse(row.payload)); }
   override async createIntegration(tenantId: string, input: Omit<Integration, 'id' | 'tenantId' | 'createdAt'>) { const integration = IntegrationSchema.parse({ ...input, id: `int_${randomUUID()}`, tenantId, createdAt: now() }); await this.pool.query('INSERT INTO integrations (id,tenant_id,integration_key,payload) VALUES ($1,$2,$3,$4)', [integration.id, tenantId, integration.key, JSON.stringify(integration)]); return integration; }
   override async findIntegration(tenantId: string, key: string) { const result = await this.pool.query('SELECT payload FROM integrations WHERE tenant_id=$1 AND integration_key=$2', [tenantId,key]); return result.rows[0] ? IntegrationSchema.parse(result.rows[0].payload) : undefined; }
+  override async findIntegrationByClientId(clientId: string) { const result = await this.pool.query("SELECT payload FROM integrations WHERE payload->>'clientId'=$1", [clientId]); return result.rows[0] ? IntegrationSchema.parse(result.rows[0].payload) : undefined; }
+  override async saveIntegration(integration: Integration) { const value = IntegrationSchema.parse(integration); await this.pool.query('UPDATE integrations SET payload=$1 WHERE id=$2', [JSON.stringify(value), value.id]); }
   override async listPluginInstallations(entityId: string) { const result = await this.pool.query('SELECT payload FROM plugin_installations WHERE entity_id=$1 ORDER BY plugin_key', [entityId]); return result.rows.map((row) => PluginInstallationSchema.parse(row.payload)); }
   override async findPluginInstallation(entityId: string, pluginKey: PluginInstallation['pluginKey']) { const result = await this.pool.query('SELECT payload FROM plugin_installations WHERE entity_id=$1 AND plugin_key=$2', [entityId, pluginKey]); return result.rows[0] ? PluginInstallationSchema.parse(result.rows[0].payload) : undefined; }
   override async savePluginInstallation(installation: PluginInstallation) { const value = PluginInstallationSchema.parse(installation); await this.pool.query('INSERT INTO plugin_installations (id,entity_id,plugin_key,payload) VALUES ($1,$2,$3,$4) ON CONFLICT (entity_id,plugin_key) DO UPDATE SET payload=EXCLUDED.payload,updated_at=now()', [value.id, value.entityId, value.pluginKey, JSON.stringify(value)]); }
   override async deletePluginInstallation(entityId: string, pluginKey: PluginInstallation['pluginKey']) { await this.pool.query('DELETE FROM plugin_installations WHERE entity_id=$1 AND plugin_key=$2', [entityId, pluginKey]); }
   override async findIdentityLink(tenantId: string, integrationId: string, externalSubject: string) { const result = await this.pool.query('SELECT payload FROM identity_links WHERE tenant_id=$1 AND integration_id=$2 AND external_subject=$3', [tenantId,integrationId,externalSubject]); return result.rows[0] ? IdentityLinkSchema.parse(result.rows[0].payload) : undefined; }
   override async createIdentityLink(link: IdentityLink) { IdentityLinkSchema.parse(link); await this.pool.query('INSERT INTO identity_links (id,tenant_id,integration_id,external_subject,payload) VALUES ($1,$2,$3,$4,$5)', [link.id,link.tenantId,link.integrationId,link.externalSubject,JSON.stringify(link)]); }
+  override async findExternalPrincipal(tenantId: string, issuer: string, subject: string) { const result = await this.pool.query('SELECT payload FROM external_principals WHERE tenant_id=$1 AND issuer=$2 AND subject=$3', [tenantId,issuer,subject]); return result.rows[0] ? ExternalPrincipalSchema.parse(result.rows[0].payload) : undefined; }
+  override async createExternalPrincipal(principal: ExternalPrincipal) { const value = ExternalPrincipalSchema.parse(principal); await this.pool.query('INSERT INTO external_principals (id,tenant_id,issuer,subject,payload) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (tenant_id,issuer,subject) DO NOTHING', [value.id,value.tenantId,value.issuer,value.subject,JSON.stringify(value)]); }
   override async createIntegrationSession(session: IntegrationSession) { IntegrationSessionSchema.parse(session); await this.pool.query('INSERT INTO integration_sessions (id,tenant_id,token_hash,payload) VALUES ($1,$2,$3,$4)', [session.id,session.tenantId,session.tokenHash,JSON.stringify(session)]); }
   override async getIntegrationSessionByTokenHash(tokenHash: string) { const result = await this.pool.query('SELECT payload FROM integration_sessions WHERE token_hash=$1',[tokenHash]); return result.rows[0] ? IntegrationSessionSchema.parse(result.rows[0].payload) : undefined; }
   override async saveIntegrationSession(session: IntegrationSession) { IntegrationSessionSchema.parse(session); await this.pool.query('UPDATE integration_sessions SET payload=$1 WHERE id=$2',[JSON.stringify(session),session.id]); }

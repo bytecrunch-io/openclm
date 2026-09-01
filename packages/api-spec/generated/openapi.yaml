@@ -26,6 +26,71 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ReadinessResponse'
+  /integration/v1/conditions/evaluate:
+    post:
+      operationId: MachineConditionOperations_evaluate
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/ConditionEvaluation'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EvaluateConditions'
+      security:
+        - IntegrationOAuth2:
+            - conditions:read
+            - signing_sessions:write
+  /integration/v1/signing-sessions:
+    post:
+      operationId: MachineSigningSessionOperations_create
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/IntegrationSessionResult'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateIntegrationSession'
+      security:
+        - IntegrationOAuth2:
+            - conditions:read
+            - signing_sessions:write
+  /oauth/token:
+    post:
+      operationId: IntegrationTokenOperations_issue
+      parameters: []
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/IntegrationTokenResponse'
+                  - $ref: '#/components/schemas/ErrorResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IntegrationTokenRequest'
   /public/access/exchange:
     post:
       operationId: ExternalParticipantOperations_exchangeAccess
@@ -76,6 +141,7 @@ paths:
               schema:
                 anyOf:
                   - $ref: '#/components/schemas/ExchangeIntegrationResult'
+                  - $ref: '#/components/schemas/IntegrationAuthenticationRequired'
                   - $ref: '#/components/schemas/ErrorResponse'
       requestBody:
         required: true
@@ -1468,32 +1534,6 @@ paths:
             - templates:read
             - templates:write
             - webhooks:manage
-  /v1/conditions/evaluate:
-    post:
-      operationId: ConditionOperations_evaluate
-      parameters: []
-      responses:
-        '200':
-          description: The request has succeeded.
-          content:
-            application/json:
-              schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ConditionEvaluation'
-                  - $ref: '#/components/schemas/ErrorResponse'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/EvaluateConditions'
-      security:
-        - ContractsOAuth2:
-            - agreements:read
-            - agreements:write
-            - templates:read
-            - templates:write
-            - webhooks:manage
   /v1/entities:
     post:
       operationId: EntityOperations_create
@@ -1686,32 +1726,6 @@ paths:
             - templates:read
             - templates:write
             - webhooks:manage
-  /v1/integration-sessions:
-    post:
-      operationId: IntegrationSessionOperations_create
-      parameters: []
-      responses:
-        '200':
-          description: The request has succeeded.
-          content:
-            application/json:
-              schema:
-                anyOf:
-                  - $ref: '#/components/schemas/IntegrationSessionResult'
-                  - $ref: '#/components/schemas/ErrorResponse'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateIntegrationSession'
-      security:
-        - ContractsOAuth2:
-            - agreements:read
-            - agreements:write
-            - templates:read
-            - templates:write
-            - webhooks:manage
   /v1/integrations:
     get:
       operationId: IntegrationOperations_list
@@ -1742,7 +1756,7 @@ paths:
             application/json:
               schema:
                 anyOf:
-                  - $ref: '#/components/schemas/Integration'
+                  - $ref: '#/components/schemas/IntegrationCredential'
                   - $ref: '#/components/schemas/ErrorResponse'
       requestBody:
         required: true
@@ -1750,6 +1764,31 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/CreateIntegration'
+      security:
+        - ContractsOAuth2:
+            - agreements:read
+            - agreements:write
+            - templates:read
+            - templates:write
+            - webhooks:manage
+  /v1/integrations/{integrationKey}/rotate-secret:
+    post:
+      operationId: IntegrationOperations_rotateSecret
+      parameters:
+        - name: integrationKey
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The request has succeeded.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/IntegrationCredential'
+                  - $ref: '#/components/schemas/ErrorResponse'
       security:
         - ContractsOAuth2:
             - agreements:read
@@ -2494,14 +2533,20 @@ components:
     ConditionEvaluation:
       type: object
       required:
+        - decisionId
         - integrationKey
+        - issuer
         - subject
         - met
         - operator
         - evaluatedAt
         - conditions
       properties:
+        decisionId:
+          type: string
         integrationKey:
+          type: string
+        issuer:
           type: string
         subject:
           type: string
@@ -2646,6 +2691,17 @@ components:
           items:
             type: string
             format: uri
+        identityProviderKey:
+          type: string
+          enum:
+            - participant-oidc
+        scopes:
+          type: array
+          items:
+            type: string
+            enum:
+              - conditions:read
+              - signing_sessions:write
     CreateIntegrationSession:
       type: object
       required:
@@ -3249,6 +3305,9 @@ components:
         - mappingStrategy
         - allowedRedirectUris
         - allowedOrigins
+        - identityProviderKey
+        - clientId
+        - scopes
         - createdAt
       properties:
         id:
@@ -3275,15 +3334,52 @@ components:
           items:
             type: string
             format: uri
+        identityProviderKey:
+          anyOf:
+            - type: string
+              enum:
+                - participant-oidc
+            - type: 'null'
+        clientId:
+          anyOf:
+            - type: string
+            - type: 'null'
+        scopes:
+          type: array
+          items:
+            type: string
+            enum:
+              - conditions:read
+              - signing_sessions:write
         createdAt:
           type: string
           format: date-time
+    IntegrationAuthenticationRequired:
+      type: object
+      required:
+        - accepted
+        - authenticationRequired
+        - authenticationUrl
+      properties:
+        accepted:
+          type: boolean
+          enum:
+            - false
+        authenticationRequired:
+          type: boolean
+          enum:
+            - true
+        authenticationUrl:
+          type: string
+          format: uri
     IntegrationContext:
       type: object
       required:
         - integrationId
         - integrationKey
+        - identityIssuer
         - externalSubject
+        - externalPrincipalId
         - personId
         - returnUrl
       properties:
@@ -3291,13 +3387,29 @@ components:
           type: string
         integrationKey:
           type: string
+        identityIssuer:
+          type: string
         externalSubject:
           type: string
+        externalPrincipalId:
+          anyOf:
+            - type: string
+            - type: 'null'
         personId:
           type: string
         returnUrl:
           type: string
           format: uri
+    IntegrationCredential:
+      type: object
+      required:
+        - integration
+        - clientSecret
+      properties:
+        integration:
+          $ref: '#/components/schemas/Integration'
+        clientSecret:
+          type: string
     IntegrationSessionResult:
       type: object
       required:
@@ -3313,6 +3425,40 @@ components:
         handoffUrl:
           type: string
           format: uri
+    IntegrationTokenRequest:
+      type: object
+      required:
+        - grant_type
+      properties:
+        grant_type:
+          type: string
+          enum:
+            - client_credentials
+        scope:
+          type: string
+        client_id:
+          type: string
+        client_secret:
+          type: string
+    IntegrationTokenResponse:
+      type: object
+      required:
+        - access_token
+        - token_type
+        - expires_in
+        - scope
+      properties:
+        access_token:
+          type: string
+        token_type:
+          type: string
+          enum:
+            - Bearer
+        expires_in:
+          type: integer
+          format: int32
+        scope:
+          type: string
     InvalidatedSignature:
       type: object
       required:
@@ -3611,6 +3757,7 @@ components:
         - id
         - personId
         - externalSubjectId
+        - externalPrincipalId
         - email
         - name
         - role
@@ -3632,6 +3779,10 @@ components:
             - type: string
             - type: 'null'
         externalSubjectId:
+          anyOf:
+            - type: string
+            - type: 'null'
+        externalPrincipalId:
           anyOf:
             - type: string
             - type: 'null'
@@ -3848,6 +3999,7 @@ components:
       enum:
         - google-drive
         - enterprise-oidc
+        - participant-oidc
     PluginManifest:
       type: object
       required:
@@ -3868,6 +4020,7 @@ components:
           enum:
             - executed_agreement_export
             - identity_provider
+            - participant_identity_provider
         fields:
           type: array
           items:
@@ -4233,6 +4386,9 @@ components:
         - provider
         - providerSignatureId
         - authenticationMethod
+        - authenticationIssuer
+        - authenticationSubject
+        - authenticationTime
         - consentText
         - consentVersion
       properties:
@@ -4279,6 +4435,20 @@ components:
             - email_code
             - passkey
             - integration_handoff
+            - federated_oidc
+        authenticationIssuer:
+          anyOf:
+            - type: string
+            - type: 'null'
+        authenticationSubject:
+          anyOf:
+            - type: string
+            - type: 'null'
+        authenticationTime:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: 'null'
         consentText:
           type: string
         consentVersion:
@@ -4607,6 +4777,14 @@ components:
             templates:read: ''
             templates:write: ''
             webhooks:manage: ''
+    IntegrationOAuth2:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: http://localhost:3001/oauth/token
+          scopes:
+            conditions:read: ''
+            signing_sessions:write: ''
 servers:
   - url: http://localhost:3001
     description: Local development

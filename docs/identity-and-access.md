@@ -16,6 +16,9 @@ ByteCrunch operates and may host the CLM. It is not a parent workspace and is no
 | `AgreementAccess` | Durable account access to one participant assignment |
 | `Invitation` | A short-lived bootstrap token used to claim an assignment |
 | `AccessChallenge` | A short-lived, single-use return/recovery credential |
+| `ExternalPrincipal` | A participant identity proven by a specific provider and stable `issuer + subject` |
+| `Integration` | An entity-owned machine client, redirect allowlist, scopes, and participant identity strategy |
+| `IntegrationSession` | A ten-minute, one-time bridge from an integrating backend into one participant assignment |
 
 Customer entity membership must never be inferred from agreement onboarding. A recipient may confirm that they represent Acme for one agreement without becoming an Acme tenant administrator. Likewise, application permission to sign enables the signing action but does not itself establish legal authority to bind an entity.
 
@@ -58,7 +61,21 @@ Recipients can also open `/inbox` and request a six-digit email code. The reques
 
 After verified email access, a recipient can enroll one or more discoverable WebAuthn passkeys. Registration and authentication require authenticator user verification, validate the expected relying-party ID and origin, persist credential counters, and never store private-key material. Authentication is username-less: the signed credential identifies the account, then the server creates the same narrow recipient session. Original invitation and recovery exchanges also create this inbox session so a recipient is not challenged twice.
 
-Optional organisation SSO, credential recovery/revocation history, and recent-authentication requirements immediately before higher-assurance signing remain future work. Production deployments must set `WEBAUTHN_RP_ID` to their registrable host and `WEBAUTHN_ORIGIN` to the exact HTTPS browser origin; localhost works without HTTPS for local development.
+Credential recovery/revocation history and configurable recent-authentication requirements immediately before higher-assurance signing remain future work. Production deployments must set `WEBAUTHN_RP_ID` to their registrable host and `WEBAUTHN_ORIGIN` to the exact HTTPS browser origin; localhost works without HTTPS for local development.
+
+## Integrated participant flow
+
+Three identities must not be conflated:
+
+1. The ByteCrunch platform/operator identity authenticates hosted-service administrators and recovery operators.
+2. Entity workforce SSO authenticates employees who manage that entity's templates, agreements, members, and branding.
+3. Participant OIDC authenticates customers or counterparties arriving from an integrated product. It creates agreement access, not entity membership.
+
+For `shared_oidc`, an entity administrator enables **Customer identity (OIDC)** with a dedicated confidential authorization-code client and creates a separate API client for the product backend. The backend obtains a five-minute machine token using client credentials, then requests a signing handoff using the subject already present in its authenticated server session. Contracts redirects the browser to the customer provider with state, nonce, and PKCE and accepts the handoff only when the signed ID token has the configured issuer and audience and its `sub` exactly matches the requested subject. The resulting `(issuer, subject)` is the durable identity; verified email and display name are attributes that may change.
+
+Condition checks use the same API client and subject. The server resolves that subject only within the client entity and configured issuer. Unknown subjects return `met: false`, never a person lookup or agreement list. The response is non-cacheable and includes a decision ID for correlation. The host application decides whether that result unlocks a feature; Contracts contains no feature- or data-room-specific authorization policy.
+
+This direct federation avoids a user-visible account-linking ceremony when the same Cognito session already authenticates the host. Explicit account linking remains reserved for future migrations where two genuinely independent identities must be joined with proof from both sessions.
 
 ## Roles and permissions
 

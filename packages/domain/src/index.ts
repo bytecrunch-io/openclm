@@ -58,7 +58,10 @@ export const SignatureRecordSchema = z.object({
   signingEnvelopeId: z.string().min(1).nullable().default(null),
   provider: z.enum(['development_witness', 'platform_electronic_signature', 'external_provider']).default('development_witness'),
   providerSignatureId: z.string().min(1).nullable().default(null),
-  authenticationMethod: z.enum(['development', 'oidc', 'invitation', 'email_code', 'passkey', 'integration_handoff']).default('development'),
+  authenticationMethod: z.enum(['development', 'oidc', 'invitation', 'email_code', 'passkey', 'integration_handoff', 'federated_oidc']).default('development'),
+  authenticationIssuer: z.string().min(1).max(500).nullable().default(null),
+  authenticationSubject: z.string().min(1).max(255).nullable().default(null),
+  authenticationTime: z.string().datetime().nullable().default(null),
   consentText: z.string().min(1).max(1000).default('I intend to sign this agreement electronically and adopt this mark as my signature.'),
   consentVersion: z.string().min(1).max(40).default('2026-08-30'),
 });
@@ -278,6 +281,7 @@ export const ParticipantSchema = z.object({
   id: z.string().min(1),
   personId: z.string().min(1).nullable().default(null),
   externalSubjectId: z.string().min(1).max(255).nullable().default(null),
+  externalPrincipalId: z.string().min(1).nullable().default(null),
   email: z.string().email(),
   name: z.string().min(1).max(160),
   role: ParticipantRoleSchema,
@@ -303,14 +307,20 @@ export type Person = z.infer<typeof PersonSchema>;
 export const IntegrationSchema = z.object({
   id: z.string().min(1), tenantId: z.string().min(1), key: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
   name: z.string().min(1).max(160), mappingStrategy: z.enum(['host_asserted', 'shared_oidc', 'account_linking']),
-  allowedRedirectUris: z.array(z.string().url()), allowedOrigins: z.array(z.string().url()).default([]), createdAt: z.string().datetime(),
+  allowedRedirectUris: z.array(z.string().url()).min(1), allowedOrigins: z.array(z.string().url()).default([]),
+  identityProviderKey: z.enum(['participant-oidc']).nullable().default(null),
+  clientId: z.string().min(1).max(255).nullable().default(null), clientSecretHash: z.string().length(64).nullable().default(null),
+  scopes: z.array(z.enum(['conditions:read', 'signing_sessions:write'])).min(1).default(['conditions:read', 'signing_sessions:write']),
+  createdAt: z.string().datetime(),
 });
 export type Integration = z.infer<typeof IntegrationSchema>;
-export const CreateIntegrationSchema = IntegrationSchema.pick({ name: true, key: true, mappingStrategy: true, allowedRedirectUris: true, allowedOrigins: true });
+export const PublicIntegrationSchema = IntegrationSchema.omit({ clientSecretHash: true });
+export type PublicIntegration = z.infer<typeof PublicIntegrationSchema>;
+export const CreateIntegrationSchema = IntegrationSchema.pick({ name: true, key: true, mappingStrategy: true, allowedRedirectUris: true, allowedOrigins: true, identityProviderKey: true, scopes: true }).partial({ allowedOrigins: true, identityProviderKey: true, scopes: true });
 
-export const PluginKeySchema = z.enum(['google-drive', 'enterprise-oidc']);
+export const PluginKeySchema = z.enum(['google-drive', 'enterprise-oidc', 'participant-oidc']);
 export type PluginKey = z.infer<typeof PluginKeySchema>;
-export const PluginCapabilitySchema = z.enum(['executed_agreement_export', 'identity_provider']);
+export const PluginCapabilitySchema = z.enum(['executed_agreement_export', 'identity_provider', 'participant_identity_provider']);
 export const PluginInstallationSchema = z.object({
   id: z.string().min(1), entityId: z.string().min(1), pluginKey: PluginKeySchema,
   status: z.enum(['configured', 'enabled', 'disabled', 'error']),
@@ -334,10 +344,20 @@ export const IdentityLinkSchema = z.object({
 });
 export type IdentityLink = z.infer<typeof IdentityLinkSchema>;
 
+export const ExternalPrincipalSchema = z.object({
+  id: z.string().min(1), tenantId: z.string().min(1), identityProviderId: z.string().min(1),
+  issuer: z.string().min(1).max(500), subject: z.string().min(1).max(255), personId: z.string().min(1),
+  email: z.string().email(), displayName: z.string().min(1).max(160),
+  verificationMethod: z.enum(['federated_oidc', 'host_asserted', 'account_linking']),
+  verifiedAt: z.string().datetime(), authenticationTime: z.string().datetime().nullable().default(null),
+});
+export type ExternalPrincipal = z.infer<typeof ExternalPrincipalSchema>;
+
 export const IntegrationSessionSchema = z.object({
   id: z.string().min(1), tenantId: z.string().min(1), integrationId: z.string().min(1), personId: z.string().min(1),
   externalSubject: z.string().min(1).max(255), agreementId: z.string().min(1), participantId: z.string().min(1), tokenHash: z.string().length(64),
-  status: z.enum(['pending', 'accepted', 'expired']), returnUrl: z.string().url(), expiresAt: z.string().datetime(), createdAt: z.string().datetime(), acceptedAt: z.string().datetime().nullable(),
+  identityIssuer: z.string().min(1).max(500).default('urn:bytecrunch:legacy-subject'), externalPrincipalId: z.string().min(1).nullable().default(null),
+  status: z.enum(['pending', 'authenticating', 'accepted', 'expired']), returnUrl: z.string().url(), expiresAt: z.string().datetime(), createdAt: z.string().datetime(), acceptedAt: z.string().datetime().nullable(),
 });
 export type IntegrationSession = z.infer<typeof IntegrationSessionSchema>;
 
@@ -402,7 +422,7 @@ export const AgreementSchema = z.object({
   reviewHistory: z.array(ReviewTurnSchema).default([]),
   createdByParticipantId: z.string().nullable().default(null),
   integrationContext: z.object({
-    integrationId: z.string(), integrationKey: z.string(), externalSubject: z.string(), personId: z.string(), returnUrl: z.string().url(),
+    integrationId: z.string(), integrationKey: z.string(), identityIssuer: z.string().default('urn:bytecrunch:legacy-subject'), externalSubject: z.string(), externalPrincipalId: z.string().nullable().default(null), personId: z.string(), returnUrl: z.string().url(),
   }).nullable().default(null),
   metadata: z.record(z.string(), z.string()),
   createdAt: z.string().datetime(),

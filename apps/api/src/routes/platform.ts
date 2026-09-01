@@ -1,18 +1,14 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import type { Hono } from "hono";
 import {
   CreateIntegrationSchema,
-  CreateIntegrationSessionSchema,
   CreateWebhookSchema,
-  EvaluateConditionsSchema,
-  IdentityLinkSchema,
-  IntegrationSessionSchema,
+  PublicIntegrationSchema,
   type Agreement,
   type AgreementStatus,
 } from "@bytecrunch/contracts-domain";
 import { currentUser } from "../auth.js";
-import { config } from "../config.js";
-import { createInvitationToken } from "../external-auth.js";
+import { hashIntegrationSecret } from "../integration-oauth.js";
 import { replayNotificationDelivery } from "../notifications.js";
 import type { Repository } from "../repository.js";
 import { assertWebhookUrlAllowed, replayWebhookDelivery } from "../webhooks.js";
@@ -138,154 +134,28 @@ export function registerPlatformRoutes(
 
   app.get("/v1/integrations", async (context) =>
     context.json(
-      await repository.listIntegrations(currentUser(context).tenantId),
+      (await repository.listIntegrations(currentUser(context).tenantId)).map((item) => PublicIntegrationSchema.parse(item)),
     ),
   );
   app.post("/v1/integrations", async (context) => {
     const input = CreateIntegrationSchema.parse(await context.req.json());
-    return context.json(
-      await repository.createIntegration(currentUser(context).tenantId, input),
-      201,
-    );
+    const clientSecret = randomBytes(32).toString('base64url');
+    const integration = await repository.createIntegration(currentUser(context).tenantId, {
+      ...input,
+      allowedOrigins: input.allowedOrigins ?? [],
+      identityProviderKey: input.identityProviderKey ?? null,
+      scopes: input.scopes ?? ['conditions:read', 'signing_sessions:write'],
+      clientId: `bcint_${randomUUID()}`,
+      clientSecretHash: hashIntegrationSecret(clientSecret),
+    });
+    return context.json({ integration: PublicIntegrationSchema.parse(integration), clientSecret }, 201);
   });
 
-  app.post("/v1/integration-sessions", async (context) => {
-    const input = CreateIntegrationSessionSchema.parse(
-      await context.req.json(),
-    );
-    const user = currentUser(context);
-    const integration = await repository.findIntegration(
-      user.tenantId,
-      input.integrationKey,
-    );
-    if (!integration) throw new Error("Integration not found.");
-    if (!integration.allowedRedirectUris.includes(input.returnUrl))
-      throw new Error("returnUrl is not allow-listed for this integration.");
-    let link = await repository.findIdentityLink(
-      user.tenantId,
-      integration.id,
-      input.subject,
-    );
-    if (link && link.email.toLowerCase() !== input.email.toLowerCase())
-      throw new Error(
-        "This subject is already linked to a different email address.",
-      );
-    if (!link) {
-      const person =
-        (await repository.findPersonByEmail(user.tenantId, input.email)) ??
-        (await repository.createPerson(
-          user.tenantId,
-          input.email,
-          input.displayName ?? input.email.split("@")[0]!,
-        ));
-      link = IdentityLinkSchema.parse({
-        id: `link_${randomUUID()}`,
-        tenantId: user.tenantId,
-        integrationId: integration.id,
-        externalSubject: input.subject,
-        personId: person.id,
-        email: input.email.toLowerCase(),
-        linkingMethod: integration.mappingStrategy,
-        verifiedAt: services.now(),
-      });
-      await repository.createIdentityLink(link);
-    }
-    const agreement = await repository.createAgreement(user.tenantId, {
-      title: input.title ?? `${input.templateKey} agreement`,
-      templateKey: input.templateKey,
-      participants: [],
-      parties: [
-        {
-          role: "counterparty",
-          entity: {},
-          minimumSignatures: 1,
-          participants: [
-            {
-              email: input.email,
-              name: input.displayName,
-              role: "signatory",
-              required: true,
-            },
-          ],
-        },
-      ],
-      metadata: input.metadata,
-    });
-    const participant = agreement.participants[0]!;
-    participant.personId = link.personId;
-    agreement.integrationContext = {
-      integrationId: integration.id,
-      integrationKey: integration.key,
-      externalSubject: input.subject,
-      personId: link.personId,
-      returnUrl: input.returnUrl,
-    };
-    services.transition(agreement, "in_review");
-    await repository.saveAgreement(agreement);
-    const { token, tokenHash } = createInvitationToken();
-    const handoff = IntegrationSessionSchema.parse({
-      id: `isess_${randomUUID()}`,
-      tenantId: user.tenantId,
-      integrationId: integration.id,
-      personId: link.personId,
-      externalSubject: input.subject,
-      agreementId: agreement.id,
-      participantId: participant.id,
-      tokenHash,
-      status: "pending",
-      returnUrl: input.returnUrl,
-      expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
-      createdAt: services.now(),
-      acceptedAt: null,
-    });
-    await repository.createIntegrationSession(handoff);
-    return context.json(
-      {
-        agreementId: agreement.id,
-        expiresAt: handoff.expiresAt,
-        handoffUrl: `${config.WEB_URL}/invite?integrationToken=${encodeURIComponent(token)}`,
-      },
-      201,
-    );
-  });
-
-  app.post("/v1/conditions/evaluate", async (context) => {
-    const user = currentUser(context);
-    const input = EvaluateConditionsSchema.parse(await context.req.json());
-    const integration = await repository.findIntegration(
-      user.tenantId,
-      input.integrationKey,
-    );
-    if (!integration) {
-      return context.json(
-        { error: "integration_not_found", message: "Integration not found." },
-        404,
-      );
-    }
-    const link = await repository.findIdentityLink(
-      user.tenantId,
-      integration.id,
-      input.subject,
-    );
-    const agreements = link
-      ? await repository.listAgreements(user.tenantId)
-      : [];
-    const conditions = input.conditions.map((condition) =>
-      link
-        ? services.conditionByPerson(agreements, link.personId, condition)
-        : { ...condition, met: false },
-    );
-    return context.json({
-      integrationKey: integration.key,
-      subject: input.subject,
-      operator: input.operator,
-      met:
-        input.operator === "all"
-          ? conditions.every((item) => item.met)
-          : conditions.some((item) => item.met),
-      evaluatedAt: services.now(),
-      conditions,
-    });
+  app.post('/v1/integrations/:integrationKey/rotate-secret', async (context) => {
+    const user = currentUser(context); const integration = await repository.findIntegration(user.tenantId, context.req.param('integrationKey'));
+    if (!integration) return context.json({ error: 'not_found', message: 'Integration not found.' }, 404);
+    const clientSecret = randomBytes(32).toString('base64url'); integration.clientId ??= `bcint_${randomUUID()}`; integration.clientSecretHash = hashIntegrationSecret(clientSecret); await repository.saveIntegration(integration);
+    return context.json({ integration: PublicIntegrationSchema.parse(integration), clientSecret });
   });
 
   app.get("/v1/webhooks", async (context) =>

@@ -1,18 +1,23 @@
 # FiftySixty single-host deployment
 
-This profile runs ByteCrunch Contracts as a standalone customer-entity CLM on one EC2 host. FiftySixty is created through the normal company onboarding flow, not as a special platform workspace. Cognito authenticates staff and Google Drive receives a downstream copy of each executed PDF; PostgreSQL plus the filesystem artifact volume remain authoritative.
+This profile runs ByteCrunch Contracts as a standalone customer-entity CLM on one EC2 host. FiftySixty is created through the normal company onboarding flow, not as a special platform workspace. Cognito can authenticate both FiftySixty staff and integrated website participants through separate OIDC clients. Google Drive receives a downstream copy of each executed PDF; PostgreSQL plus the filesystem artifact volume remain authoritative.
 
 ## 1. Add the Cognito client
 
-In the FiftySixty `AuthStack`, create a dedicated confidential user-pool client for Contracts. Reuse the existing user pool and Google identity provider, enable authorization-code flow with `openid`, `email`, and `profile`, generate a secret, and configure:
+In the FiftySixty `AuthStack`, create two dedicated confidential authorization-code clients for Contracts. Reuse the existing user pool and Google identity provider and enable `openid`, `email`, and `profile`.
 
-- callback: `https://api.contracts.fiftysixty.com/auth/callback`
-- logout: `https://contracts.fiftysixty.com`
-- supported identity provider: Google
+- Workforce client callback: `https://api.contracts.fiftysixty.com/auth/entity-callback`
+- Participant client callback: `https://api.contracts.fiftysixty.com/auth/participant-callback`
+- Logout: `https://contracts.fiftysixty.com`
+- Supported identity providers: whichever providers the corresponding workforce or customer population may use
 
-Do not reuse the console public client or the machine-to-machine client. The CLM keys identities by the Cognito issuer plus `sub`; Google is intentionally not a second CLM identity system. The existing Cognito pre-signup policy continues to decide which email domains may authenticate.
+Do not reuse the website's browser client, the Contracts workforce client, and the Contracts participant client for each other. The CLM keys identities by the Cognito issuer plus `sub`; Google is intentionally not a second CLM identity system. The existing Cognito policy remains responsible for who may authenticate.
 
-After creating the FiftySixty entity, install **Enterprise SSO** in Settings and enter the client details there. The issuer and Hosted UI endpoint split is intentional: tokens are verified against the regional Cognito issuer while browser authorization uses `auth.fiftysixty.com`. The environment-based OIDC values remain the platform/recovery login, not the entity connection.
+After creating the FiftySixty entity, install **Enterprise SSO** with the workforce client and **Customer identity (OIDC)** with the participant client. The issuer and managed-login endpoint split is intentional: tokens are verified against the regional Cognito user-pool issuer while browser authorization can use `auth.fiftysixty.com`. The environment-based OIDC values remain the ByteCrunch platform/recovery login, not either entity connection.
+
+In **Settings → API clients**, create `fiftysixty-website` in Customer OIDC mode and allowlist the exact FiftySixty return URL. Store the one-time client ID and secret in the FiftySixty backend's secret manager. This client authenticates FiftySixty to Contracts; it does not replace the normal Cognito session that authenticates the visitor to FiftySixty.
+
+The website backend reads `sub` from its verified Cognito session, obtains a five-minute Contracts token from `/oauth/token`, and calls `/integration/v1/conditions/evaluate`. If the required condition is unmet, it may call `/integration/v1/signing-sessions` and redirect the browser to the returned handoff URL. Contracts then performs its own OIDC authorization against the participant client and requires the same Cognito `sub` before allowing review or signature. With an existing Cognito browser session this should normally return without another credential prompt, while still giving Contracts direct cryptographic proof of the participant identity.
 
 ## 2. Prepare Google Drive export
 
@@ -51,5 +56,7 @@ The compose file intentionally omits Keycloak and Mailpit. Persist and encrypt b
 4. Branding appears in both the staff shell and a private recipient invite.
 5. Execute a two-party agreement, validate the sealed ByteCrunch PDF, and confirm exactly one matching PDF appears in the target Drive folder.
 6. Temporarily deny Drive access and execute a test agreement. Execution must still complete and retain all evidence locally; restore access and use `POST /v1/agreements/{agreementId}/finalize` to complete the export retry.
+7. From a signed-in FiftySixty website session, evaluate an unknown subject and receive `met: false`; create a handoff, complete participant OIDC and signing, then evaluate the same `sub` and receive the expected condition with a decision ID.
+8. Attempt the handoff while signed into a different Cognito account. Contracts must reject the callback because the authenticated `sub` differs, and must not issue a participant session.
 
 Use the full [signing test plan](./signing-test-plan.md) before production signatures.

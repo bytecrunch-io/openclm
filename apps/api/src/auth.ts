@@ -2,10 +2,12 @@ import { createHash, randomBytes } from 'node:crypto';
 import { createRemoteJWKSet, jwtVerify, SignJWT } from 'jose';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import type { Context, MiddlewareHandler } from 'hono';
+import { ExternalPrincipalSchema } from '@bytecrunch/contracts-domain';
 import { config } from './config.js';
 import type { Repository } from './repository.js';
-import { enterpriseOidcConnection } from './integration-plugins.js';
+import { enterpriseOidcConnection, participantOidcConnection } from './integration-plugins.js';
 import { assertExternalUrlAllowed } from './webhooks.js';
+import { hashInvitationToken, setExternalSession } from './external-auth.js';
 
 export interface AuthUser {
   id: string;
@@ -141,12 +143,23 @@ export function currentUser(context: Context): AuthUser {
 }
 
 const entityCallbackUri = () => new URL('/auth/entity-callback', config.OIDC_REDIRECT_URI).toString();
+const participantCallbackUri = () => new URL('/auth/participant-callback', config.OIDC_REDIRECT_URI).toString();
 
 async function entityMetadata(repository: Repository, entityId: string): Promise<{ metadata: OidcMetadata; issuer: string; clientId: string; clientSecret: string; emailDomains: string[] }> {
   const connection = await enterpriseOidcConnection(repository, entityId); if (!connection) throw new Error('Enterprise SSO is not enabled for this entity.');
   const issuer = String(connection.issuerUrl).replace(/\/$/, ''); await assertExternalUrlAllowed(issuer, 'OIDC issuer'); const discoveryIssuer = issuer === config.OIDC_ISSUER_URL.replace(/\/$/, '') && config.OIDC_INTERNAL_ISSUER_URL ? config.OIDC_INTERNAL_ISSUER_URL.replace(/\/$/, '') : issuer; const response = await fetch(`${discoveryIssuer}/.well-known/openid-configuration`); if (!response.ok) throw new Error(`OIDC discovery failed with ${response.status}`);
   const discovered = await response.json() as OidcMetadata;
   return { issuer, clientId: String(connection.clientId), clientSecret: String(connection.clientSecret), emailDomains: Array.isArray(connection.emailDomains) ? connection.emailDomains.map(String) : [], metadata: { ...discovered, ...(connection.authorizationEndpoint ? { authorization_endpoint: String(connection.authorizationEndpoint) } : {}), ...(connection.tokenEndpoint ? { token_endpoint: String(connection.tokenEndpoint) } : {}), ...(connection.jwksUri ? { jwks_uri: String(connection.jwksUri) } : {}) } };
+}
+
+async function participantMetadata(repository: Repository, entityId: string): Promise<{ metadata: OidcMetadata; issuer: string; clientId: string; clientSecret: string; identityProviderId: string }> {
+  const connection = await participantOidcConnection(repository, entityId); if (!connection) throw new Error('Participant OIDC is not enabled for this entity.');
+  const issuer = connection.issuerUrl.replace(/\/$/, ''); await assertExternalUrlAllowed(issuer, 'OIDC issuer');
+  const response = await fetch(`${issuer}/.well-known/openid-configuration`); if (!response.ok) throw new Error(`OIDC discovery failed with ${response.status}`);
+  const discovered = await response.json() as OidcMetadata;
+  const metadata = { ...discovered, ...(connection.authorizationEndpoint ? { authorization_endpoint: connection.authorizationEndpoint } : {}), ...(connection.tokenEndpoint ? { token_endpoint: connection.tokenEndpoint } : {}), ...(connection.jwksUri ? { jwks_uri: connection.jwksUri } : {}) };
+  await Promise.all([metadata.authorization_endpoint, metadata.token_endpoint, metadata.jwks_uri].map((url) => assertExternalUrlAllowed(url, 'OIDC endpoint')));
+  return { metadata, issuer, clientId: connection.clientId, clientSecret: connection.clientSecret, identityProviderId: connection.installationId };
 }
 
 export function registerAuthRoutes(app: import('hono').Hono, repository: Repository): void {
@@ -186,6 +199,23 @@ export function registerAuthRoutes(app: import('hono').Hono, repository: Reposit
       const url = new URL(connection.metadata.authorization_endpoint); url.searchParams.set('client_id', connection.clientId); url.searchParams.set('redirect_uri', entityCallbackUri()); url.searchParams.set('response_type', 'code'); url.searchParams.set('scope', 'openid profile email'); url.searchParams.set('state', state); url.searchParams.set('nonce', nonce); url.searchParams.set('code_challenge', challenge); url.searchParams.set('code_challenge_method', 'S256');
       return context.redirect(url.toString());
     } catch (error) { return context.text(error instanceof Error ? error.message : 'Enterprise SSO could not be started.', 409); }
+  });
+
+  app.get('/auth/participant/:entitySlug', async (context) => {
+    const entity = await repository.findCustomerEntityBySlug(context.req.param('entitySlug')); const token = context.req.query('integrationToken');
+    if (!entity || !token || token.length < 20) return context.text('The signing handoff is invalid.', 400);
+    const handoff = await repository.getIntegrationSessionByTokenHash(hashInvitationToken(token));
+    if (!handoff || handoff.tenantId !== entity.id || !['pending', 'authenticating'].includes(handoff.status) || new Date(handoff.expiresAt).getTime() <= Date.now()) return context.text('The signing handoff is invalid or has expired.', 410);
+    const configuredIntegration = (await repository.listIntegrations(entity.id)).find((item) => item.id === handoff.integrationId);
+    if (!configuredIntegration || configuredIntegration.mappingStrategy !== 'shared_oidc') return context.text('This integration does not use participant OIDC.', 409);
+    try {
+      const connection = await participantMetadata(repository, entity.id); const state = randomBytes(24).toString('base64url'); const nonce = randomBytes(24).toString('base64url'); const verifier = randomBytes(48).toString('base64url'); const challenge = createHash('sha256').update(verifier).digest('base64url');
+      const authState = await signPayload({ state, nonce, verifier, entityId: entity.id, integrationSessionId: handoff.id, tokenHash: handoff.tokenHash }, '10m');
+      setCookie(context, 'bc_contracts_participant_auth_state', authState, { httpOnly: true, sameSite: 'Lax', secure: participantCallbackUri().startsWith('https://'), path: '/auth', maxAge: 600 });
+      handoff.status = 'authenticating'; await repository.saveIntegrationSession(handoff);
+      const url = new URL(connection.metadata.authorization_endpoint); url.searchParams.set('client_id', connection.clientId); url.searchParams.set('redirect_uri', participantCallbackUri()); url.searchParams.set('response_type', 'code'); url.searchParams.set('scope', 'openid profile email'); url.searchParams.set('state', state); url.searchParams.set('nonce', nonce); url.searchParams.set('code_challenge', challenge); url.searchParams.set('code_challenge_method', 'S256');
+      return context.redirect(url.toString());
+    } catch (error) { return context.text(error instanceof Error ? error.message : 'Participant authentication could not be started.', 409); }
   });
 
   app.get('/auth/callback', async (context) => {
@@ -247,6 +277,42 @@ export function registerAuthRoutes(app: import('hono').Hono, repository: Reposit
       const session = await new SignJWT({ email: payload.email, emailVerified: true, name: payload.name ?? payload.preferred_username ?? payload.email, issuer: connection.issuer, tenantId: authState.entityId, scopes: ['agreements:read', 'agreements:write', 'templates:write'] }).setProtectedHeader({ alg: 'HS256' }).setSubject(String(payload.sub)).setIssuedAt().setExpirationTime('8h').sign(secret);
       setCookie(context, 'bc_contracts_session', session, { httpOnly: true, sameSite: 'Lax', secure: config.WEB_URL.startsWith('https://'), path: '/', maxAge: 28_800 }); deleteCookie(context, 'bc_contracts_auth_state'); const returnUrl = new URL(String(authState.returnTo ?? '/'), config.WEB_URL); return context.redirect(returnUrl.origin === new URL(config.WEB_URL).origin ? returnUrl.toString() : config.WEB_URL);
     } catch (error) { return context.text(`Authentication failed: ${error instanceof Error ? error.message : 'Unknown error'}`, 401); }
+  });
+
+  app.get('/auth/participant-callback', async (context) => {
+    const code = context.req.query('code'); const returnedState = context.req.query('state'); const stateCookie = getCookie(context, 'bc_contracts_participant_auth_state');
+    if (!code || !returnedState || !stateCookie) return context.text('Invalid participant authentication response.', 400);
+    try {
+      const { payload: authState } = await jwtVerify(stateCookie, secret, { algorithms: ['HS256'] });
+      if (authState.state !== returnedState || typeof authState.entityId !== 'string' || typeof authState.integrationSessionId !== 'string' || typeof authState.tokenHash !== 'string') throw new Error('State does not match');
+      const handoff = await repository.getIntegrationSessionByTokenHash(authState.tokenHash);
+      if (!handoff || handoff.id !== authState.integrationSessionId || handoff.tenantId !== authState.entityId || handoff.status !== 'authenticating' || new Date(handoff.expiresAt).getTime() <= Date.now()) throw new Error('The signing handoff has expired');
+      const connection = await participantMetadata(repository, handoff.tenantId);
+      const response = await fetch(connection.metadata.token_endpoint, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: participantCallbackUri(), client_id: connection.clientId, client_secret: connection.clientSecret, code_verifier: String(authState.verifier) }) });
+      if (!response.ok) throw new Error(`Token endpoint returned ${response.status}`);
+      const tokens = await response.json() as { id_token?: string }; if (!tokens.id_token) throw new Error('Token endpoint did not return an ID token');
+      const jwks = createRemoteJWKSet(new URL(connection.metadata.jwks_uri)); const { payload } = await jwtVerify(tokens.id_token, jwks, { issuer: connection.issuer, audience: connection.clientId });
+      if (payload.nonce !== authState.nonce) throw new Error('Nonce does not match');
+      if (typeof payload.sub !== 'string' || payload.sub !== handoff.externalSubject) throw new Error('The authenticated account does not match the signing subject');
+      if (typeof payload.email !== 'string' || payload.email_verified !== true) throw new Error('A verified email address is required');
+      let principal = await repository.findExternalPrincipal(handoff.tenantId, connection.issuer, payload.sub);
+      if (!principal) {
+        const resolvedPerson = await repository.findPersonByEmail(handoff.tenantId, payload.email) ?? await repository.createPerson(handoff.tenantId, payload.email, String(payload.name ?? payload.preferred_username ?? payload.email));
+        const authenticationTime = typeof payload.auth_time === 'number' ? new Date(payload.auth_time * 1000).toISOString() : null;
+        principal = ExternalPrincipalSchema.parse({ id: `principal_${randomBytes(18).toString('base64url')}`, tenantId: handoff.tenantId, identityProviderId: connection.identityProviderId, issuer: connection.issuer, subject: payload.sub, personId: resolvedPerson.id, email: payload.email.toLowerCase(), displayName: String(payload.name ?? payload.preferred_username ?? payload.email), verificationMethod: 'federated_oidc', verifiedAt: new Date().toISOString(), authenticationTime });
+        await repository.createExternalPrincipal(principal);
+        principal = await repository.findExternalPrincipal(handoff.tenantId, connection.issuer, payload.sub) ?? principal;
+      }
+      const agreement = await repository.getAgreement(handoff.tenantId, handoff.agreementId); if (!agreement) throw new Error('Agreement not found');
+      const participant = agreement.participants.find((item) => item.id === handoff.participantId); if (!participant) throw new Error('Participant not found');
+      participant.personId = principal.personId; participant.externalPrincipalId = principal.id; participant.email = principal.email;
+      if (agreement.integrationContext) { agreement.integrationContext.personId = principal.personId; agreement.integrationContext.externalPrincipalId = principal.id; }
+      agreement.updatedAt = new Date().toISOString(); await repository.saveAgreement(agreement);
+      handoff.personId = principal.personId; handoff.externalPrincipalId = principal.id; handoff.status = 'accepted'; handoff.acceptedAt = new Date().toISOString(); await repository.saveIntegrationSession(handoff);
+      await setExternalSession(context, { invitationId: handoff.id, agreementId: handoff.agreementId, participantId: handoff.participantId, tenantId: handoff.tenantId, authenticationMethod: 'federated_oidc', externalPrincipalId: principal.id, authenticationIssuer: principal.issuer, authenticationSubject: principal.subject, ...(principal.authenticationTime ? { authenticationTime: principal.authenticationTime } : {}) });
+      deleteCookie(context, 'bc_contracts_participant_auth_state', { path: '/auth' });
+      return context.redirect(`${config.WEB_URL}/invite`);
+    } catch (error) { return context.text(`Participant authentication failed: ${error instanceof Error ? error.message : 'Unknown error'}`, 401); }
   });
 
   app.post('/auth/logout', (context) => {
