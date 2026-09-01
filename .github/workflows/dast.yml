@@ -39,7 +39,7 @@ jobs:
         run: docker run --rm -v "$PWD/zap-output:/zap/wrk/:rw" -t ghcr.io/zaproxy/zaproxy:stable zap-api-scan.py -t "$API_TARGET/openapi.yaml" -f openapi -I -r api-report.html -J api-report.json -w api-report.md
       - name: Upload reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: zap-staging-reports
           path: zap-output
