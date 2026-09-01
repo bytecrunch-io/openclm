@@ -35,6 +35,6 @@
     "@types/nodemailer": "^7.0.1",
     "@types/pg": "^8.15.5",
     "tsx": "^4.20.5",
-    "vitest": "^3.2.4"
+    "vitest": "^4.1.11"
   }
 }
