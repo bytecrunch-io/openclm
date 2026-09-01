@@ -22,7 +22,7 @@
     "smoke:deployment": "node scripts/smoke-deployment.mjs"
   },
   "devDependencies": {
-    "@types/node": "^24.3.0",
+    "@types/node": "^26.4.0",
     "@typespec/compiler": "^1.4.0",
     "@typespec/http": "^1.4.0",
     "@typespec/openapi3": "^1.4.0",
